@@ -50,10 +50,10 @@ typedef struct InterpData {
     Tcl_Interp    *interp;
 } InterpData;
 
+
 /*
  * Static functions defined in this file
  */
-
 
 static int ParseOptions(InterpData *idataPtr, int objc, Tcl_Obj *CONST objv[], Dbi_Handle **handlePtrPtr) _nsnonnull();
 static Dbi_Handle* GetHandle(InterpData *idataPtr, const char *pool, int timeout) _nsnonnull();
@@ -77,6 +77,12 @@ static Tcl_ObjCmdProc
  * Static variables defined in this file.
  */
 
+static char *datakey = "dbi:data";
+
+/*
+ * The dbi Tcl commands.
+ */
+
 static struct Cmd {
     char           *name;
     Tcl_ObjCmdProc *objProc;
@@ -93,7 +99,18 @@ static struct Cmd {
     {NULL, NULL}
 };
 
-static char *datakey = "dbi:data";
+/*
+ * The following list of potentialy blocking commands are
+ * commonly called without first releasing db handles.
+ */
+
+static char *blockingCmds[] = {
+    "ns_return", "ns_respond", "ns_returnfile", "ns_returnfp",
+    "ns_returnbadrequest", "ns_returnerror", "ns_returnnotice",
+    "ns_returnadminnotice", "ns_returnredirect", "ns_returnforbidden",
+    "ns_returnunauthorized", "ns_returnnotfound", "ns_write",
+    "ns_connsendfp", NULL
+};
 
 
 
@@ -102,7 +119,7 @@ static char *datakey = "dbi:data";
  *
  * DbiAddCmds --
  *
- *      Add the dbi commands.
+ *      Add the dbi commands to an initialising interp.
  *
  * Results:
  *      None.
@@ -131,6 +148,37 @@ DbiAddCmds(Tcl_Interp *interp, void *arg)
     }
 
     return TCL_OK;
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * DbiAddTraces --
+ *
+ *      Register a trace for each blocking command to release handles
+ *      before continuing.
+ *
+ * Results:
+ *      None.
+ *
+ * Side effects:
+ *      None.
+ *
+ *----------------------------------------------------------------------
+ */
+
+int
+DbiAddTraces(Tcl_Interp *interp, void *arg _nsunused)
+{
+    int i;
+
+    for (i = 0; blockingCmds[i] != NULL; ++i) {
+        Tcl_VarEval(interp, "trace add execution ", blockingCmds[i],
+                    " enter dbi_releasehandles", NULL);
+    }
+
+    return NS_OK;
 }
 
 
@@ -551,7 +599,8 @@ TclRowsCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *CONST o
  */
 
 static int
-TclReleasehandlesCmd(ClientData clientData, Tcl_Interp *interp, int objc _nsunused, Tcl_Obj *CONST objv[] _nsunused)
+TclReleasehandlesCmd(ClientData clientData, Tcl_Interp *interp,
+                     int objc _nsunused, Tcl_Obj *CONST objv[] _nsunused)
 {
     InterpData *idataPtr = clientData;
 

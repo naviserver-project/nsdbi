@@ -67,14 +67,8 @@ Ns_ModuleInit(char *server, char *module _nsunused)
         once = 1;
     }
     DbiInitServer(server);
-    if (Ns_TclRegisterTrace(server, DbiAddCmds, server,
-                            NS_TCL_TRACE_CREATE) != NS_OK
-        || Ns_TclRegisterTrace(server, DbiReleaseHandles, NULL,
-                               NS_TCL_TRACE_DEALLOCATE) != NS_OK) {
-        return NS_ERROR;
-    }
-    Ns_RegisterProcInfo(DbiAddCmds, "nsdb:initinterp", NULL);
-    Ns_RegisterProcInfo(DbiReleaseHandles, "nsdb:releasehandles", NULL);
+    Ns_TclInitInterps(server, DbiAddCmds, server);
+    Ns_TclInitServerInterps(server, DbiAddTraces, server);
 
     return NS_OK;
 }

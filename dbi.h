@@ -124,7 +124,8 @@ extern int DbiValue(Dbi_Handle *, const char **value, int *len) _nsnonnull();
  * tclcmds.c
  */
 
-extern Ns_TclTraceProc DbiAddCmds;
+extern Ns_TclInterpInitProc DbiAddCmds;
+extern Ns_TclInterpInitProc DbiAddTraces;
 
 
 #endif
