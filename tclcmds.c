@@ -403,11 +403,24 @@ static int
 TclPoolsCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
 {
     InterpData *idataPtr = clientData;
+    Tcl_Obj    *result;
     Ns_DString  ds;
+    char       *p, *q;
 
     Ns_DStringInit(&ds);
-    Dbi_PoolList(&ds, idataPtr->server);
-    Tcl_DStringResult(interp, &ds);
+    if (Dbi_PoolList(&ds, idataPtr->server) != NS_OK) {
+        return TCL_ERROR;
+    }
+    result = Tcl_GetObjResult(interp);
+    p = Ns_DStringValue(&ds);
+    q = p;
+    while ((p = strchr(Ns_DStringValue(&ds), ' ')) != NULL) {
+        *p++ = '\0';
+        Tcl_ListObjAppendElement(interp, result, Tcl_NewStringObj(q, -1));
+        q = p;
+    }
+    /* last element of list... */
+    Tcl_ListObjAppendElement(interp, result, Tcl_NewStringObj(q, -1));
     Ns_DStringFree(&ds);
 
     return TCL_OK;
