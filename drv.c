@@ -428,9 +428,7 @@ Dbi_GetRow(Dbi_Handle *handle, Ns_Set *row)
         && driverPtr->getProc != NULL
         && handle->connected) {
 
-        status = (*driverPtr->getProc)(handle, row);
-        handle->currentRow++;
-
+        status = (*driverPtr->getProc)(handle, row, handle->currentRow++);
         if (status == DBI_END_DATA) {
             handle->fetchingRows = NS_FALSE;
         }
@@ -661,7 +659,6 @@ DbiOpen(Dbi_Handle *handle)
 
         Ns_Log(Error, "nsdbi: failed to open handle in pool '%s': %s",
                handle->poolPtr->name, handle->dsExceptionMsg);
-        handle->connected = NS_FALSE;
         return NS_ERROR;
     } else {
         Ns_Log(Notice, "nsdbi: opened handle in pool '%s'", handle->poolPtr->name);

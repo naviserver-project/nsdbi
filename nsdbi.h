@@ -71,15 +71,13 @@ typedef struct Dbi_Pool {
 typedef struct Dbi_Handle {
     Dbi_Pool   *poolPtr;
     int         connected;
-    int         fetchingRows;
-    int         currentRow;
-    int         numRows;      /*<< num rows selected / num rows affected (DML) */
-    void       *connection;
-    void       *statement;
-    void       *context;
     Ns_Set     *row;
+    int         fetchingRows;
+    int         numRows;      /*<< num rows selected / num rows affected (DML) */
+    int         currentRow;
     char        cExceptionCode[6];
     Ns_DString  dsExceptionMsg;
+    void       *arg;
 } Dbi_Handle;
 
 /*
@@ -107,7 +105,7 @@ typedef int            (Dbi_OpenProc)        (Dbi_Handle *);
 typedef void           (Dbi_CloseProc)       (Dbi_Handle *);
 typedef int            (Dbi_ExecProc)        (Dbi_Handle *, char *sql);
 typedef Ns_Set *       (Dbi_BindRowProc)     (Dbi_Handle *);
-typedef int            (Dbi_GetRowProc)      (Dbi_Handle *, Ns_Set *row);
+typedef int            (Dbi_GetRowProc)      (Dbi_Handle *, Ns_Set *row, int rowNum);
 typedef int            (Dbi_CancelProc)      (Dbi_Handle *);
 typedef int            (Dbi_FlushProc)       (Dbi_Handle *);
 typedef int            (Dbi_ResetProc)       (Dbi_Handle *);

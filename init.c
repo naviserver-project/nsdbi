@@ -73,23 +73,31 @@ typedef struct Pool {
  */
 
 typedef struct Handle {
+
+    /*
+     * The following members are visible in an Ns_Handle.
+     */
+
     Dbi_Pool       *poolPtr;
     int             connected;
-    int             fetchingRows;
-    int             currentRow;
-    int             numRows;
-    void           *connection;
-    void           *statement;
-    void           *context;
     Ns_Set         *row;
+    int             fetchingRows;
+    int             numRows;
+    int             currentRow;
     char            cExceptionCode[6];
     Ns_DString      dsExceptionMsg;
-    /* Members above must match Dbi_Handle */
+    void           *arg;
+
+    /*
+     * The following members are private to a Handle.
+     */
+
     struct Handle  *nextPtr;
     time_t          otime;
     time_t          atime;
     int             stale;
     int             stale_on_close;
+
 } Handle;
 
 /*
@@ -649,6 +657,7 @@ DbiDisconnect(Dbi_Handle *handle)
 
     DbiClose(handle);
     handlePtr->connected = NS_FALSE;
+    handlePtr->arg = NULL;
     handlePtr->atime = handlePtr->otime = 0;
     handlePtr->stale = NS_FALSE;
 }
@@ -956,13 +965,13 @@ CreatePool(char *pool, char *path, char *driver)
         Ns_DStringInit(&handlePtr->dsExceptionMsg);
         handlePtr->poolPtr = (Dbi_Pool *) poolPtr;
         handlePtr->connected = NS_FALSE;
+        handlePtr->row = Ns_SetCreate(NULL);
         handlePtr->fetchingRows = 0;
         handlePtr->numRows = 0;
-        handlePtr->connection = NULL;
-        handlePtr->statement = NULL;
-        handlePtr->context = NULL;
-        handlePtr->row = Ns_SetCreate(NULL);
+        handlePtr->currentRow = 0;
+        handlePtr->arg = NULL;
         handlePtr->cExceptionCode[0] = '\0';
+        Ns_DStringInit(&handlePtr->dsExceptionMsg);
         handlePtr->otime = handlePtr->atime = 0;
         handlePtr->stale = NS_FALSE;
         handlePtr->stale_on_close = 0;
