@@ -48,8 +48,8 @@ static int Exception(Tcl_Interp *interp, char *info, char *fmt, ...);
 static int DbiException(Tcl_Interp *interp, Dbi_Handle *handle);
 
 static Tcl_ObjCmdProc
-    Tcl0or1rowCmd, Tcl1rowCmd, TclRowsCmd, TclDmlCmd,
-    TclPoolCmd, TclPoolsCmd, TclBouncepoolCmd;
+    Tcl0or1rowCmd, Tcl1rowCmd, TclRowsCmd, TclDmlCmd, TclPoolCmd,
+    TclPoolsCmd, TclDefaultpoolCmd, TclBouncepoolCmd;
 
 /*
  * Static variables defined in this file.
@@ -65,6 +65,7 @@ static struct Cmd {
     {"dbi_dml",           TclDmlCmd},
     {"dbi_pool",          TclPoolCmd},
     {"dbi_pools",         TclPoolsCmd},
+    {"dbi_defaultpool",   TclDefaultpoolCmd},
     {"dbi_bouncepool",    TclBouncepoolCmd},
     {NULL, NULL}
 };
@@ -120,6 +121,7 @@ static Dbi_Handle*
 GetHandle(char *server, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
 {
     Dbi_Handle *handlePtr;
+    Dbi_Pool   *poolPtr;
     char       *pool;
     int         timeout, i;
 
@@ -147,20 +149,25 @@ GetHandle(char *server, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
     }
 
     if (pool == NULL) {
-        pool = Dbi_PoolDefault(server);
-        if (pool == NULL) {
+        poolPtr = Dbi_PoolDefault(server);
+        if (poolPtr == NULL) {
             Exception(interp, "ERROR", "no default pool configured");
             return NULL;
         }
     } else {
-        if (!Dbi_PoolAllowable(server, pool)) {
+        poolPtr = Dbi_GetPool(pool);
+        if (poolPtr == NULL) {
+            Exception(interp, "ERROR", "pool '%s' not valid", pool);
+            return NULL;
+        }
+        if (!Dbi_PoolAllowable(server, poolPtr)) {
             Exception(interp, "ERROR", "pool '%s' not available to server", pool);
             return NULL;
         }
     }
 
     handlePtr = NULL;
-    switch (Dbi_PoolTimedGetHandle(&handlePtr, server, pool, timeout)) {
+    switch (Dbi_PoolTimedGetHandle(&handlePtr, server, poolPtr, timeout)) {
     case NS_TIMEOUT:
         Exception(interp, "TIMEOUT", "wait for database handle timed out");
         break;
@@ -348,7 +355,9 @@ Tcl1rowCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *CONST o
 static int
 TclBouncepoolCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
 {
-    char *pool;
+    char     *server = clientData;
+    char     *pool;
+    Dbi_Pool *poolPtr;
 
     if (objc != 2) {
         Tcl_WrongNumArgs(interp, 1, objv, "pool");
@@ -356,7 +365,16 @@ TclBouncepoolCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *C
     }
 
     pool = Tcl_GetString(objv[1]);
-    if (Dbi_BouncePool(pool) == NS_ERROR) {
+    poolPtr = Dbi_GetPool(pool);
+    if (poolPtr == NULL) {
+        Exception(interp, "ERROR", "pool '%s' not valid", pool);
+        return TCL_ERROR;
+    }
+    if (!Dbi_PoolAllowable(server, poolPtr)) {
+        Exception(interp, "ERROR", "pool '%s' not available to server", pool);
+        return TCL_ERROR;
+    }
+    if (Dbi_BouncePool(poolPtr) == NS_ERROR) {
         return Exception(interp, "ERROR", "could not bounce pool: %s", pool);
     }
 
@@ -423,17 +441,18 @@ TclDmlCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *CONST ob
 static int
 TclPoolCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
 {
-    char *server = (char *) clientData;
-    char *pool;
+    char     *server = clientData;
+    char     *pool;
+    Dbi_Pool *poolPtr;
 
     static CONST char *opts[] = {
-        "datasource", "dbtype", "default", "description",
-        "driver", "nhandles", "password", "user", NULL
+        "datasource", "dbtype", "description", "driver",
+        "nhandles", "password", "user", NULL
     };
 
     enum IPoolIdx {
-        IDatasourceIdx, IDbtypeIdx, IDefaultIdx, IDescriptionIdx,
-        IDriverIdx, INhandlesIdx, IPasswordIdx, IUserIdx
+        IDatasourceIdx, IDbtypeIdx, IDescriptionIdx, IDriverIdx,
+        INhandlesIdx, IPasswordIdx, IUserIdx
     } opt;
 
     if (objc != 3) {
@@ -444,40 +463,46 @@ TclPoolCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *CONST o
         != TCL_OK) {
         return TCL_ERROR;
     }
+
     pool = Tcl_GetString(objv[2]);
+    poolPtr = Dbi_GetPool(pool);
+    if (poolPtr == NULL) {
+        Exception(interp, "ERROR", "invalid pool name '%s'", pool);
+        return TCL_ERROR;
+    }
+    if (!Dbi_PoolAllowable(server, poolPtr)) {
+        Exception(interp, "ERROR", "pool '%s' not available to server", pool);
+        return TCL_ERROR;
+    }
 
     switch (opt) {
 
     case IDatasourceIdx:
-        Tcl_SetObjResult(interp, Tcl_NewStringObj(Dbi_PoolDataSource(pool), -1));
+        Tcl_SetObjResult(interp, Tcl_NewStringObj(poolPtr->datasource, -1));
         break;
 
     case IDbtypeIdx:
-        Tcl_SetObjResult(interp, Tcl_NewStringObj(Dbi_PoolDbType(pool), -1));
-        break;
-
-    case IDefaultIdx:
-        Tcl_SetObjResult(interp, Tcl_NewIntObj(Dbi_PoolDefault(server) ? 1 : 0));
+        Tcl_SetObjResult(interp, Tcl_NewStringObj(Dbi_PoolDbType(poolPtr), -1));
         break;
 
     case IDescriptionIdx:
-        Tcl_SetObjResult(interp, Tcl_NewStringObj(Dbi_PoolDescription(pool), -1));
+        Tcl_SetObjResult(interp, Tcl_NewStringObj(poolPtr->description, -1));
         break;
 
     case IDriverIdx:
-        Tcl_SetObjResult(interp, Tcl_NewStringObj(Dbi_PoolDriverName(pool), -1));
+        Tcl_SetObjResult(interp, Tcl_NewStringObj(poolPtr->driver, -1));
         break;
 
     case INhandlesIdx:
-        Tcl_SetObjResult(interp, Tcl_NewIntObj(Dbi_PoolNHandles(pool)));
+        Tcl_SetObjResult(interp, Tcl_NewIntObj(poolPtr->nhandles));
         break;
 
     case IPasswordIdx:
-        Tcl_SetObjResult(interp, Tcl_NewStringObj(Dbi_PoolPassword(pool), -1));
+        Tcl_SetObjResult(interp, Tcl_NewStringObj(poolPtr->password, -1));
         break;
 
     case IUserIdx:
-        Tcl_SetObjResult(interp, Tcl_NewStringObj(Dbi_PoolUser(pool), -1));
+        Tcl_SetObjResult(interp, Tcl_NewStringObj(poolPtr->user, -1));
         break;
     }
 
@@ -504,20 +529,47 @@ TclPoolCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *CONST o
 static int
 TclPoolsCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
 {
-    char       *server = (char *) clientData;
-    Tcl_Obj    *result;
-    char       *pool;
+    char       *server = clientData;
+    Ns_DString  ds;
 
-    pool = Dbi_PoolList(server);
-
-    if (pool != NULL) {
-        result = Tcl_GetObjResult(interp);
-        while (*pool != '\0') {
-            Tcl_ListObjAppendElement(interp, result, Tcl_NewStringObj(pool, -1));
-            pool = pool + strlen(pool) + 1;
-        }
-        Tcl_SetObjResult(interp, result);
+    Ns_DStringInit(&ds);
+    if (Dbi_PoolList(&ds, server)) {
+        Tcl_SetObjResult(interp, Tcl_NewStringObj(Ns_DStringValue(&ds),
+                                                  Ns_DStringLength(&ds)));
     }
+    Ns_DStringFree(&ds);
+
+    return TCL_OK;
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * TclDefaultpoolCmd --
+ *
+ *      ???
+ *
+ * Results:
+ *      TCL_OK/TCL_ERROR.
+ *
+ * Side effects:
+ *      ???
+ *
+ *----------------------------------------------------------------------
+ */
+
+static int
+TclDefaultpoolCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
+{
+    char     *server = clientData;
+    Dbi_Pool *poolPtr;
+
+    poolPtr = Dbi_PoolDefault(server);
+    if (poolPtr != NULL) {
+        Tcl_SetObjResult(interp, Tcl_NewStringObj(poolPtr->name, -1));
+    }
+
     return TCL_OK;
 }
 

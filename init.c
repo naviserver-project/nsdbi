@@ -98,16 +98,14 @@ typedef struct Handle {
  */
 
 typedef struct ServData {
-    char *defpool;
-    Pool *defpoolPtr;
-    char *allowed;
+    Pool          *defpoolPtr;
+    Tcl_HashTable  allowedTable;
 } ServData;
 
 /*
  * Local functions defined in this file
  */
 
-static Pool     *GetPool(char *pool);
 static void      ReturnHandle(Handle * handle);
 static int       IsStale(Handle *, time_t now);
 static int       Connect(Handle *);
@@ -130,12 +128,12 @@ static Ns_Tls tls;
 /*
  *----------------------------------------------------------------------
  *
- * Dbi_PoolDescription --
+ * Dbi_GetPool --
  *
- *      Return the pool's description string.
+ *      Return the Dbi_Pool structure for the given pool name.
  *
  * Results:
- *      Configured description string or NULL.
+ *      Pointer to Dbi_Pool structure or NULL if pool does not exist.
  *
  * Side effects:
  *      None.
@@ -143,16 +141,17 @@ static Ns_Tls tls;
  *----------------------------------------------------------------------
  */
 
-char *
-Dbi_PoolDescription(char *pool)
+Dbi_Pool *
+Dbi_GetPool(char *pool)
 {
-    Pool *poolPtr = GetPool(pool);
+    Tcl_HashEntry   *hPtr;
 
-    if (poolPtr == NULL) {
+    hPtr = Tcl_FindHashEntry(&poolsTable, pool);
+    if (hPtr == NULL) {
         return NULL;
     }
 
-    return poolPtr->description;
+    return (Dbi_Pool *) Tcl_GetHashValue(hPtr);
 }
 
 
@@ -172,41 +171,12 @@ Dbi_PoolDescription(char *pool)
  *----------------------------------------------------------------------
  */
 
-char *
+Dbi_Pool *
 Dbi_PoolDefault(char *server)
 {
     ServData *sdataPtr = GetServer(server);
 
-    return (sdataPtr ? sdataPtr->defpool : NULL);
-}
-
-
-/*
- *----------------------------------------------------------------------
- *
- * Dbi_PoolDataSource --
- *
- *      Return the string datasource for handles in the pool.
- *
- * Results:
- *      String datasource.
- *
- * Side effects:
- *      None.
- *
- *----------------------------------------------------------------------
- */
-
-char *
-Dbi_PoolDataSource(char *pool)
-{
-    Pool *poolPtr = GetPool(pool);
-
-    if (poolPtr == NULL) {
-        return NULL;
-    }
-
-    return poolPtr->datasource;
+    return (sdataPtr ? (Dbi_Pool *) sdataPtr->defpoolPtr : NULL);
 }
 
 
@@ -227,12 +197,12 @@ Dbi_PoolDataSource(char *pool)
  */
 
 char *
-Dbi_PoolDbType(char *pool)
+Dbi_PoolDbType(Dbi_Pool *poolPtr)
 {
     Dbi_Handle *handle;
     char       *dbtype;
 
-    if ((Dbi_PoolGetHandle(&handle, NULL, pool)) != NS_OK) {
+    if ((Dbi_PoolGetHandle(&handle, NULL, poolPtr)) != NS_OK) {
         return NULL;
     }
     dbtype = Dbi_DriverDbType(handle);
@@ -259,12 +229,12 @@ Dbi_PoolDbType(char *pool)
  */
 
 char *
-Dbi_PoolDriverName(char *pool)
+Dbi_PoolDriverName(Dbi_Pool *poolPtr)
 {
     Dbi_Handle *handle;
     char       *name;
 
-    if ((Dbi_PoolGetHandle(&handle, NULL, pool)) != NS_OK) {
+    if ((Dbi_PoolGetHandle(&handle, NULL, poolPtr)) != NS_OK) {
         return NULL;
     }
     name = Dbi_DriverName(handle);
@@ -277,12 +247,13 @@ Dbi_PoolDriverName(char *pool)
 /*
  *----------------------------------------------------------------------
  *
- * Dbi_PoolNHandles --
+ * Dbi_PoolList --
  *
- *      Return the number of handles available in the pool.
+ *      Append the list of all pools available to the virtual server
+ *      to the supplied DString.
  *
  * Results:
- *      Number of handles.
+ *      NS_ERROR if server doesn't exist.
  *
  * Side effects:
  *      None.
@@ -291,98 +262,22 @@ Dbi_PoolDriverName(char *pool)
  */
 
 int
-Dbi_PoolNHandles(char *pool)
+Dbi_PoolList(Ns_DString *ds, char *server)
 {
-    Pool *poolPtr = GetPool(pool);
+    ServData       *sdataPtr = GetServer(server);
+    Pool           *poolPtr;
+    Tcl_HashEntry  *hPtr;
+    Tcl_HashSearch  search;
 
-    if (poolPtr == NULL) {
-        return 0;
+    if (sdataPtr == NULL) {
+        return NS_ERROR;
     }
-
-    return poolPtr->nhandles;
-}
-
-
-/*
- *----------------------------------------------------------------------
- *
- * Dbi_PoolPassword --
- *
- *      Return the string password for handles in the pool.
- *
- * Results:
- *      String password.
- *
- * Side effects:
- *      None.
- *
- *----------------------------------------------------------------------
- */
-
-char *
-Dbi_PoolPassword(char *pool)
-{
-    Pool *poolPtr = GetPool(pool);
-
-    if (poolPtr == NULL) {
-        return NULL;
+    hPtr = Tcl_FirstHashEntry(&sdataPtr->allowedTable, &search);
+    while (hPtr != NULL) {
+        poolPtr = (Pool *) Tcl_GetHashKey(&sdataPtr->allowedTable, hPtr);
+        Ns_DStringAppendElement(ds, poolPtr->name);
     }
-
-    return poolPtr->password;
-}
-
-
-/*
- *----------------------------------------------------------------------
- *
- * Dbi_PoolUser --
- *
- *      Return the string username for handles in the pool.
- *
- * Results:
- *      String username.
- *
- * Side effects:
- *      None.
- *
- *----------------------------------------------------------------------
- */
-
-char *
-Dbi_PoolUser(char *pool)
-{
-    Pool *poolPtr = GetPool(pool);
-
-    if (poolPtr == NULL) {
-        return NULL;
-    }
-
-    return poolPtr->user;
-}
-
-
-/*
- *----------------------------------------------------------------------
- *
- * Dbi_PoolList --
- *
- *      Return the list of all pools.
- *
- * Results:
- *      Double-null terminated list of pool names.
- *
- * Side effects:
- *      None.
- *
- *----------------------------------------------------------------------
- */
-
-char *
-Dbi_PoolList(char *server)
-{
-    ServData *sdataPtr = GetServer(server);
-
-    return (sdataPtr ? sdataPtr->allowed : NULL);
+    return NS_OK;
 }
 
 
@@ -391,7 +286,7 @@ Dbi_PoolList(char *server)
  *
  * Dbi_PoolAllowable --
  *
- *      Check that access is allowed to a pool.
+ *      Check that virtual server is allowed access to a pool.
  *
  * Results:
  *      NS_TRUE if allowed, NS_FALSE otherwise.
@@ -403,20 +298,17 @@ Dbi_PoolList(char *server)
  */
 
 int
-Dbi_PoolAllowable(char *server, char *pool)
+Dbi_PoolAllowable(char *server, Dbi_Pool *poolPtr)
 {
-    register char *p;
+    ServData *sdataPtr = GetServer(server);
 
-    p = Dbi_PoolList(server);
-    if (p != NULL) {
-        while (*p != '\0') {
-            if (STREQ(pool, p)) {
-                return NS_TRUE;
-            }
-            p = p + strlen(p) + 1;
-        }
+    if (sdataPtr == NULL) {
+        return NS_FALSE;
     }
-    return NS_FALSE;
+    if (Tcl_FindHashEntry(&sdataPtr->allowedTable, (char *) poolPtr) == NULL) {
+        return NS_FALSE;
+    }
+    return NS_TRUE;
 }
 
 
@@ -495,9 +387,11 @@ Dbi_PoolPutHandle(Dbi_Handle *handle)
  */
 
 int
-Dbi_PoolTimedGetHandle(Dbi_Handle **handlePtrPtr, char *server, char *pool, int wait)
+Dbi_PoolTimedGetHandle(Dbi_Handle **handlePtrPtr, char *server,
+                       Dbi_Pool *poolPtr, int wait)
 {
-    return Dbi_PoolTimedGetMultipleHandles(handlePtrPtr, server, pool, 1, wait);
+    return Dbi_PoolTimedGetMultipleHandles(handlePtrPtr, server,
+                                           poolPtr, 1, wait);
 }
 
 
@@ -518,9 +412,10 @@ Dbi_PoolTimedGetHandle(Dbi_Handle **handlePtrPtr, char *server, char *pool, int 
  */
 
 int
-Dbi_PoolGetHandle(Dbi_Handle **handlePtrPtr, char *server, char *pool)
+Dbi_PoolGetHandle(Dbi_Handle **handlePtrPtr, char *server,
+                  Dbi_Pool *poolPtr)
 {
-    return Dbi_PoolTimedGetHandle(handlePtrPtr, server, pool, 0);
+    return Dbi_PoolTimedGetHandle(handlePtrPtr, server, poolPtr, 0);
 }
 
 
@@ -543,9 +438,10 @@ Dbi_PoolGetHandle(Dbi_Handle **handlePtrPtr, char *server, char *pool)
 
 int
 Dbi_PoolGetMultipleHandles(Dbi_Handle **handles, char *server,
-                           char *pool, int nwant)
+                           Dbi_Pool *poolPtr, int nwant)
 {
-    return Dbi_PoolTimedGetMultipleHandles(handles, server, pool, nwant, 0);
+    return Dbi_PoolTimedGetMultipleHandles(handles, server,
+                                           poolPtr, nwant, 0);
 }
 
 
@@ -570,13 +466,12 @@ Dbi_PoolGetMultipleHandles(Dbi_Handle **handles, char *server,
  */
 
 int
-Dbi_PoolTimedGetMultipleHandles(Dbi_Handle **handles, char *server, 
-                                char *pool, int nwant, int wait)
+Dbi_PoolTimedGetMultipleHandles(Dbi_Handle **handles, char *server,
+                                Dbi_Pool *pool, int nwant, int wait)
 {
-    ServData  *sdataPtr;
     Handle    *handlePtr;
     Handle   **handlesPtrPtr = (Handle **) handles;
-    Pool      *poolPtr;
+    Pool      *poolPtr = (Pool *) pool;
     Ns_Time    timeout, *timePtr;
     int        i, ngot, status;
 
@@ -585,17 +480,12 @@ Dbi_PoolTimedGetMultipleHandles(Dbi_Handle **handles, char *server,
      * If a pool isn't specified, pick the default pool.
      */
 
-    if (pool == NULL || *pool == '\0') {
-        pool = Dbi_PoolDefault(server);
-        if (pool == NULL) {
+    if (poolPtr == NULL) {
+        poolPtr = (Pool *) Dbi_PoolDefault(server);
+        if (poolPtr == NULL) {
             Ns_Log(Error, "dbiinit: pool not specified and no default available");
             return NS_ERROR;
         }
-    }
-    poolPtr = GetPool(pool);
-    if (poolPtr == NULL) {
-        Ns_Log(Error, "dbiinit: no such pool '%s'", pool);
-        return NS_ERROR;
     }
 
     /*
@@ -606,14 +496,14 @@ Dbi_PoolTimedGetMultipleHandles(Dbi_Handle **handles, char *server,
     if (poolPtr->nhandles < nwant) {
         Ns_Log(Error, "dbiinit: "
                "failed to get %d handles from a dbi pool of only %d handles: '%s'",
-               nwant, poolPtr->nhandles, pool);
+               nwant, poolPtr->nhandles, poolPtr->name);
         return NS_ERROR;
     }
     ngot = IncrCount(poolPtr, nwant);
     if (ngot > 0) {
         Ns_Log(Error, "dbiinit: dbi handle limit exceeded: "
                "thread already owns %d handle%s from pool '%s'",
-               ngot, ngot == 1 ? "" : "s", pool);
+               ngot, ngot == 1 ? "" : "s", poolPtr->name);
         IncrCount(poolPtr, -nwant);
         return NS_ERROR;
     }
@@ -711,12 +601,11 @@ Dbi_PoolTimedGetMultipleHandles(Dbi_Handle **handles, char *server,
  */
 
 int
-Dbi_BouncePool(char *pool)
+Dbi_BouncePool(Dbi_Pool *pool)
 {
-    Pool    *poolPtr;
+    Pool    *poolPtr = (Pool *) pool;
     Handle  *handlePtr;
 
-    poolPtr = GetPool(pool);
     if (poolPtr == NULL) {
         return NS_ERROR;
     }
@@ -814,8 +703,7 @@ DbiInitServer(char *server)
     ServData       *sdataPtr;
     Tcl_HashEntry  *hPtr;
     Tcl_HashSearch  search;
-    char           *path, *pool, *p;
-    Ns_DString      ds;
+    char           *path, *pool, *pools, *p;
     int             new;
 
     path = Ns_ConfigGetPath(server, NULL, "dbi", NULL);
@@ -827,12 +715,12 @@ DbiInitServer(char *server)
     sdataPtr = ns_malloc(sizeof(ServData));
     hPtr = Tcl_CreateHashEntry(&serversTable, server, &new);
     Tcl_SetHashValue(hPtr, sdataPtr);
-    sdataPtr->defpool = Ns_ConfigGetValue(path, "defaultpool");
-    if (sdataPtr->defpool != NULL) {
-        hPtr = Tcl_FindHashEntry(&poolsTable, sdataPtr->defpool);
+
+    pool = Ns_ConfigGetValue(path, "defaultpool");
+    if (pool != NULL) {
+        hPtr = Tcl_FindHashEntry(&poolsTable, pool);
         if (hPtr == NULL) {
-            Ns_Log(Error, "dbiinit: no such default pool '%s'", sdataPtr->defpool);
-            sdataPtr->defpool = NULL;
+            Ns_Log(Error, "dbiinit: no such default pool '%s'", pool);
             sdataPtr->defpoolPtr = NULL;
         } else {
             sdataPtr->defpoolPtr = Tcl_GetHashValue(hPtr);
@@ -843,40 +731,37 @@ DbiInitServer(char *server)
      * Construct the allowed list and call the server-specific init.
      */
 
-    sdataPtr->allowed = "";
-    pool = Ns_ConfigGetValue(path, "pools");
-    if (pool != NULL && poolsTable.numEntries > 0) {
-        Ns_DStringInit(&ds);
-        if (STREQ(pool, "*")) {
+    Tcl_InitHashTable(&sdataPtr->allowedTable, TCL_ONE_WORD_KEYS);
+    pools = Ns_ConfigGetValue(path, "pools");
+
+    if (pools != NULL && poolsTable.numEntries > 0) {
+        if (STREQ(pools, "*")) {
             hPtr = Tcl_FirstHashEntry(&poolsTable, &search);
             while (hPtr != NULL) {
                 poolPtr = Tcl_GetHashValue(hPtr);
                 DbiDriverInit(server, poolPtr->driverPtr);
-                Ns_DStringAppendArg(&ds, poolPtr->name);
+                Tcl_CreateHashEntry(&sdataPtr->allowedTable, (char *) poolPtr, &new);
                 hPtr = Tcl_NextHashEntry(&search);
             }
         } else {
-            p = pool;
+            p = pools;
             while (p != NULL && *p != '\0') {
-                p = strchr(pool, ',');
+                p = strchr(pools, ',');
                 if (p != NULL) {
                     *p = '\0';
                 }
-                hPtr = Tcl_FindHashEntry(&poolsTable, pool);
+                hPtr = Tcl_FindHashEntry(&poolsTable, pools);
                 if (hPtr != NULL) {
                     poolPtr = Tcl_GetHashValue(hPtr);
                     DbiDriverInit(server, poolPtr->driverPtr);
-                    Ns_DStringAppendArg(&ds, poolPtr->name);
+                    Tcl_CreateHashEntry(&sdataPtr->allowedTable, (char *) poolPtr, &new);
                 }
                 if (p != NULL) {
                     *p++ = ',';
                 }
-                pool = p;
+                pools = p;
             }
         }
-        sdataPtr->allowed = ns_malloc((size_t)(ds.length + 1));
-        memcpy(sdataPtr->allowed, ds.string, (size_t)(ds.length + 1));
-        Ns_DStringFree(&ds);
     }
 }
 
@@ -969,36 +854,6 @@ DbiGetDriver(Dbi_Handle *handle)
     }
 
     return NULL;
-}
-
-
-/*
- *----------------------------------------------------------------------
- *
- * GetPool --
- *
- *      Return the Pool structure for the given pool name.
- *
- * Results:
- *      Pointer to Pool structure or NULL if pool does not exist.
- *
- * Side effects:
- *      None.
- *
- *----------------------------------------------------------------------
- */
-
-static Pool *
-GetPool(char *pool)
-{
-    Tcl_HashEntry   *hPtr;
-
-    hPtr = Tcl_FindHashEntry(&poolsTable, pool);
-    if (hPtr == NULL) {
-        return NULL;
-    }
-
-    return (Pool *) Tcl_GetHashValue(hPtr);
 }
 
 
