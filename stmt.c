@@ -148,8 +148,8 @@ ParseBindVars(Statement *stmtPtr, const char *sql, int len)
     char       *p, *chunk, *bind, save;
     int         quote = 0;
 
-#define preveq(c) (p != ds.string && *(p-1) != (c))
-#define nexteq(c) (*(p+1) != (c))
+#define preveq(c) (p != ds.string && *(p-1) == (c))
+#define nexteq(c) (*(p+1) == (c))
 
     if (driver->bindVarProc == NULL) {
         Ns_DStringNAppend(&stmtPtr->dsSql, sql, len);
