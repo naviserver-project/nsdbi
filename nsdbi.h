@@ -60,7 +60,6 @@
 typedef struct Dbi_Pool {
     char             *name;
     char             *description;
-    char             *driver;
     char             *datasource;
     char             *user;
     char             *password;

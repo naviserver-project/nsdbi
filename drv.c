@@ -57,8 +57,7 @@ static Tcl_HashTable driversTable;
  *      NS_OK if procs registered, NS_ERROR otherwise.
  *
  * Side effects:
- *      Driver structure is allocated and function pointers are set
- *      to the given array of procs.
+ *      Driver structure is stashed in the driversTable.
  *
  *----------------------------------------------------------------------
  */
@@ -295,6 +294,7 @@ Dbi_NextValue(Dbi_Handle *handle, char **value, int *vLen, char **column, int *c
     if (handlePtr->currentCol == handlePtr->numCols) {
         handlePtr->currentCol = 0;
     }
+
     if ((status = DbiValue(handle, value, vLen)) == NS_ERROR) {
         return NS_ERROR;
     }
@@ -414,7 +414,9 @@ Dbi_Flush(Dbi_Handle *handle)
     Handle     *handlePtr = (Handle *) handle;
     int         status = NS_ERROR;
 
-    if (driverPtr->flushProc != NULL && handlePtr->connected) {
+    if (driverPtr->flushProc != NULL
+        && handlePtr->connected
+        && handlePtr->fetchingRows) {
 
         status = (*driverPtr->flushProc)(handle);
 
@@ -454,10 +456,14 @@ Dbi_ResetHandle (Dbi_Handle *handle)
 
         status = (*driverPtr->resetProc)(handle);
 
+        handlePtr->fetchingRows = NS_FALSE;
+        handlePtr->numRows = handlePtr->numCols = 0;
+        handlePtr->currentRow = handlePtr->currentCol = 0;
+
         handlePtr->cExceptionCode[0] = '\0';
         Ns_DStringTrunc(&handlePtr->dsExceptionMsg, 0);
     }
-    
+
     return status;
 }
 
@@ -490,6 +496,20 @@ DbiLoadDriver(char *name)
         Tcl_InitHashTable(&driversTable, TCL_STRING_KEYS);
         initialized = NS_TRUE;
     }
+
+    /*
+     * Check if driver was already loaded.
+     */
+
+    hPtr = Tcl_FindHashEntry(&driversTable, name);
+    if (hPtr != NULL) {
+        driverPtr = (Dbi_Driver *) Tcl_GetHashValue(hPtr);
+        return driverPtr;
+    }
+
+    /*
+     * Load new driver.
+     */
 
     module = Ns_ConfigGetValue("ns/dbi/drivers", name);
     if (module == NULL) {

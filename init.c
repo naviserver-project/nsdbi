@@ -845,49 +845,47 @@ CreatePool(char *pool, char *path, char *driver)
         Ns_Log(Error, "nsdbi: missing datasource for pool '%s'", pool);
         return NULL;
     }
-    poolPtr = ns_malloc(sizeof(Pool));
-    poolPtr->driver = driver;
-    poolPtr->driverPtr = driverPtr;
+    poolPtr = ns_calloc((size_t) 1, sizeof(Pool));
+    poolPtr->name        = pool;
+    poolPtr->driverPtr   = driverPtr;
+    poolPtr->datasource  = datasource;
+    poolPtr->user        = Ns_ConfigGetValue(path, "user");
+    poolPtr->password    = Ns_ConfigGetValue(path, "password");
+    poolPtr->description = Ns_ConfigGetValue("ns/dbi/pools", pool);
     Ns_MutexInit(&poolPtr->lock);
     Ns_MutexSetName2(&poolPtr->lock, "nsdbi", pool);
     Ns_CondInit(&poolPtr->getCond);
-    poolPtr->datasource = datasource;
-    poolPtr->name = pool;
-    poolPtr->waiting = 0;
-    poolPtr->user = Ns_ConfigGetValue(path, "user");
-    poolPtr->password = Ns_ConfigGetValue(path, "password");
-    poolPtr->description = Ns_ConfigGetValue("ns/dbi/pools", pool);
-    poolPtr->stale_on_close = 0;
-    poolPtr->fVerbose = Ns_ConfigBool(path, "verbose", NS_FALSE);
-    poolPtr->fVerboseError = Ns_ConfigBool(path, "logsqlerrors", NS_FALSE);
-    poolPtr->nhandles = Ns_ConfigIntRange(path, "connections", 2, 0, INT_MAX);
-    poolPtr->maxidle = Ns_ConfigIntRange(path, "maxidle", 0, 0, INT_MAX);
-    poolPtr->maxopen = Ns_ConfigIntRange(path, "maxopen", 0, 0, INT_MAX);
 
-    poolPtr->firstPtr = poolPtr->lastPtr = NULL;
-    for (i = 0; i < poolPtr->nhandles; ++i) {
-        handlePtr = ns_malloc(sizeof(Handle));
-        handlePtr->poolPtr = (Dbi_Pool *) poolPtr;
-        handlePtr->connected = NS_FALSE;
-        handlePtr->fetchingRows = 0;
-        handlePtr->numRows = 0;
-        handlePtr->currentRow = 0;
-        handlePtr->numCols = 0;
-        handlePtr->currentCol = 0;
-        handlePtr->arg = NULL;
-        handlePtr->cExceptionCode[0] = '\0';
-        Ns_DStringInit(&handlePtr->dsExceptionMsg);
-        handlePtr->otime = handlePtr->atime = 0;
-        handlePtr->stale = NS_FALSE;
-        handlePtr->stale_on_close = 0;
-
-        ReturnHandle(handlePtr);
+    Ns_ConfigGetBool(path, "verbose", &poolPtr->fVerbose);
+    Ns_ConfigGetBool(path, "logsqlerrors", &poolPtr->fVerboseError);
+    if (!Ns_ConfigGetInt(path, "connections", &poolPtr->nhandles)
+        || poolPtr->nhandles <= 0) {
+        Ns_Log(Notice, "nsdbi: setting connections for '%s' to %d", pool, 2);
+        poolPtr->nhandles = 2;
+    }
+    if (!Ns_ConfigGetInt(path, "maxidle", (int *) &poolPtr->maxidle)
+        || poolPtr->maxidle < 0) {
+        poolPtr->maxidle = 0;
+    }
+    if (!Ns_ConfigGetInt(path, "maxopen", (int *) &poolPtr->maxopen)
+        || poolPtr->maxopen < 0) {
+        poolPtr->maxopen = 0;
     }
     if (poolPtr->maxidle || poolPtr->maxopen) {
-        i = Ns_ConfigIntRange(path, "checkinterval", 600, 0, INT_MAX);
-        Ns_Log(Notice, "nsdbi: checking pools every %d seconds", i);
+        if (!Ns_ConfigGetInt(path, "checkinterval", &i) || i < 0) {
+            i = 600;        /* 10 minutes. */
+        }
+        Ns_Log(Notice, "nsdbi: checking pool '%s' every %d seconds", pool, i);
         Ns_ScheduleProc(CheckPool, poolPtr, 0, i);
     }
+    poolPtr->firstPtr = poolPtr->lastPtr = NULL;
+    handlePtr = ns_calloc((size_t) poolPtr->nhandles, sizeof(Handle));
+    for (i = 0; i < poolPtr->nhandles; i++, handlePtr++) {
+        handlePtr->poolPtr = (Dbi_Pool *) poolPtr;
+        Ns_DStringInit(&handlePtr->dsExceptionMsg);
+        ReturnHandle(handlePtr);
+    }
+
     return poolPtr;
 }
 

@@ -46,7 +46,6 @@ typedef struct Pool {
 
     char              *name;
     char              *description;
-    char              *driver;
     char              *datasource;
     char              *user;
     char              *password;
