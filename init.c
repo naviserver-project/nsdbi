@@ -1072,10 +1072,10 @@ IsStale(Handle *handlePtr, time_t now)
     if (handlePtr->connected) {
         minAccess = now - poolPtr->maxidle;
         minOpen = now - poolPtr->maxopen;
-        if ((poolPtr->maxidle && handlePtr->atime < minAccess) || 
-            (poolPtr->maxopen && (handlePtr->otime < minOpen)) ||
-            (handlePtr->stale == NS_TRUE) ||
-            (poolPtr->stale_on_close > handlePtr->stale_on_close)) {
+        if ((poolPtr->maxidle && (handlePtr->atime < minAccess))
+            || (poolPtr->maxopen && (handlePtr->otime < minOpen))
+            || (handlePtr->stale == NS_TRUE)
+            || (poolPtr->stale_on_close > handlePtr->stale_on_close)) {
 
             if (poolPtr->fVerbose) {
                 Ns_Log(Notice, "dbiinit: closing %s handle in pool '%s'",
@@ -1238,8 +1238,8 @@ CreatePool(char *pool, char *path, char *driver)
     poolPtr->fVerbose = Ns_ConfigBool(path, "verbose", NS_FALSE);
     poolPtr->fVerboseError = Ns_ConfigBool(path, "logsqlerrors", NS_FALSE);
     poolPtr->nhandles = Ns_ConfigIntRange(path, "connections", 2, 0, INT_MAX);
-    poolPtr->maxidle = Ns_ConfigIntRange(path, "maxidle", 600, 0, INT_MAX);
-    poolPtr->maxopen = Ns_ConfigIntRange(path, "maxopen", 3600, 0, INT_MAX);
+    poolPtr->maxidle = Ns_ConfigIntRange(path, "maxidle", 0, 0, INT_MAX);
+    poolPtr->maxopen = Ns_ConfigIntRange(path, "maxopen", 0, 0, INT_MAX);
 
     poolPtr->firstPtr = poolPtr->lastPtr = NULL;
     for (i = 0; i < poolPtr->nhandles; ++i) {
@@ -1260,8 +1260,11 @@ CreatePool(char *pool, char *path, char *driver)
 
         ReturnHandle(handlePtr);
     }
-    Ns_ScheduleProc(CheckPool, poolPtr, 0,
-                    Ns_ConfigIntRange(path, "checkinterval", 600, 0, INT_MAX));
+    if (poolPtr->maxidle || poolPtr->maxopen) {
+        i = Ns_ConfigIntRange(path, "checkinterval", 600, 0, INT_MAX);
+        Ns_Log(Notice, "dbiinit: checking pools every %d seconds", i);
+        Ns_ScheduleProc(CheckPool, poolPtr, 0, i);
+    }
     return poolPtr;
 }
 
