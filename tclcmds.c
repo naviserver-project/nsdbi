@@ -60,34 +60,36 @@ static int SqlException(InterpData *idataPtr, Dbi_Handle *handle);
 static int Exception(Tcl_Interp *interp, char *code, char *info, char *msg, ...);
 static int SingleRowCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[], int req);
 
-static Tcl_ObjCmdProc
-    Tcl0or1rowCmd, Tcl1rowCmd, TclRowsCmd, TclDmlCmd, TclPoolCmd,
-    TclPoolsCmd, TclDefaultpoolCmd, TclBouncepoolCmd;
-
 static Ns_TclDeferProc ReleaseAllHandles;
 static Tcl_InterpDeleteProc FreeData;
+
+static Tcl_ObjCmdProc
+    Tcl0or1rowCmd, Tcl1rowCmd, TclRowsCmd, TclDmlCmd, TclReleasehandlesCmd,
+    TclPoolCmd, TclPoolsCmd, TclDefaultpoolCmd, TclBouncepoolCmd;
 
 
 /*
  * Static variables defined in this file.
  */
 
-static char *datakey = "dbi:data";
-
 static struct Cmd {
     char           *name;
     Tcl_ObjCmdProc *objProc;
 } cmds[] = {
-    {"dbi_0or1row",       Tcl0or1rowCmd},
-    {"dbi_1row",          Tcl1rowCmd},
-    {"dbi_rows",          TclRowsCmd},
-    {"dbi_dml",           TclDmlCmd},
-    {"dbi_pool",          TclPoolCmd},
-    {"dbi_pools",         TclPoolsCmd},
-    {"dbi_defaultpool",   TclDefaultpoolCmd},
-    {"dbi_bouncepool",    TclBouncepoolCmd},
+    {"dbi_0or1row",        Tcl0or1rowCmd},
+    {"dbi_1row",           Tcl1rowCmd},
+    {"dbi_rows",           TclRowsCmd},
+    {"dbi_dml",            TclDmlCmd},
+    {"dbi_releasehandles", TclReleasehandlesCmd},
+    {"dbi_pool",           TclPoolCmd},
+    {"dbi_pools",          TclPoolsCmd},
+    {"dbi_defaultpool",    TclDefaultpoolCmd},
+    {"dbi_bouncepool",     TclBouncepoolCmd},
     {NULL, NULL}
 };
+
+static char *datakey = "dbi:data";
+
 
 
 /*
@@ -482,7 +484,7 @@ TclRowsCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *CONST o
     InterpData *idataPtr = clientData;
     Dbi_Handle  *handle;
     char        *value;
-    int          len, status, ignore;
+    int          len, status, nrows, ncols;
     Tcl_Obj     *result;
     
 
@@ -494,8 +496,12 @@ TclRowsCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *CONST o
     if (handle == NULL) {
         return TCL_ERROR;
     }
-    if (Dbi_Select(handle, Tcl_GetString(objv[objc - 1]), &ignore, &ignore) != NS_OK) {
+    if (Dbi_Select(handle, Tcl_GetString(objv[objc - 1]), &nrows, &ncols) != NS_OK) {
         return SqlException(idataPtr, handle);
+    }
+    if (nrows == 0) {
+        ReleaseHandle(idataPtr, handle);
+        return TCL_OK;
     }
     result = Tcl_GetObjResult(interp);
     do {
@@ -516,7 +522,34 @@ TclRowsCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *CONST o
 
 /*
  *----------------------------------------------------------------------
- * BGetHandle --
+ *
+ * TclReleasehandlesCmd --
+ *
+ *      Implements dbi_releasehandles command.
+ *      Release all handles currently cached for this interpreter.
+ *
+ * Results:
+ *      Tcl result.
+ *
+ * Side effects:
+ *      None.
+ *
+ *----------------------------------------------------------------------
+ */
+
+static int
+TclReleasehandlesCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
+{
+    InterpData *idataPtr = clientData;
+
+    ReleaseAllHandles(interp, idataPtr);
+    return TCL_OK;
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ * GetHandle --
  *
  *      Common function to get a database handle for commands which need
  *      one.  Use server default pool if none specified.
@@ -583,7 +616,6 @@ GetHandle(InterpData *idataPtr, int objc, Tcl_Obj *CONST objv[])
     hPtr = Tcl_FindHashEntry(&idataPtr->handles, pool);
     if (hPtr != NULL) {
         handlePtr = (Dbi_Handle*) Tcl_GetHashValue(hPtr);
-        Ns_Log(Warning, "GetHandle: found cached handle for pool %s", pool);
         return handlePtr;
     }
 
@@ -612,16 +644,12 @@ GetHandle(InterpData *idataPtr, int objc, Tcl_Obj *CONST objv[])
      */
 
     if (((Pool *)poolPtr)->cache_handles) {
-        Ns_Log(Warning, "GetHandle: caching handle for pool %s", pool);
-
         hPtr = Tcl_CreateHashEntry(&idataPtr->handles, pool, &new);
         Tcl_SetHashValue(hPtr, handlePtr);
         if (!idataPtr->cleanup) {
             Ns_TclRegisterDeferred(interp, ReleaseAllHandles, idataPtr);
             idataPtr->cleanup = 1;
         }
-    } else {
-        Ns_Log(Warning, "GetHandle: caching turned off for pool %s", pool);
     }
 
     return handlePtr;
@@ -633,7 +661,7 @@ GetHandle(InterpData *idataPtr, int objc, Tcl_Obj *CONST objv[])
  * ReleaseHandle --
  *
  *      Release a handle back to it's pool so it can be reused by
- *      other interps.
+ *      other interps unless handle caching is enabled for this pool.
  *
  * Results:
  *      None.
@@ -692,9 +720,6 @@ ReleaseAllHandles(Tcl_Interp *interp, void *arg)
     }
     Tcl_DeleteHashTable(&idataPtr->handles);
     Tcl_InitHashTable(&idataPtr->handles, TCL_STRING_KEYS);
-    idataPtr->cleanup = 0;
-
-    Ns_Log(Warning, "ReleaseAllHandles: released %d handles", i);
 }
 
 
@@ -838,9 +863,7 @@ FreeData(ClientData arg, Tcl_Interp *interp)
 {
     InterpData *idataPtr = arg;
 
-    Ns_Log(Warning, "FreeData: freeing...");
     ReleaseAllHandles(interp, idataPtr);
-
     Tcl_DeleteHashTable(&idataPtr->handles);
     ns_free(idataPtr);
 }
