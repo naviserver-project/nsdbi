@@ -27,10 +27,10 @@
  * version of this file under either the License or the GPL.
  */
 
-/* 
+/*
  * nsdbi.c --
  *
- *	Database module entry point.
+ *      Database module entry point.
  */
 
 #include "dbi.h"
@@ -45,13 +45,13 @@ int Ns_ModuleVersion = 1;
  *
  * Ns_ModuleInit --
  *
- *	Module initialization point.
+ *      Module initialization point.
  *
  * Results:
- *	NS_OK or NS_ERROR.
+ *      NS_OK or NS_ERROR.
  *
  * Side effects:
- *	May load database drivers and configure pools.
+ *      May load database drivers and configure pools.
  *
  *----------------------------------------------------------------------
  */
@@ -62,8 +62,8 @@ Ns_ModuleInit(char *server, char *module)
     static int once;
 
     if (!once) {
-	DbiInitPools();
-	once = 1;
+        DbiInitPools();
+        once = 1;
     }
     DbiInitServer(server);
     if (Ns_TclRegisterTrace(server, DbiAddCmds, server,

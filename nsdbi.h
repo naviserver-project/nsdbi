@@ -32,7 +32,7 @@
  *
  *      Public types and function declarations for the nsdbi module.
  *
- *	$Header$
+ *  $Header$
  */
 
 #ifndef NSDBI_H
@@ -44,12 +44,12 @@
  * The following are dbi return codes.
  */
 
-#define DBI_DML  		  1
-#define DBI_ROWS 		  2
-#define DBI_END_DATA 		  4
-#define DBI_NO_DATA 		  8
+#define DBI_DML                1
+#define DBI_ROWS               2
+#define DBI_END_DATA           4
+#define DBI_NO_DATA            8
 
-/* 
+/*
  * The following enum defines known dbi driver function ids.
  */
 
@@ -80,11 +80,11 @@ typedef enum {
 
 /*
  * Database procedure structure used when registering
- * a driver. 
+ * a driver.
  */
 
 typedef struct Dbi_Proc {
-    Dbi_ProcId id;
+    Dbi_ProcId  id;
     void       *func;
 } Dbi_Proc;
 
@@ -139,10 +139,10 @@ NS_EXTERN int Dbi_Cancel(Dbi_Handle *handle);
 NS_EXTERN int Dbi_ResetHandle(Dbi_Handle *handle);
 NS_EXTERN int Dbi_SpStart(Dbi_Handle *handle, char *procname);
 NS_EXTERN int Dbi_SpSetParam(Dbi_Handle *handle, char *paramname,
-			   char *paramtype, char *inout, char *value);
+                             char *paramtype, char *inout, char *value);
 NS_EXTERN int Dbi_SpExec(Dbi_Handle *handle);
 NS_EXTERN int Dbi_SpReturnCode(Dbi_Handle *handle, char *returnCode,
-			     int bufsize);
+                               int bufsize);
 NS_EXTERN Ns_Set *Dbi_SpGetParams(Dbi_Handle *handle);
 
 /*
@@ -157,9 +157,9 @@ NS_EXTERN void Dbi_PoolPutHandle(Dbi_Handle *handle);
 NS_EXTERN Dbi_Handle *Dbi_PoolTimedGetHandle(char *pool, int wait);
 NS_EXTERN Dbi_Handle *Dbi_PoolGetHandle(char *pool);
 NS_EXTERN int Dbi_PoolGetMultipleHandles(Dbi_Handle **handles, char *pool,
-				       int nwant);
+                                         int nwant);
 NS_EXTERN int Dbi_PoolTimedGetMultipleHandles(Dbi_Handle **handles, char *pool,
-					    int nwant, int wait);
+                                              int nwant, int wait);
 NS_EXTERN int Dbi_BouncePool(char *pool);
 
 /*
@@ -167,12 +167,12 @@ NS_EXTERN int Dbi_BouncePool(char *pool);
  */
 
 NS_EXTERN int Dbi_TclGetHandle(Tcl_Interp *interp, char *handleId,
-			     Dbi_Handle **handle);
+                               Dbi_Handle **handle);
 
 /*
  * util.c:
  */
-    
+
 NS_EXTERN void Dbi_QuoteValue(Ns_DString *pds, char *string);
 NS_EXTERN Ns_Set *Dbi_0or1Row(Dbi_Handle *handle, char *sql, int *nrows);
 NS_EXTERN Ns_Set *Dbi_1Row(Dbi_Handle *handle, char *sql);

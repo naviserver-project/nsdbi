@@ -28,10 +28,10 @@
  */
 
 
-/* 
+/*
  * util.c --
  *
- *	Utility db routines.
+ *      Utility db routines.
  */
 
 #include "dbi.h"
@@ -50,14 +50,14 @@ NS_RCSID("@(#) $Header$");
  *
  * Dbi_QuoteValue --
  *
- *	Add single quotes around an SQL string value if necessary.
+ *      Add single quotes around an SQL string value if necessary.
  *
  * Results:
- *	None.
+ *      None.
  *
  * Side effects:
- *	Copy of the string, modified if needed, is placed in the 
- *	given Ns_DString.
+ *      Copy of the string, modified if needed, is placed in the 
+ *      given Ns_DString.
  *
  *----------------------------------------------------------------------
  */
@@ -80,17 +80,17 @@ Dbi_QuoteValue(Ns_DString *pds, char *string)
  *
  * Dbi_0or1Row --
  *
- *	Send an SQL statement which should return either no rows or
- *	exactly one row.
+ *      Send an SQL statement which should return either no rows or
+ *      exactly one row.
  *
  * Results:
- *	Pointer to new Ns_Set which must be eventually freed.  The
- *	set includes the names of the columns and, if a row was
- *	fetched, the values for the row.  On error, returns NULL.
+ *      Pointer to new Ns_Set which must be eventually freed.  The
+ *      set includes the names of the columns and, if a row was
+ *      fetched, the values for the row.  On error, returns NULL.
  *
  * Side effects:
- *	Given nrows pointer is set to 0 or 1 to indicate if a row
- *	was actually returned.
+ *      Given nrows pointer is set to 0 or 1 to indicate if a row
+ *      was actually returned.
  *
  *----------------------------------------------------------------------
  */
@@ -105,24 +105,24 @@ Dbi_0or1Row(Dbi_Handle *handle, char *sql, int *nrows)
         if (Dbi_GetRow(handle, row) == DBI_END_DATA) {
             *nrows = 0;
         } else {
-	    switch (Dbi_GetRow(handle, row)) {
-		case DBI_END_DATA:
-		    *nrows = 1;
-		    break;
+            switch (Dbi_GetRow(handle, row)) {
+            case DBI_END_DATA:
+                *nrows = 1;
+                break;
 
-		case NS_OK:
-		    Dbi_SetException(handle, DBI_SQLERRORCODE,
-			"Query returned more than one row.");
-		    Dbi_Flush(handle);
-		    /* FALLTHROUGH */
+            case NS_OK:
+                Dbi_SetException(handle, DBI_SQLERRORCODE,
+                                 "Query returned more than one row.");
+                Dbi_Flush(handle);
+                /* FALLTHROUGH */
 
-		case NS_ERROR:
-		    /* FALLTHROUGH */
+            case NS_ERROR:
+                /* FALLTHROUGH */
 
-		default:
-		    return NULL;
-		    break;
-	    }
+            default:
+                return NULL;
+                break;
+            }
         }
         row = Ns_SetCopy(row);
     }
@@ -136,14 +136,14 @@ Dbi_0or1Row(Dbi_Handle *handle, char *sql, int *nrows)
  *
  * Dbi_1Row --
  *
- *	Send a SQL statement which is expected to return exactly 1 row.
+ *      Send a SQL statement which is expected to return exactly 1 row.
  *
  * Results:
- *	Pointer to Ns_Set with row data or NULL on error.  Set must
- *	eventually be freed.
+ *      Pointer to Ns_Set with row data or NULL on error.  Set must
+ *      eventually be freed.
  *
  * Side effects:
- *	None.
+ *      None.
  *
  *----------------------------------------------------------------------
  */
@@ -172,15 +172,15 @@ Dbi_1Row(Dbi_Handle *handle, char *sql)
  *
  * Dbi_InterpretSqlFile --
  *
- *	Parse DML statements from an SQL file and send them to the
- *	database for execution.
+ *      Parse DML statements from an SQL file and send them to the
+ *      database for execution.
  *
  * Results:
- *	NS_OK or NS_ERROR.
+ *      NS_OK or NS_ERROR.
  *
  * Side effects:
- *	Stops on first error.  Transaction protection is provided for
- *	Illustra and "\n-- comments are handled correctly.
+ *      Stops on first error.  Transaction protection is provided for
+ *      Illustra and "\n-- comments are handled correctly.
  *
  *----------------------------------------------------------------------
  */
@@ -208,7 +208,7 @@ Dbi_InterpretSqlFile(Dbi_Handle *handle, char *filename)
     while ((i = getc(fp)) != EOF) {
         lastc = c;
         c = (char) i;
- loopstart:
+    loopstart:
         if (inquote) {
             if (c != '\'') {
                 Ns_DStringNAppend(&dsSql, &c, 1);
@@ -285,13 +285,13 @@ Dbi_InterpretSqlFile(Dbi_Handle *handle, char *filename)
  *
  * Dbi_SetException --
  *
- *	Set the stored SQL exception code and message in the handle.
+ *      Set the stored SQL exception code and message in the handle.
  *
  * Results:
- *	None.
+ *      None.
  *
  * Side effects:
- *	Code and message are updated.
+ *      Code and message are updated.
  *
  *----------------------------------------------------------------------
  */
