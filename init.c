@@ -149,12 +149,12 @@ static Ns_Tls tls;
 char *
 Dbi_PoolDescription(char *pool)
 {
-    Pool         *poolPtr;
+    Pool *poolPtr = GetPool(pool);
 
-    poolPtr = GetPool(pool);
     if (poolPtr == NULL) {
         return NULL;
     }
+
     return poolPtr->desc;
 }
 
@@ -181,6 +181,188 @@ Dbi_PoolDefault(char *server)
     ServData *sdataPtr = GetServer(server);
 
     return (sdataPtr ? sdataPtr->defpool : NULL);
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * Dbi_PoolDataSource --
+ *
+ *      Return the string datasource for handles in the pool.
+ *
+ * Results:
+ *      String datasource.
+ *
+ * Side effects:
+ *      None.
+ *
+ *----------------------------------------------------------------------
+ */
+
+char *
+Dbi_PoolDataSource(char *pool)
+{
+    Pool *poolPtr = GetPool(pool);
+
+    if (poolPtr == NULL) {
+        return NULL;
+    }
+
+    return poolPtr->source;
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * Dbi_PoolDbType --
+ *
+ *      Return the string DB type of the driver for handles in the pool.
+ *
+ * Results:
+ *      String type or null if handle not available.
+ *
+ * Side effects:
+ *      Database handle is acquired and released.
+ *
+ *----------------------------------------------------------------------
+ */
+
+char *
+Dbi_PoolDbType(char *pool)
+{
+    Dbi_Handle *handle;
+    char       *dbtype;
+
+    handle = Dbi_PoolGetHandle(pool);
+    if (handle == NULL) {
+        return NULL;
+    }
+    dbtype = Dbi_DriverDbType(handle);
+    Dbi_PoolPutHandle(handle);
+
+    return dbtype;
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * Dbi_PoolDriverName --
+ *
+ *      Return the string name of the driver.
+ *
+ * Results:
+ *      String name or null if handle not available.
+ *
+ * Side effects:
+ *      Database handle is acquired and released.
+ *
+ *----------------------------------------------------------------------
+ */
+
+char *
+Dbi_PoolDriverName(char *pool)
+{
+    Dbi_Handle *handle;
+    char       *name;
+
+    handle = Dbi_PoolGetHandle(pool);
+    if (handle == NULL) {
+        return NULL;
+    }
+    name = Dbi_DriverName(handle);
+    Dbi_PoolPutHandle(handle);
+
+    return name;
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * Dbi_PoolNHandles --
+ *
+ *      Return the number of handles available in the pool.
+ *
+ * Results:
+ *      Number of handles.
+ *
+ * Side effects:
+ *      None.
+ *
+ *----------------------------------------------------------------------
+ */
+
+int
+Dbi_PoolNHandles(char *pool)
+{
+    Pool *poolPtr = GetPool(pool);
+
+    if (poolPtr == NULL) {
+        return 0;
+    }
+
+    return poolPtr->nhandles;
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * Dbi_PoolPassword --
+ *
+ *      Return the string password for handles in the pool.
+ *
+ * Results:
+ *      String password.
+ *
+ * Side effects:
+ *      None.
+ *
+ *----------------------------------------------------------------------
+ */
+
+char *
+Dbi_PoolPassword(char *pool)
+{
+    Pool *poolPtr = GetPool(pool);
+
+    if (poolPtr == NULL) {
+        return NULL;
+    }
+
+    return poolPtr->pass;
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * Dbi_PoolUser --
+ *
+ *      Return the string username for handles in the pool.
+ *
+ * Results:
+ *      String username.
+ *
+ * Side effects:
+ *      None.
+ *
+ *----------------------------------------------------------------------
+ */
+
+char *
+Dbi_PoolUser(char *pool)
+{
+    Pool *poolPtr = GetPool(pool);
+
+    if (poolPtr == NULL) {
+        return NULL;
+    }
+
+    return poolPtr->user;
 }
 
 

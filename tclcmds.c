@@ -64,7 +64,7 @@ static Ns_TclDeferProc ReleaseHandles;
 static Tcl_ObjCmdProc Tcl0or1rowCmd, Tcl1rowCmd, TclBindrowCmd, TclBouncepoolCmd,
     TclCancelCmd, TclDisconnectCmd, TclDmlCmd, TclErrorcodeCmd, TclErrormsgCmd,
     TclExceptionCmd, TclExecCmd, TclFlushCmd, TclGethandleCmd, TclGetrowCmd,
-    TclInfoCmd, TclPoolsCmd, TclReleasehandleCmd, TclResethandleCmd,
+    TclPoolCmd, TclPoolsCmd, TclReleasehandleCmd, TclResethandleCmd,
     TclSelectCmd, TclSetexceptionCmd, TclVerboseCmd;
 
 /*
@@ -91,7 +91,7 @@ static struct Cmd {
     {"dbi_flush",         TclFlushCmd},
     {"dbi_gethandle",     TclGethandleCmd},
     {"dbi_getrow",        TclGetrowCmd},
-    {"dbi_info",          TclInfoCmd},
+    {"dbi_pool",          TclPoolCmd},
     {"dbi_pools",         TclPoolsCmd},
     {"dbi_releasehandle", TclReleasehandleCmd},
     {"dbi_resethandle",   TclResethandleCmd},
@@ -996,7 +996,7 @@ TclGetrowCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *CONST
 /*
  *----------------------------------------------------------------------
  *
- * TclInfoCmd --
+ * TclPoolCmd --
  *
  *      ???
  *
@@ -1010,88 +1010,65 @@ TclGetrowCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *CONST
  */
 
 static int
-TclInfoCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
+TclPoolCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
 {
-    InterpData    *idata = clientData;
-    Dbi_Handle    *handle;
+    InterpData *idata = clientData;
+    char       *pool;
 
     static CONST char *opts[] = {
-        "configpath", "connected", "datasource", "dbtype", "driver",
-        "password", "poolname", "pooldescription", "user", NULL
+        "datasource", "dbtype", "default", "description",
+        "driver", "nhandles", "password", "user", NULL
     };
 
-    enum IInfoIdx {
-        IConfigpathIdx, IConnectedIdx, IDatasourceIdx, IDbtypeIdx, IDriverIdx,
-        IPasswordIdx, IPooldescriptionIdx, IPoolnameIdx, IUserIdx
+    enum IPoolIdx {
+        IDatasourceIdx, IDbtypeIdx, IDefaultIdx, IDescriptionIdx,
+        IDriverIdx, INhandlesIdx, IPasswordIdx, IUserIdx
     } opt;
 
-    if (Tcl_GetIndexFromObj(interp, objv[1], opts, "option", 0,
-                            (int *) &opt) != TCL_OK) {
+    if (objc != 3) {
+        Tcl_WrongNumArgs(interp, 1, objv, "option pool");
         return TCL_ERROR;
     }
-
-    if (opt == IConfigpathIdx) {
-        char *section = Ns_ConfigGetPath(idata->server, NULL, "dbi", NULL);
-        Tcl_SetResult(interp, section, TCL_STATIC);
-        return TCL_OK;
-        
-    } else if (opt == IPooldescriptionIdx) {
-        if (objc != 3) {
-            Tcl_WrongNumArgs(interp, 1, objv, "pooldescription poolname");
-            return TCL_ERROR;
-        }
-        Tcl_SetResult(interp, Dbi_PoolDescription(Tcl_GetString(objv[2])), TCL_STATIC);
-        return TCL_OK;
-    } else {
-        if (objc != 3) {
-            Tcl_WrongNumArgs(interp, 1, objv, "option dbiHandle");
-            return TCL_ERROR;
-        }
-    }
-
-    if (DbiGetFreshHandle(idata, interp, Tcl_GetString(objv[2]), &handle, NULL) != TCL_OK) {
+    if (Tcl_GetIndexFromObj(interp, objv[1], opts, "option", 0, (int *) &opt)
+        != TCL_OK) {
         return TCL_ERROR;
     }
+    pool = Tcl_GetString(objv[2]);
 
     switch (opt) {
 
-    case IConfigpathIdx:
-        /* Impossible to get here, already handled. */
-        break;
-
-    case IConnectedIdx:
-        Tcl_SetObjResult(interp, Tcl_NewIntObj(handle->connected));
-        break;
-
     case IDatasourceIdx:
-        Tcl_SetResult(interp, handle->datasource, TCL_STATIC);
+        Tcl_SetObjResult(interp, Tcl_NewStringObj(Dbi_PoolDataSource(pool), -1));
         break;
 
     case IDbtypeIdx:
-        Tcl_SetResult(interp, Dbi_DriverDbType(handle), TCL_STATIC);
+        Tcl_SetObjResult(interp, Tcl_NewStringObj(Dbi_PoolDbType(pool), -1));
+        break;
+
+    case IDefaultIdx:
+        Tcl_SetObjResult(interp, Tcl_NewIntObj(Dbi_PoolDefault(idata->server) ? 1 : 0));
+        break;
+
+    case IDescriptionIdx:
+        Tcl_SetObjResult(interp, Tcl_NewStringObj(Dbi_PoolDescription(pool), -1));
         break;
 
     case IDriverIdx:
-        Tcl_SetResult(interp, Dbi_DriverName(handle), TCL_STATIC);
+        Tcl_SetObjResult(interp, Tcl_NewStringObj(Dbi_PoolDriverName(pool), -1));
+        break;
+
+    case INhandlesIdx:
+        Tcl_SetObjResult(interp, Tcl_NewIntObj(Dbi_PoolNHandles(pool)));
         break;
 
     case IPasswordIdx:
-        Tcl_SetResult(interp, handle->password, TCL_VOLATILE);
-        break;
-
-    case IPoolnameIdx:
-        Tcl_SetResult(interp, handle->poolname, TCL_VOLATILE);
-        break;
-
-    case IPooldescriptionIdx:
-        /* Impossible to get here, already handled. */
+        Tcl_SetObjResult(interp, Tcl_NewStringObj(Dbi_PoolPassword(pool), -1));
         break;
 
     case IUserIdx:
-        Tcl_SetResult(interp, handle->user, TCL_VOLATILE);
+        Tcl_SetObjResult(interp, Tcl_NewStringObj(Dbi_PoolUser(pool), -1));
         break;
     }
-
 
     return TCL_OK;
 }

@@ -139,6 +139,12 @@ NS_EXTERN int Dbi_ResetHandle(Dbi_Handle *handle);
 
 NS_EXTERN char *Dbi_PoolDescription(char *pool);
 NS_EXTERN char *Dbi_PoolDefault(char *server);
+NS_EXTERN char *Dbi_PoolDataSource(char *pool);
+NS_EXTERN char *Dbi_PoolDbType(char *pool);
+NS_EXTERN char *Dbi_PoolDriverName(char *pool);
+NS_EXTERN int Dbi_PoolNHandles(char *pool);
+NS_EXTERN char *Dbi_PoolPassword(char *pool);
+NS_EXTERN char *Dbi_PoolUser(char *pool);
 NS_EXTERN char *Dbi_PoolList(char *server);
 NS_EXTERN int Dbi_PoolAllowable(char *server, char *pool);
 NS_EXTERN void Dbi_PoolPutHandle(Dbi_Handle *handle);

@@ -237,7 +237,7 @@ Dbi_DriverName(Dbi_Handle *handle)
 /*
  *----------------------------------------------------------------------
  *
- * Dbi_DriverType --
+ * Dbi_DriverDbType --
  *
  *      Return the string name of the database type (e.g., "sybase").
  *
