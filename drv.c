@@ -39,45 +39,27 @@
 NS_RCSID("@(#) $Header$");
 
 /*
- * The following typedefs define the functions provided by
- * loadable drivers.
- */
-
-typedef int (InitProc) (char *server, char *module, char *driver);
-typedef char *(NameProc) (Dbi_Handle *);
-typedef char *(TypeProc) (Dbi_Handle *);
-typedef int (OpenProc) (Dbi_Handle *);
-typedef void (CloseProc) (Dbi_Handle *);
-typedef int (DMLProc) (Dbi_Handle *, char *sql);
-typedef Ns_Set *(SelectProc) (Dbi_Handle *, char *sql);
-typedef int (ExecProc) (Dbi_Handle *, char *sql);
-typedef Ns_Set *(BindProc) (Dbi_Handle *);
-typedef int (GetProc) (Dbi_Handle *, Ns_Set *);
-typedef int (FlushProc) (Dbi_Handle *);
-typedef int (CancelProc) (Dbi_Handle *);
-typedef int (ResetProc) (Dbi_Handle *);
-
-/*
  * The following structure specifies the driver-specific functions
  * to call for each Dbi_ routine.
  */
 
 typedef struct DbiDriver {
-    char             *name;
-    int               registered;
-    InitProc         *initProc;
-    NameProc         *nameProc;
-    TypeProc         *typeProc;
-    OpenProc         *openProc;
-    CloseProc        *closeProc;
-    DMLProc          *dmlProc;
-    SelectProc       *selectProc;
-    ExecProc         *execProc;
-    BindProc         *bindProc;
-    GetProc          *getProc;
-    FlushProc        *flushProc;
-    CancelProc       *cancelProc;
-    ResetProc        *resetProc;
+    char              *name;
+    int                registered;
+    Dbi_InitProc      *initProc;
+    Dbi_NameProc      *nameProc;
+    Dbi_DbTypeProc    *typeProc;
+    Dbi_OpenProc      *openProc;
+    Dbi_CloseProc     *closeProc;
+    Dbi_ExecProc      *execProc;
+    Dbi_BindRowProc   *bindProc;
+    Dbi_GetRowProc    *getProc;
+    Dbi_CancelProc    *cancelProc;
+    Dbi_FlushProc     *flushProc;
+    Dbi_ResetProc     *resetProc;
+    Dbi_TableListProc *tableListProc;
+    Dbi_TableInfoProc *tableInfoProc;
+    Dbi_BestRowProc   *bestRowProc;
 } DbiDriver;
 
 /*
@@ -129,73 +111,56 @@ Dbi_RegisterDriver(char *driver, Dbi_Proc *procs)
         return NS_ERROR;
     }
     driverPtr->registered = 1;
-
+    
     while (procs->func != NULL) {
         switch (procs->id) {
-        case DbFn_ServerInit:
-            driverPtr->initProc = (InitProc *) procs->func;
-            break;
-        case DbFn_Name:
-            driverPtr->nameProc = (NameProc *) procs->func;
-            break;
-        case DbFn_DbType:
-            driverPtr->typeProc = (TypeProc *) procs->func;
-            break;
-        case DbFn_OpenDb:
-            driverPtr->openProc = (OpenProc *) procs->func;
-            break;
-        case DbFn_CloseDb:
-            driverPtr->closeProc = (CloseProc *) procs->func;
-            break;
-        case DbFn_DML:
-            driverPtr->dmlProc = (DMLProc *) procs->func;
-            break;
-        case DbFn_Select:
-            driverPtr->selectProc = (SelectProc *) procs->func;
-            break;
-        case DbFn_GetRow:
-            driverPtr->getProc = (GetProc *) procs->func;
-            break;
-        case DbFn_Flush:
-            driverPtr->flushProc = (FlushProc *) procs->func;
-            break;
-        case DbFn_Cancel:
-            driverPtr->cancelProc = (CancelProc *) procs->func;
-            break;
-        case DbFn_Exec:
-            driverPtr->execProc = (ExecProc *) procs->func;
-            break;
-        case DbFn_BindRow:
-            driverPtr->bindProc = (BindProc *) procs->func;
-            break;
-        case DbFn_ResetHandle:
-            driverPtr->resetProc = (ResetProc *) procs->func;
-            break;
-
-        /*
-         * The following functions are no longer supported.
-         */
-
-        case DbFn_End:
-            UnsupProcId("End");
-            break;
-
-        case DbFn_GetTableInfo:
-            UnsupProcId("GetTableInfo");
-            break;
-
-        case DbFn_TableList:
-            UnsupProcId("TableList");
-            break;
-
-        case DbFn_BestRowId:
-            UnsupProcId("BestRowId");
-            break;
-
-        default:
-            Ns_Log(Error, "dbidrv: unknown driver id '%d'", procs->id);
-            return NS_ERROR;
-            break;
+            case Dbi_InitId:
+                driverPtr->initProc = (Dbi_InitProc *) procs->func;
+                break;
+            case Dbi_NameId:
+                driverPtr->nameProc = (Dbi_NameProc *) procs->func;
+                break;
+            case Dbi_DbTypeId:
+                driverPtr->typeProc = (Dbi_DbTypeProc *) procs->func;
+                break;
+            case Dbi_OpenId:
+                driverPtr->openProc = (Dbi_OpenProc *) procs->func;
+                break;
+            case Dbi_CloseId:
+                driverPtr->closeProc = (Dbi_CloseProc *) procs->func;
+                break;
+            case Dbi_ExecId:
+                driverPtr->execProc = (Dbi_ExecProc *) procs->func;
+                break;
+            case Dbi_BindRowId:
+                driverPtr->bindProc = (Dbi_BindRowProc *) procs->func;
+                break;
+            case Dbi_GetRowId:
+                driverPtr->getProc = (Dbi_GetRowProc *) procs->func;
+                break;
+            case Dbi_CancelId:
+                driverPtr->cancelProc = (Dbi_CancelProc *) procs->func;
+                break;
+            case Dbi_FlushId:
+                driverPtr->flushProc = (Dbi_FlushProc *) procs->func;
+                break;
+            case Dbi_ResetId:
+                driverPtr->resetProc = (Dbi_ResetProc *) procs->func;
+                break;
+            case Dbi_TableListId:
+                driverPtr->tableListProc = (Dbi_TableListProc *) procs->func;
+                break;
+            case Dbi_TableInfoId:
+                driverPtr->tableInfoProc = (Dbi_TableInfoProc *) procs->func;
+                break;
+            case Dbi_BestRowId:
+                driverPtr->bestRowProc = (Dbi_BestRowProc *) procs->func;
+                break;
+                
+            default:
+                Ns_Log(Error, "dbidrv: unknown driver id '%d'", procs->id);
+                return NS_ERROR;
+                break;
         }
         ++procs;
     }
@@ -286,28 +251,26 @@ int
 Dbi_DML(Dbi_Handle *handle, char *sql)
 {
     DbiDriver *driverPtr = DbiGetDriver(handle);
-    int        status = NS_ERROR;
+    int status = NS_ERROR;
 
-    if (driverPtr != NULL && handle->connected) {
+    if (driverPtr != NULL
+        && driverPtr->execProc != NULL
+        && handle->connected) {
 
-        if (driverPtr->execProc != NULL) {
-            status = Dbi_Exec(handle, sql);
-            if (status == DBI_DML) {
-                status = NS_OK;
-            } else {
-                if (status == DBI_ROWS) {
-                    Dbi_SetException(handle, "DBI",
-                        "Query was not a DML or DDL command.");
-                    Dbi_Flush(handle);
-                }
-                status = NS_ERROR;
+        status = Dbi_Exec(handle, sql);
+
+        if (status == DBI_DML) {
+            status = NS_OK;
+        } else {
+            if (status == DBI_ROWS) {
+                Dbi_SetException(handle, "DBI",
+                                 "Query was not a DML or DDL command.");
+                Dbi_Flush(handle);
             }
-        } else if (driverPtr->dmlProc != NULL) {
-            status = (*driverPtr->dmlProc)(handle, sql);
-            DbiLogSql(handle, sql);
+            status = NS_ERROR;
         }
     }
-
+    
     return status;
 }
 
@@ -332,25 +295,20 @@ Ns_Set *
 Dbi_Select(Dbi_Handle *handle, char *sql)
 {
     DbiDriver *driverPtr = DbiGetDriver(handle);
-    Ns_Set    *setPtr = NULL;
+    Ns_Set *setPtr = NULL;
 
-    if (driverPtr != NULL && handle->connected) {
+    if (driverPtr != NULL
+        && driverPtr->execProc != NULL
+        && handle->connected) {
 
-        if (driverPtr->execProc != NULL) {
-            if (Dbi_Exec(handle, sql) == NS_ROWS) {
-                setPtr = Dbi_BindRow(handle);
-            } else {
-                if(!handle->dsExceptionMsg.length)
-                    Dbi_SetException(handle, "NSDB",
-                        "Query was not a statement returning rows.");
-            }
-        } else if (driverPtr->selectProc != NULL) {
-            Ns_SetTrunc(handle->row, 0);
-            setPtr = (*driverPtr->selectProc)(handle, sql);
-            Dbi_LogSql(handle, sql);
+        if (Dbi_Exec(handle, sql) == DBI_ROWS) {
+            setPtr = Dbi_BindRow(handle);
+        } else {
+            Dbi_SetException(handle, "DBI",
+                             "Query was not a statement returning rows.");
         }
     }
-
+    
     return setPtr;
 }
 
@@ -377,9 +335,9 @@ Dbi_Exec(Dbi_Handle *handle, char *sql)
     DbiDriver *driverPtr = DbiGetDriver(handle);
     int        status = NS_ERROR;
 
-    if (handle->connected &&
-        driverPtr != NULL &&
-        driverPtr->execProc != NULL) {
+    if (driverPtr != NULL
+        && driverPtr->execProc != NULL
+        && handle->connected) {
 
         status = (*driverPtr->execProc)(handle, sql);
         DbiLogSql(handle, sql);
@@ -413,9 +371,9 @@ Dbi_BindRow(Dbi_Handle *handle)
     DbiDriver *driverPtr = DbiGetDriver(handle);
     Ns_Set    *setPtr = NULL;
 
-    if (handle->connected &&
-        driverPtr != NULL &&
-        driverPtr->bindProc != NULL) {
+    if (driverPtr != NULL
+        && driverPtr->bindProc != NULL
+        && handle->connected) {
 
         Ns_SetTrunc(handle->row, 0);
         setPtr = (*driverPtr->bindProc)(handle);
@@ -450,11 +408,45 @@ Dbi_GetRow(Dbi_Handle *handle, Ns_Set *row)
     DbiDriver *driverPtr = DbiGetDriver(handle);
     int        status = NS_ERROR;
 
-    if (handle->connected &&
-        driverPtr != NULL &&
-        driverPtr->getProc != NULL) {
+    if (driverPtr != NULL
+        && driverPtr->getProc != NULL
+        && handle->connected) {
 
         status = (*driverPtr->getProc)(handle, row);
+    }
+    
+    return status;
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * Dbi_Cancel --
+ *
+ *      Cancel the execution of a select and dump pending rows.
+ *
+ * Results:
+ *      NS_OK or NS_ERROR.
+ *
+ * Side effects:
+ *      Depending on the driver, a running select call which executes
+ *      as rows are fetched may be interrupted.
+ *
+ *----------------------------------------------------------------------
+ */
+
+int
+Dbi_Cancel(Dbi_Handle *handle)
+{
+    DbiDriver *driverPtr = DbiGetDriver(handle);
+    int status = NS_ERROR;
+
+    if (driverPtr != NULL
+        && driverPtr->cancelProc != NULL
+        && handle->connected) {
+
+        status = (*driverPtr->cancelProc)(handle);
     }
 
     return status;
@@ -482,47 +474,13 @@ int
 Dbi_Flush(Dbi_Handle *handle)
 {
     DbiDriver *driverPtr = DbiGetDriver(handle);
-    int        status = NS_ERROR;
+    int status = NS_ERROR;
 
-    if (handle->connected &&
-        driverPtr != NULL &&
-        driverPtr->flushProc != NULL) {
+    if (driverPtr != NULL
+        && driverPtr->flushProc != NULL
+        && handle->connected) {
 
         status = (*driverPtr->flushProc)(handle);
-    }
-
-    return status;
-}
-
-
-/*
- *----------------------------------------------------------------------
- *
- * Dbi_Cancel --
- *
- *      Cancel the execution of a select and dump pending rows.
- *
- * Results:
- *      NS_OK or NS_ERROR.
- *
- * Side effects:
- *      Depending on the driver, a running select call which executes
- *      as rows are fetched may be interrupted.
- *
- *----------------------------------------------------------------------
- */
-
-int
-Dbi_Cancel(Dbi_Handle *handle)
-{
-    DbiDriver *driverPtr = DbiGetDriver(handle);
-    int        status = NS_ERROR;
-
-    if (handle->connected &&
-        driverPtr != NULL &&
-        driverPtr->cancelProc != NULL) {
-
-        status = (*driverPtr->cancelProc)(handle);
     }
 
     return status;
@@ -551,9 +509,9 @@ Dbi_ResetHandle (Dbi_Handle *handle)
     DbiDriver *driverPtr = DbiGetDriver(handle);
     int        status = NS_ERROR;
 
-    if (handle->connected &&
-        driverPtr != NULL &&
-        driverPtr->resetProc != NULL) {
+    if (driverPtr != NULL
+        && driverPtr->resetProc != NULL
+        && handle->connected) {
 
         status = (*driverPtr->resetProc)(handle);
     }
@@ -671,13 +629,13 @@ DbiOpen(Dbi_Handle *handle)
 {
     DbiDriver *driverPtr = DbiGetDriver(handle);
 
-    Ns_Log(Notice, "dbidrv: opening database '%s:%s'", handle->driver,
+    Ns_Log(Notice, "dbidrv: opening database %s: '%s'", handle->driver,
            handle->datasource);
     if (driverPtr == NULL ||
         driverPtr->openProc == NULL ||
         (*driverPtr->openProc) (handle) != NS_OK) {
 
-        Ns_Log(Error, "dbidrv: failed to open database '%s:%s'",
+        Ns_Log(Error, "dbidrv: failed to open database  %s: '%s'",
                handle->driver, handle->datasource);
         handle->connected = NS_FALSE;
         return NS_ERROR;

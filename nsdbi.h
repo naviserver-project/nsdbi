@@ -50,40 +50,6 @@
 #define DBI_NO_DATA            8
 
 /*
- * The following enum defines known dbi driver function ids.
- */
-
-typedef enum {
-    DbFn_Name,
-    DbFn_DbType,
-    DbFn_ServerInit,
-    DbFn_OpenDb,
-    DbFn_CloseDb,
-    DbFn_DML,
-    DbFn_Select,
-    DbFn_GetRow,
-    DbFn_Flush,
-    DbFn_Cancel,
-    DbFn_GetTableInfo,
-    DbFn_TableList,
-    DbFn_BestRowId,
-    DbFn_Exec,
-    DbFn_BindRow,
-    DbFn_ResetHandle,
-    DbFn_End
-} Dbi_ProcId;
-
-/*
- * Database procedure structure used when registering
- * a driver.
- */
-
-typedef struct Dbi_Proc {
-    Dbi_ProcId  id;
-    void       *func;
-} Dbi_Proc;
-
-/*
  * Database handle structure.
  */
 
@@ -116,6 +82,58 @@ typedef struct {
     int      ncolumns;
     Ns_Set **columns;
 } Dbi_TableInfo;
+
+/*
+ * The following typedefs define the functions that loadable
+ * drivers implement.
+ */
+
+typedef int     (Dbi_InitProc)      (char *server, char *module, char *driver);
+typedef char   *(Dbi_NameProc)      (Dbi_Handle *handle);
+typedef char   *(Dbi_DbTypeProc)    (Dbi_Handle *handle);
+typedef int     (Dbi_OpenProc)      (Dbi_Handle *handle);
+typedef void    (Dbi_CloseProc)     (Dbi_Handle *handle);
+typedef int     (Dbi_ExecProc)      (Dbi_Handle *handle, char *sql);
+typedef Ns_Set *(Dbi_BindRowProc)   (Dbi_Handle *handle);
+typedef int     (Dbi_GetRowProc)    (Dbi_Handle *handle, Ns_Set *row);
+typedef int     (Dbi_CancelProc)    (Dbi_Handle *handle);
+typedef int     (Dbi_FlushProc)     (Dbi_Handle *handle);
+typedef int     (Dbi_ResetProc)     (Dbi_Handle *handle);
+typedef char   *(Dbi_TableListProc) (Ns_DString *ds, Dbi_Handle *handle, int includesystem);
+typedef int     (Dbi_TableInfoProc) (Dbi_Handle *handle, char *table);
+typedef char   *(Dbi_BestRowProc)   (Ns_DString *ds, Dbi_Handle *handle, char *table);
+
+/* 
+ * The following enum defines known dbi driver function ids.
+ */
+
+typedef enum {
+    Dbi_InitId,
+    Dbi_NameId,
+    Dbi_DbTypeId,
+    Dbi_OpenId,
+    Dbi_CloseId,
+    Dbi_ExecId,
+    Dbi_BindRowId,
+    Dbi_GetRowId,
+    Dbi_CancelId,
+    Dbi_FlushId,
+    Dbi_ResetId,
+    Dbi_TableListId,
+    Dbi_TableInfoId,
+    Dbi_BestRowId
+} Dbi_ProcId;
+
+/*
+ * Database procedure structure used when registering
+ * a driver. 
+ */
+
+typedef struct Dbi_Proc {
+    Dbi_ProcId  id;
+    void       *func;
+} Dbi_Proc;
+
 
 /*
  * drv.c:
