@@ -44,7 +44,7 @@ NS_RCSID("@(#) $Header$");
  */
 
 typedef struct InterpData {
-    char          *server;
+    const char    *server;
     int            cleanup;
     Tcl_HashTable  handles;
     Tcl_Interp    *interp;
@@ -55,13 +55,14 @@ typedef struct InterpData {
  */
 
 
-static int ParseOptions(InterpData *idataPtr, int objc, Tcl_Obj *CONST objv[], Dbi_Handle **handlePtrPtr);
-static Dbi_Handle* GetHandle(InterpData *idataPtr, char *pool, int timeout);
-static Dbi_Pool* GetPool(InterpData *idataPtr, char *pool);
-static void ReleaseHandle(InterpData *idataPtr, Dbi_Handle *handle);
-static void ReleaseAllHandles(Tcl_Interp *interp, void *arg);
-static int SqlException(InterpData *idataPtr, Dbi_Handle *handle);
-static int Exception(Tcl_Interp *interp, char *code, char *info, char *msg, ...) _nsprintflike(4, 5);
+static int ParseOptions(InterpData *idataPtr, int objc, Tcl_Obj *CONST objv[], Dbi_Handle **handlePtrPtr) _nsnonnull();
+static Dbi_Handle* GetHandle(InterpData *idataPtr, const char *pool, int timeout) _nsnonnull();
+static Dbi_Pool* GetPool(InterpData *idataPtr, const char *pool) _nsnonnull(1);
+static void ReleaseHandle(Dbi_Handle *handle) _nsnonnull();
+static void ReleaseAllHandles(Tcl_Interp *interp, void *arg) _nsnonnull(1);
+static int SqlException(InterpData *idataPtr, Dbi_Handle *handle) _nsnonnull();
+static int Exception(Tcl_Interp *interp, const char *code, const char *info, const char *msg, ...)
+     _nsprintflike(4, 5) _nsnonnull(1);
 static int SingleRowCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[], int req);
 
 static Ns_TclDeferProc ReleaseAllHandles;
@@ -79,7 +80,7 @@ static Tcl_ObjCmdProc
 static struct Cmd {
     char           *name;
     Tcl_ObjCmdProc *objProc;
-} cmds[] = {
+} const cmds[] = {
     {"dbi_0or1row",        Tcl0or1rowCmd},
     {"dbi_1row",           Tcl1rowCmd},
     {"dbi_rows",           TclRowsCmd},
@@ -174,7 +175,7 @@ SingleRowCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *CONST
 {
     InterpData *idataPtr = clientData;
     Dbi_Handle *handle;
-    char       *column, *value;
+    const char *sql, *column, *value;
     int         cLen, vLen, nrows, status, ignore;
     Tcl_Obj    *colObjPtr, *valObjPtr;
 
@@ -185,17 +186,18 @@ SingleRowCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *CONST
     if (ParseOptions(idataPtr, objc, objv, &handle) != NS_OK) {
         return TCL_ERROR;
     }
-    if (Dbi_0or1Row(handle, Tcl_GetString(objv[objc - 1]), &nrows, &ignore) != NS_OK) {
+    sql = Tcl_GetString(objv[objc - 1]);
+    if (Dbi_0or1Row(handle, sql, &nrows, &ignore) != NS_OK) {
         return SqlException(idataPtr, handle);
     }
     if (nrows == 0) {
         if (req == 1) {
             Exception(interp, NULL, NULL, "Query was not a statement returning rows.");
-            ReleaseHandle(idataPtr, handle);
+            ReleaseHandle(handle);
             return TCL_ERROR;
         } else {
             Tcl_SetObjResult(interp, Tcl_NewIntObj(0));
-            ReleaseHandle(idataPtr, handle);
+            ReleaseHandle(handle);
             return TCL_OK;
         }
     }
@@ -203,8 +205,8 @@ SingleRowCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *CONST
         if ((status = Dbi_NextValue(handle, &value, &vLen, &column, &cLen)) == NS_ERROR) {
             break;
         }
-        colObjPtr = Tcl_NewStringObj(column, cLen);
-        valObjPtr = Tcl_NewStringObj(value, vLen);
+        colObjPtr = Tcl_NewStringObj((char *) column, cLen);
+        valObjPtr = Tcl_NewStringObj((char *) value, vLen);
         if (Tcl_ObjSetVar2(interp, colObjPtr, NULL, valObjPtr, TCL_LEAVE_ERR_MSG) == NULL) {
             status = NS_ERROR;
             break;
@@ -215,7 +217,7 @@ SingleRowCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *CONST
         return SqlException(idataPtr, handle);
     }
     Tcl_SetObjResult(interp, Tcl_NewIntObj(1));
-    ReleaseHandle(idataPtr, handle);
+    ReleaseHandle(handle);
 
     return TCL_OK;
 }
@@ -242,7 +244,7 @@ static int
 TclBouncepoolCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
 {
     InterpData *idataPtr = clientData;
-    char       *pool;
+    const char *pool;
     Dbi_Pool   *poolPtr;
 
     if (objc != 2) {
@@ -283,6 +285,7 @@ TclDmlCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *CONST ob
 {
     InterpData *idataPtr = clientData;
     Dbi_Handle *handle;
+    const char *sql;
     int         nrows, ignore;
 
     if (objc < 2 || objc > 6) {
@@ -292,11 +295,12 @@ TclDmlCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *CONST ob
     if (ParseOptions(idataPtr, objc, objv, &handle) != NS_OK) {
         return TCL_ERROR;
     }
-    if (Dbi_DML(handle, Tcl_GetString(objv[objc - 1]), &nrows, &ignore) != NS_OK) {
+    sql = Tcl_GetString(objv[objc - 1]);
+    if (Dbi_DML(handle, sql, &nrows, &ignore) != NS_OK) {
         return SqlException(idataPtr, handle);
     }
     Tcl_SetObjResult(interp, Tcl_NewIntObj(nrows));
-    ReleaseHandle(idataPtr, handle);
+    ReleaseHandle(handle);
 
     return TCL_OK;
 }
@@ -322,7 +326,7 @@ static int
 TclPoolCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
 {
     InterpData *idataPtr = clientData;
-    char       *pool     = NULL;
+    const char *pool     = NULL;
     Dbi_Handle *handle   = NULL;
     Dbi_Pool   *poolPtr  = NULL;
 
@@ -360,13 +364,13 @@ TclPoolCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *CONST o
     switch (opt) {
 
     case IDriverIdx:
-        Tcl_SetObjResult(interp, Tcl_NewStringObj(Dbi_DriverName(handle), -1));
-        ReleaseHandle(idataPtr, handle);
+        Tcl_SetObjResult(interp, Tcl_NewStringObj((char *) Dbi_DriverName(handle), -1));
+        ReleaseHandle(handle);
         break;
 
     case IDbtypeIdx:
-        Tcl_SetObjResult(interp, Tcl_NewStringObj(Dbi_DriverDbType(handle), -1));
-        ReleaseHandle(idataPtr, handle);
+        Tcl_SetObjResult(interp, Tcl_NewStringObj((char *) Dbi_DriverDbType(handle), -1));
+        ReleaseHandle(handle);
         break;
 
     case IDatasourceIdx:
@@ -412,7 +416,7 @@ TclPoolCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *CONST o
  */
 
 static int
-TclPoolsCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
+TclPoolsCmd(ClientData clientData, Tcl_Interp *interp, int objc _nsunused, Tcl_Obj *CONST objv[] _nsunused)
 {
     InterpData *idataPtr = clientData;
     Tcl_Obj    *result;
@@ -457,7 +461,7 @@ TclPoolsCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *CONST 
  */
 
 static int
-TclDefaultpoolCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
+TclDefaultpoolCmd(ClientData clientData, Tcl_Interp *interp, int objc _nsunused, Tcl_Obj *CONST objv[] _nsunused)
 {
     InterpData *idataPtr = clientData;
     Dbi_Pool *poolPtr;
@@ -491,9 +495,9 @@ TclDefaultpoolCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *
 static int
 TclRowsCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
 {
-    InterpData *idataPtr = clientData;
+    InterpData  *idataPtr = clientData;
     Dbi_Handle  *handle;
-    char        *value;
+    const char  *value;
     int          len, status, nrows, ncols;
     Tcl_Obj     *result;
     
@@ -509,7 +513,7 @@ TclRowsCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *CONST o
         return SqlException(idataPtr, handle);
     }
     if (nrows == 0) {
-        ReleaseHandle(idataPtr, handle);
+        ReleaseHandle(handle);
         return TCL_OK;
     }
     result = Tcl_GetObjResult(interp);
@@ -517,13 +521,13 @@ TclRowsCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *CONST o
         if ((status = Dbi_NextValue(handle, &value, &len, NULL, NULL)) == NS_ERROR) {
             break;
         }
-        Tcl_ListObjAppendElement(interp, result, Tcl_NewStringObj(value, len));
+        Tcl_ListObjAppendElement(interp, result, Tcl_NewStringObj((char *) value, len));
     } while (status != DBI_END_DATA && status != NS_ERROR);
 
     if (status != DBI_END_DATA) {
         return SqlException(idataPtr, handle);
     }
-    ReleaseHandle(idataPtr, handle);
+    ReleaseHandle(handle);
 
     return TCL_OK;
 }
@@ -547,7 +551,7 @@ TclRowsCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *CONST o
  */
 
 static int
-TclReleasehandlesCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
+TclReleasehandlesCmd(ClientData clientData, Tcl_Interp *interp, int objc _nsunused, Tcl_Obj *CONST objv[] _nsunused)
 {
     InterpData *idataPtr = clientData;
 
@@ -575,9 +579,9 @@ TclReleasehandlesCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Ob
 static int
 ParseOptions(InterpData *idataPtr, int objc, Tcl_Obj *CONST objv[], Dbi_Handle **handlePtrPtr)
 {
-    Tcl_Interp    *interp = idataPtr->interp;
-    char          *pool;
-    int            i, timeout;
+    Tcl_Interp  *interp = idataPtr->interp;
+    const char  *pool;
+    int          i, timeout;
 
     static CONST char *opts[] = {"-pool", "-timeout", NULL};
     enum IHandleOptsIdx {IPoolIdx, ITimeoutIdx} _nsmayalias opt;
@@ -625,24 +629,25 @@ ParseOptions(InterpData *idataPtr, int objc, Tcl_Obj *CONST objv[], Dbi_Handle *
  */
 
 static Dbi_Handle*
-GetHandle(InterpData *idataPtr, char *pool, int timeout)
+GetHandle(InterpData *idataPtr, const char *pool, int timeout)
 {
     Tcl_Interp    *interp = idataPtr->interp;
     Dbi_Handle    *handlePtr;
     Dbi_Pool      *poolPtr;
     Tcl_HashEntry *hPtr;
+    char          *poolName;
     int            new;
 
     if ((poolPtr = GetPool(idataPtr, pool)) == NULL) {
         return NULL;
     }
-    pool = poolPtr->name;
+    poolName = poolPtr->name;
 
     /*
      * Check for a cached handle from the desired pool for this interp.
      */
 
-    hPtr = Tcl_FindHashEntry(&idataPtr->handles, pool);
+    hPtr = Tcl_FindHashEntry(&idataPtr->handles, poolName);
     if (hPtr != NULL) {
         handlePtr = (Dbi_Handle*) Tcl_GetHashValue(hPtr);
         return handlePtr;
@@ -670,7 +675,7 @@ GetHandle(InterpData *idataPtr, char *pool, int timeout)
      */
 
     if (handlePtr != NULL && ((Pool *)poolPtr)->cache_handles) {
-        hPtr = Tcl_CreateHashEntry(&idataPtr->handles, pool, &new);
+        hPtr = Tcl_CreateHashEntry(&idataPtr->handles, poolName, &new);
         Tcl_SetHashValue(hPtr, handlePtr);
         if (!idataPtr->cleanup) {
             Ns_TclRegisterDeferred(interp, ReleaseAllHandles, idataPtr);
@@ -699,7 +704,7 @@ GetHandle(InterpData *idataPtr, char *pool, int timeout)
  */
 
 static Dbi_Pool*
-GetPool(InterpData *idataPtr, char *pool)
+GetPool(InterpData *idataPtr, const char *pool)
 {
     Tcl_Interp *interp = idataPtr->interp;
     Dbi_Pool *poolPtr;
@@ -740,7 +745,7 @@ GetPool(InterpData *idataPtr, char *pool)
  */
 
 static void
-ReleaseHandle(InterpData *idataPtr, Dbi_Handle *handle)
+ReleaseHandle(Dbi_Handle *handle)
 {
     Pool *poolPtr = (Pool *) handle->poolPtr;
 
@@ -770,7 +775,7 @@ ReleaseHandle(InterpData *idataPtr, Dbi_Handle *handle)
  */
 
 static void
-ReleaseAllHandles(Tcl_Interp *interp, void *arg)
+ReleaseAllHandles(Tcl_Interp *interp _nsunused, void *arg)
 {
     InterpData     *idataPtr = arg;
     Dbi_Handle     *handle;
@@ -809,9 +814,9 @@ ReleaseAllHandles(Tcl_Interp *interp, void *arg)
 static int
 SqlException(InterpData *idataPtr, Dbi_Handle *handle)
 {
-    Handle *handlePtr = (Handle *) handle;
-    char   *code      = NULL;
-    char   *message   = "No exception message available.";
+    Handle     *handlePtr = (Handle *) handle;
+    const char *code      = NULL;
+    const char *message   = "No exception message available.";
 
     if (handlePtr->cExceptionCode[0] != '\0') {
         code = handlePtr->cExceptionCode;
@@ -821,7 +826,7 @@ SqlException(InterpData *idataPtr, Dbi_Handle *handle)
     }
     Exception(idataPtr->interp, code, NULL, message);
     if (handle != NULL) {
-        ReleaseHandle(idataPtr, handle);
+        ReleaseHandle(handle);
     }
 
     return TCL_ERROR;
@@ -844,24 +849,24 @@ SqlException(InterpData *idataPtr, Dbi_Handle *handle)
  */
 
 static int
-Exception(Tcl_Interp *interp, char *code, char *info, char *msg, ...)
+Exception(Tcl_Interp *interp, const char *code, const char *info, const char *msg, ...)
 {
-    Tcl_Obj *objPtr;
-    Ns_DString ds;
-    va_list ap;
+    Tcl_Obj    *objPtr;
+    Ns_DString  ds;
+    va_list     ap;
 
     objPtr = Tcl_NewStringObj("DBI", 3);
     if (code != NULL) {
-        Tcl_ListObjAppendElement(interp, objPtr, Tcl_NewStringObj(code, -1));
+        Tcl_ListObjAppendElement(interp, objPtr, Tcl_NewStringObj((char *) code, -1));
     }
     Tcl_SetObjErrorCode(interp, objPtr);
 
     if (info != NULL) {
-        Tcl_AddObjErrorInfo(interp, info, -1);
+        Tcl_AddObjErrorInfo(interp, (char *) info, -1);
     }
     Ns_DStringInit(&ds);
     va_start(ap, msg);
-    Ns_DStringVPrintf(&ds, msg, ap);
+    Ns_DStringVPrintf(&ds, (char *) msg, ap);
     va_end(ap);
     Tcl_DStringResult(interp, &ds);
     Ns_DStringFree(&ds);

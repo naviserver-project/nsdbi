@@ -64,13 +64,13 @@ NS_RCSID("@(#) $Header$");
  */
 
 void
-Dbi_QuoteValue(Ns_DString *pds, char *string)
+Dbi_QuoteValue(Ns_DString *pds, const char *string)
 {
     while (*string != '\0') {
         if (*string == '\'') {
             Ns_DStringNAppend(pds, "'", 1);
         }
-        Ns_DStringNAppend(pds, string, 1);
+        Ns_DStringNAppend(pds, (char *) string, 1);
         ++string;
     }
 }
@@ -95,7 +95,7 @@ Dbi_QuoteValue(Ns_DString *pds, char *string)
  */
 
 int
-Dbi_0or1Row(Dbi_Handle *handle, char *sql, int *nrows, int *ncols)
+Dbi_0or1Row(Dbi_Handle *handle, const char *sql, int *nrows, int *ncols)
 {
     if (Dbi_Select(handle, sql, nrows, ncols) != NS_OK) {
         return NS_ERROR;
@@ -128,7 +128,7 @@ Dbi_0or1Row(Dbi_Handle *handle, char *sql, int *nrows, int *ncols)
  */
 
 int
-Dbi_1Row(Dbi_Handle *handle, char *sql, int *ncols)
+Dbi_1Row(Dbi_Handle *handle, const char *sql, int *ncols)
 {
     int nrows;
 
@@ -163,7 +163,7 @@ Dbi_1Row(Dbi_Handle *handle, char *sql, int *ncols)
  */
 
 void
-Dbi_SetException(Dbi_Handle *handle, char *sqlstate, char *fmt, ...)
+Dbi_SetException(Dbi_Handle *handle, const char *sqlstate, const char *fmt, ...)
 {
     Handle      *handlePtr = (Handle *) handle;
     Ns_DString  *ds = &handlePtr->dsExceptionMsg;
@@ -177,7 +177,7 @@ Dbi_SetException(Dbi_Handle *handle, char *sqlstate, char *fmt, ...)
     if (fmt != NULL) {
         Ns_DStringFree(ds);
         va_start(ap, fmt);
-        Ns_DStringVPrintf(ds, fmt, ap);
+        Ns_DStringVPrintf(ds, (char *) fmt, ap);
         va_end(ap);
         len = Ns_DStringLength(ds);
         if (ds->string[len - 1] == '\n') {

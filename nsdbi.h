@@ -86,20 +86,20 @@ typedef struct Dbi_Handle {
  * drivers implement.
  */
 
-typedef int    (Dbi_InitProc)        (char *server, char *module, char *driver);
-typedef char  *(Dbi_NameProc)        (Dbi_Handle *);
-typedef char  *(Dbi_DbTypeProc)      (Dbi_Handle *);
-typedef int    (Dbi_OpenProc)        (Dbi_Handle *);
-typedef void   (Dbi_CloseProc)       (Dbi_Handle *);
-typedef int    (Dbi_ExecProc)        (Dbi_Handle *, char *sql, int *nrows, int *ncols);
-typedef int    (Dbi_ValueProc)       (Dbi_Handle *, int rowIdx, int colIdx, char **value, int *len);
-typedef int    (Dbi_ColumnProc)      (Dbi_Handle *, int colIdx, char **column, int *len);
-typedef int    (Dbi_CancelProc)      (Dbi_Handle *);
-typedef int    (Dbi_FlushProc)       (Dbi_Handle *);
-typedef int    (Dbi_ResetProc)       (Dbi_Handle *);
-typedef int    (Dbi_TableListProc)   (Dbi_Handle *, int incsys, int *ntables);
-typedef int    (Dbi_GetTableInfoProc)(Dbi_Handle *, char *table, int *ncols);
-typedef char  *(Dbi_BestRowProc)     (Ns_DString *pk, Dbi_Handle *, char *table);
+typedef int (Dbi_InitProc)            (const char *server, const char *module, const char *driver);
+typedef const char *(Dbi_NameProc)    (Dbi_Handle *);
+typedef const char *(Dbi_DbTypeProc)  (Dbi_Handle *);
+typedef int (Dbi_OpenProc)            (Dbi_Handle *);
+typedef void (Dbi_CloseProc)          (Dbi_Handle *);
+typedef int (Dbi_ExecProc)            (Dbi_Handle *, const char *sql, int *nrows, int *ncols);
+typedef int (Dbi_ValueProc)           (Dbi_Handle *, int rowIdx, int colIdx, const char **value, int *len);
+typedef int (Dbi_ColumnProc)          (Dbi_Handle *, int colIdx, const char **column, int *len);
+typedef int (Dbi_CancelProc)          (Dbi_Handle *);
+typedef int (Dbi_FlushProc)           (Dbi_Handle *);
+typedef int (Dbi_ResetProc)           (Dbi_Handle *);
+typedef int (Dbi_TableListProc)       (Dbi_Handle *, int incsys, int *ntables);
+typedef int (Dbi_GetTableInfoProc)    (Dbi_Handle *, const char *table, int *ncols);
+typedef const char *(Dbi_BestRowProc) (Ns_DString *pk, Dbi_Handle *, const char *table);
 
 
 /*
@@ -130,30 +130,30 @@ typedef struct Dbi_Driver {
  * drv.c:
  */
 
-NS_EXTERN int   Dbi_RegisterDriver(Dbi_Driver *driver);
-NS_EXTERN char *Dbi_DriverName(Dbi_Handle *) _nsnonnull();
-NS_EXTERN char *Dbi_DriverDbType(Dbi_Handle *) _nsnonnull();
-NS_EXTERN int   Dbi_DML(Dbi_Handle *, char *sql, int *nrows, int *ncols) _nsnonnull(1, 2);
-NS_EXTERN int   Dbi_Select(Dbi_Handle *, char *sql, int *nrows, int *ncols) _nsnonnull(1, 2);
-NS_EXTERN int   Dbi_Exec(Dbi_Handle *, char *sql, int *nrows, int *ncols) _nsnonnull(1, 2);
-NS_EXTERN int   Dbi_NextValue(Dbi_Handle *, char **value, int *vLen, char **column, int *cLen);
-NS_EXTERN int   Dbi_CurrentColumn(Dbi_Handle *, char **column, int *len);
-NS_EXTERN int   Dbi_Cancel(Dbi_Handle *) _nsnonnull();
-NS_EXTERN int   Dbi_Flush(Dbi_Handle *) _nsnonnull();
-NS_EXTERN int   Dbi_ResetHandle(Dbi_Handle *) _nsnonnull();
-NS_EXTERN int   Dbi_TableList(Dbi_Handle *, int incsys, int *ntables);
-NS_EXTERN int   Dbi_GetTableInfo(Dbi_Handle *, char *table, int *ncols);
-NS_EXTERN char *Dbi_BestRow(Ns_DString *ds, Dbi_Handle *handle, char *table);
+NS_EXTERN int Dbi_RegisterDriver(Dbi_Driver *driver) _nsnonnull();
+NS_EXTERN const char *Dbi_DriverName(Dbi_Handle *) _nsnonnull();
+NS_EXTERN const char *Dbi_DriverDbType(Dbi_Handle *) _nsnonnull();
+NS_EXTERN int Dbi_DML(Dbi_Handle *, const char *sql, int *nrows, int *ncols) _nsnonnull(1,2);
+NS_EXTERN int Dbi_Select(Dbi_Handle *, const char *sql, int *nrows, int *ncols) _nsnonnull(1,2);
+NS_EXTERN int Dbi_Exec(Dbi_Handle *, const char *sql, int *nrows, int *ncols) _nsnonnull(1,2);
+NS_EXTERN int Dbi_NextValue(Dbi_Handle *, const char **, int *, const char **, int *) _nsnonnull(1,2,3);
+NS_EXTERN int Dbi_CurrentColumn(Dbi_Handle *, const char **column, int *len) _nsnonnull(1,2,3);
+NS_EXTERN int Dbi_Cancel(Dbi_Handle *) _nsnonnull();
+NS_EXTERN int Dbi_Flush(Dbi_Handle *) _nsnonnull();
+NS_EXTERN int Dbi_ResetHandle(Dbi_Handle *) _nsnonnull();
+NS_EXTERN int Dbi_TableList(Dbi_Handle *, int incsys, int *ntables);
+NS_EXTERN int Dbi_GetTableInfo(Dbi_Handle *, const char *table, int *ncols);
+NS_EXTERN const char *Dbi_BestRow(Ns_DString *ds, Dbi_Handle *handle, const char *table);
 
 /*
  * init.c:
  */
 
-NS_EXTERN Dbi_Pool *Dbi_GetPool(char *server, char *pool) _nsnonnull();
-NS_EXTERN Dbi_Pool *Dbi_PoolDefault(char *server) _nsnonnull();
-NS_EXTERN char *Dbi_PoolDbType(Dbi_Pool *poolPtr) _nsnonnull();
-NS_EXTERN char *Dbi_PoolDriverName(Dbi_Pool *poolPtr) _nsnonnull();
-NS_EXTERN int Dbi_PoolList(Ns_DString *ds, char *server) _nsnonnull();
+NS_EXTERN Dbi_Pool *Dbi_GetPool(const char *server, const char *pool) _nsnonnull();
+NS_EXTERN Dbi_Pool *Dbi_PoolDefault(const char *server) _nsnonnull();
+NS_EXTERN const char *Dbi_PoolDbType(Dbi_Pool *poolPtr) _nsnonnull();
+NS_EXTERN const char *Dbi_PoolDriverName(Dbi_Pool *poolPtr) _nsnonnull();
+NS_EXTERN int Dbi_PoolList(Ns_DString *ds, const char *server) _nsnonnull();
 NS_EXTERN void Dbi_PoolPutHandle(Dbi_Handle *handle) _nsnonnull();
 NS_EXTERN int Dbi_PoolGetHandle(Dbi_Handle **handlePtrPtr, Dbi_Pool *poolPtr) _nsnonnull();
 NS_EXTERN int Dbi_PoolTimedGetHandle(Dbi_Handle **handlePtrPtr, Dbi_Pool *poolPtr, int wait) _nsnonnull();
@@ -163,11 +163,11 @@ NS_EXTERN int Dbi_BouncePool(Dbi_Pool *poolPtr) _nsnonnull();
  * util.c:
  */
 
-NS_EXTERN void Dbi_QuoteValue(Ns_DString *pds, char *string);
-NS_EXTERN int Dbi_0or1Row(Dbi_Handle *handle, char *sql, int *nrows, int *ncols) _nsnonnull(1, 2);
-NS_EXTERN int Dbi_1Row(Dbi_Handle *handle, char *sql, int *ncols) _nsnonnull(1, 2);
+NS_EXTERN void Dbi_QuoteValue(Ns_DString *pds, const char *string);
+NS_EXTERN int Dbi_0or1Row(Dbi_Handle *handle, const char *sql, int *nrows, int *ncols) _nsnonnull(1, 2);
+NS_EXTERN int Dbi_1Row(Dbi_Handle *handle, const char *sql, int *ncols) _nsnonnull(1, 2);
 NS_EXTERN int Dbi_InterpretSqlFile(Dbi_Handle *handle, char *filename);
-NS_EXTERN void Dbi_SetException(Dbi_Handle *handle, char *sqlstate, char *fmt, ...)
+NS_EXTERN void Dbi_SetException(Dbi_Handle *handle, const char *sqlstate, const char *fmt, ...)
      _nsprintflike(3, 4) _nsnonnull(1, 2);
 
 #endif /* NSDBI_H */

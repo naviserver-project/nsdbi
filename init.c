@@ -57,7 +57,7 @@ static void         ReturnHandle(Handle * handle) _nsnonnull();
 static int          IsStale(Handle *, time_t now) _nsnonnull();
 static int          Connect(Handle *) _nsnonnull();
 static Pool        *CreatePool(char *pool, char *path, char *driver) _nsnonnull();
-static ServData    *GetServer(char *server) _nsnonnull();
+static ServData    *GetServer(const char *server) _nsnonnull();
 static Ns_Callback  CheckPool;
 static Ns_ArgProc   CheckArgProc;
 
@@ -89,13 +89,13 @@ static Tcl_HashTable poolsTable;
  */
 
 Dbi_Pool *
-Dbi_GetPool(char *server, char *pool)
+Dbi_GetPool(const char *server, const char *pool)
 {
     Tcl_HashEntry *hPtr;
     Dbi_Pool      *poolPtr;
     ServData      *sdataPtr;
 
-    hPtr = Tcl_FindHashEntry(&poolsTable, pool);
+    hPtr = Tcl_FindHashEntry(&poolsTable, (char *) pool);
     if (hPtr == NULL) {
         return NULL;
     }
@@ -133,7 +133,7 @@ Dbi_GetPool(char *server, char *pool)
  */
 
 Dbi_Pool *
-Dbi_PoolDefault(char *server)
+Dbi_PoolDefault(const char *server)
 {
     ServData *sdataPtr = GetServer(server);
 
@@ -157,11 +157,11 @@ Dbi_PoolDefault(char *server)
  *----------------------------------------------------------------------
  */
 
-char *
+const char *
 Dbi_PoolDbType(Dbi_Pool *poolPtr)
 {
-    Dbi_Handle *handle;
-    char       *dbtype;
+    Dbi_Handle  *handle;
+    const char  *dbtype;
 
     if ((Dbi_PoolGetHandle(&handle, poolPtr)) != NS_OK) {
         return NULL;
@@ -189,11 +189,11 @@ Dbi_PoolDbType(Dbi_Pool *poolPtr)
  *----------------------------------------------------------------------
  */
 
-char *
+const char *
 Dbi_PoolDriverName(Dbi_Pool *poolPtr)
 {
-    Dbi_Handle *handle;
-    char       *name;
+    Dbi_Handle  *handle;
+    const char  *name;
 
     if ((Dbi_PoolGetHandle(&handle, poolPtr)) != NS_OK) {
         return NULL;
@@ -223,7 +223,7 @@ Dbi_PoolDriverName(Dbi_Pool *poolPtr)
  */
 
 int
-Dbi_PoolList(Ns_DString *ds, char *server)
+Dbi_PoolList(Ns_DString *ds, const char *server)
 {
     ServData       *sdataPtr = GetServer(server);
     Pool           *poolPtr;
@@ -612,7 +612,7 @@ DbiDisconnect(Dbi_Handle *handle)
  */
 
 void
-DbiLogSql(Dbi_Handle *handle, char *sql)
+DbiLogSql(Dbi_Handle *handle, const char *sql)
 {
     Handle *handlePtr = (Handle *) handle;
     Pool *poolPtr = (Pool *) handlePtr->poolPtr;
@@ -942,11 +942,11 @@ Connect(Handle *handlePtr)
  */
 
 static ServData *
-GetServer(char *server)
+GetServer(const char *server)
 {
     Tcl_HashEntry *hPtr;
 
-    hPtr = Tcl_FindHashEntry(&serversTable, server);
+    hPtr = Tcl_FindHashEntry(&serversTable, (char *) server);
     if (hPtr != NULL) {
         return Tcl_GetHashValue(hPtr);
     }

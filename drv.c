@@ -97,11 +97,11 @@ Dbi_RegisterDriver(Dbi_Driver *driver)
  *----------------------------------------------------------------------
  */
 
-char *
+const char *
 Dbi_DriverName(Dbi_Handle *handle)
 {
     Dbi_Driver *driverPtr = DbiGetDriver(handle);
-    char *name = NULL;
+    const char *name = NULL;
 
     if (driverPtr->nameProc != NULL) {
         name = (*driverPtr->nameProc)(handle);
@@ -127,11 +127,11 @@ Dbi_DriverName(Dbi_Handle *handle)
  *----------------------------------------------------------------------
  */
 
-char *
+const char *
 Dbi_DriverDbType(Dbi_Handle *handle)
 {
     Dbi_Driver *driverPtr = DbiGetDriver(handle);
-    char *type = NULL;
+    const char *type = NULL;
 
     if (driverPtr->typeProc != NULL && handle->connected) {
         type = (*driverPtr->typeProc)(handle);;
@@ -158,7 +158,7 @@ Dbi_DriverDbType(Dbi_Handle *handle)
  */
 
 int
-Dbi_DML(Dbi_Handle *handle, char *sql, int *nrows, int *ncols)
+Dbi_DML(Dbi_Handle *handle, const char *sql, int *nrows, int *ncols)
 {
     int status;
 
@@ -195,7 +195,7 @@ Dbi_DML(Dbi_Handle *handle, char *sql, int *nrows, int *ncols)
  */
 
 int
-Dbi_Select(Dbi_Handle *handle, char *sql, int *nrows, int *ncols)
+Dbi_Select(Dbi_Handle *handle, const char *sql, int *nrows, int *ncols)
 {
     Handle *handlePtr = (Handle *) handle;
 
@@ -228,7 +228,7 @@ Dbi_Select(Dbi_Handle *handle, char *sql, int *nrows, int *ncols)
  */
 
 int
-Dbi_Exec(Dbi_Handle *handle, char *sql, int *nrows, int *ncols)
+Dbi_Exec(Dbi_Handle *handle, const char *sql, int *nrows, int *ncols)
 {
     Dbi_Driver *driverPtr = DbiGetDriver(handle);
     Handle     *handlePtr = (Handle *) handle;
@@ -282,7 +282,7 @@ Dbi_Exec(Dbi_Handle *handle, char *sql, int *nrows, int *ncols)
  *----------------------------------------------------------------------
  */
 int
-Dbi_NextValue(Dbi_Handle *handle, char **value, int *vLen, char **column, int *cLen)
+Dbi_NextValue(Dbi_Handle *handle, const char **value, int *vLen, const char **column, int *cLen)
 {
     Handle *handlePtr = (Handle *) handle;
     int     status;
@@ -338,7 +338,7 @@ Dbi_NextValue(Dbi_Handle *handle, char **value, int *vLen, char **column, int *c
  */
 
 int
-Dbi_CurrentColumn(Dbi_Handle *handle, char **column, int *len)
+Dbi_CurrentColumn(Dbi_Handle *handle, const char **column, int *len)
 {
     Dbi_Driver *driverPtr = DbiGetDriver(handle);
     Handle     *handlePtr = (Handle *) handle;
@@ -643,7 +643,7 @@ DbiClose(Dbi_Handle *handle)
  *----------------------------------------------------------------------
  */
 int
-DbiValue(Dbi_Handle *handle, char **value, int *len)
+DbiValue(Dbi_Handle *handle, const char **value, int *len)
 {
     Dbi_Driver *driverPtr = DbiGetDriver(handle);
     Handle     *handlePtr = (Handle *) handle;
@@ -674,7 +674,7 @@ DbiValue(Dbi_Handle *handle, char **value, int *len)
  *----------------------------------------------------------------------
  */
 int
-DbiColumn(Dbi_Handle *handle, char **column, int *len)
+DbiColumn(Dbi_Handle *handle, const char **column, int *len)
 {
     Dbi_Driver *driverPtr = DbiGetDriver(handle);
     Handle     *handlePtr = (Handle *) handle;

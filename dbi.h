@@ -104,21 +104,21 @@ typedef struct Handle {
 
 
 extern void DbiInitPools(void);
-extern void DbiInitServer(char *server);
-extern void DbiLogSql(Dbi_Handle *, char *sql) _nsnonnull();
-extern void DbiDisconnect(Dbi_Handle *);
+extern void DbiInitServer(char *server) _nsnonnull();
+extern void DbiLogSql(Dbi_Handle *, const char *sql) _nsnonnull();
+extern void DbiDisconnect(Dbi_Handle *) _nsnonnull();
 
 /*
  * drv.c
  */
 
-extern Dbi_Driver *DbiLoadDriver(char *drivername);
-extern void DbiDriverInit(char *server, Dbi_Driver *driverPtr);
+extern Dbi_Driver *DbiLoadDriver(char *drivername) _nsnonnull();
+extern void DbiDriverInit(char *server, Dbi_Driver *driverPtr) _nsnonnull();
 extern inline Dbi_Driver *DbiGetDriver(Dbi_Handle *) _nsnonnull();
 extern int DbiOpen(Dbi_Handle *);
 extern void DbiClose(Dbi_Handle *) _nsnonnull();
-extern int DbiColumn(Dbi_Handle *, char **column, int *len) _nsnonnull();
-extern int DbiValue(Dbi_Handle *, char **value, int *len) _nsnonnull();
+extern int DbiColumn(Dbi_Handle *, const char **column, int *len) _nsnonnull();
+extern int DbiValue(Dbi_Handle *, const char **value, int *len) _nsnonnull();
 
 /*
  * tclcmds.c

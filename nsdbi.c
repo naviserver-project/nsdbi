@@ -58,7 +58,7 @@ int Ns_ModuleVersion = 1;
  */
 
 int
-Ns_ModuleInit(char *server, char *module)
+Ns_ModuleInit(char *server, char *module _nsunused)
 {
     static int once;
 
