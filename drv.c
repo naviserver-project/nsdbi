@@ -87,12 +87,6 @@ static Tcl_HashTable driversTable;
  *----------------------------------------------------------------------
  */
 
-static void
-UnsupProcId(char *name)
-{
-    Ns_Log(Warning, "dbidrv: unsupported function id '%s'", name);
-}
-
 int
 Dbi_RegisterDriver(char *driver, Dbi_Proc *procs)
 {
