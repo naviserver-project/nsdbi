@@ -93,7 +93,7 @@ static CONST char *reasons[] = {"?", "bounced", "aged", "idle", "used"};
  */
 
 Dbi_Pool *
-Dbi_GetPool(const char *server, const char *poolname)
+Dbi_GetPool(CONST char *server, CONST char *poolname)
 {
     ServerData *sdataPtr;
     Dbi_Pool   *poolPtr;
@@ -111,7 +111,7 @@ Dbi_GetPool(const char *server, const char *poolname)
 }
 
 Dbi_Pool *
-DbiGetPool(ServerData *sdataPtr, const char *poolname)
+DbiGetPool(ServerData *sdataPtr, CONST char *poolname)
 {
    Tcl_HashEntry *hPtr;
 
@@ -137,7 +137,7 @@ DbiGetPool(ServerData *sdataPtr, const char *poolname)
  */
 
 Dbi_Pool *
-Dbi_PoolDefault(const char *server)
+Dbi_PoolDefault(CONST char *server)
 {
     ServerData *sdataPtr = DbiGetServer(server);
 
@@ -161,11 +161,11 @@ Dbi_PoolDefault(const char *server)
  *----------------------------------------------------------------------
  */
 
-const char *
+CONST char *
 Dbi_PoolDbType(Dbi_Pool *poolPtr)
 {
     Dbi_Handle  *handle;
-    const char  *dbtype;
+    CONST char  *dbtype;
 
     if ((Dbi_PoolGetHandle(&handle, poolPtr)) != NS_OK) {
         return NULL;
@@ -193,11 +193,11 @@ Dbi_PoolDbType(Dbi_Pool *poolPtr)
  *----------------------------------------------------------------------
  */
 
-const char *
+CONST char *
 Dbi_PoolDriverName(Dbi_Pool *poolPtr)
 {
     Dbi_Handle  *handle;
-    const char  *name;
+    CONST char  *name;
 
     if ((Dbi_PoolGetHandle(&handle, poolPtr)) != NS_OK) {
         return NULL;
@@ -227,7 +227,7 @@ Dbi_PoolDriverName(Dbi_Pool *poolPtr)
  */
 
 int
-Dbi_PoolList(Ns_DString *ds, const char *server)
+Dbi_PoolList(Ns_DString *ds, CONST char *server)
 {
     ServerData     *sdataPtr;
     Pool           *poolPtr;
@@ -996,7 +996,7 @@ Disconnect(Handle *handlePtr)
  */
 
 ServerData *
-DbiGetServer(const char *server)
+DbiGetServer(CONST char *server)
 {
     Tcl_HashEntry *hPtr;
 

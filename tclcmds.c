@@ -57,14 +57,14 @@ typedef struct InterpData {
 
 static int ParseOptions(InterpData *idataPtr, int objc, Tcl_Obj *CONST objv[],
                         Dbi_Handle **handlePtrPtr, Dbi_Statement **stmtPtrPtr) _nsnonnull();
-static Dbi_Handle* GetHandle(InterpData *idataPtr, const char *pool, int timeout) _nsnonnull();
-static Dbi_Pool* GetPool(InterpData *idataPtr, const char *pool) _nsnonnull(1);
+static Dbi_Handle* GetHandle(InterpData *idataPtr, CONST char *pool, int timeout) _nsnonnull();
+static Dbi_Pool* GetPool(InterpData *idataPtr, CONST char *pool) _nsnonnull(1);
 static Dbi_Statement *BindVars(Tcl_Interp *interp, Dbi_Pool *pool, Tcl_Obj *dictObjPtr, Tcl_Obj *sqlObjPtr) _nsnonnull();
 static char *GetVar(Tcl_Interp *interp, Tcl_Obj *dictObjPtr, char *name, int *len) _nsnonnull();
 static int DictRowResult(Tcl_Interp *interp, Dbi_Handle *handle, Dbi_Statement *stmt) _nsnonnull();
 static void ReleaseHandle(InterpData *idataPtr, Dbi_Handle *handle) _nsnonnull();
 static int ReleaseAllHandles(InterpData *idataPtr) _nsnonnull();
-static int Exception(Tcl_Interp *interp, const char *code, const char *msg, ...)
+static int Exception(Tcl_Interp *interp, CONST char *code, CONST char *msg, ...)
      _nsprintflike(3, 4) _nsnonnull(1);
 static int SqlException(Tcl_Interp *interp, Dbi_Handle *handle) _nsnonnull();
 
@@ -89,7 +89,7 @@ static char *datakey = "dbi:data";
 static struct Cmd {
     char           *name;
     Tcl_ObjCmdProc *objProc;
-} const cmds[] = {
+} CONST cmds[] = {
     {"dbi_0or1row",        Tcl0or1rowCmd},
     {"dbi_1row",           Tcl1rowCmd},
     {"dbi_rows",           TclRowsCmd},
@@ -290,7 +290,7 @@ TclRowsCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *CONST o
     InterpData    *idataPtr = clientData;
     Dbi_Handle    *handle;
     Dbi_Statement *stmt;
-    const char    *value;
+    CONST char    *value;
     int            vLen, nrows, status;
     Tcl_Obj       *listObjPtr;
     int            result = TCL_ERROR;
@@ -389,7 +389,7 @@ static int
 TclPoolCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
 {
     InterpData *idataPtr = clientData;
-    const char *pool     = NULL;
+    CONST char *pool     = NULL;
     Dbi_Handle *handle   = NULL;
     Dbi_Pool   *poolPtr  = NULL;
     Ns_DString  ds;
@@ -606,7 +606,7 @@ ParseOptions(InterpData *idataPtr, int objc, Tcl_Obj *CONST objv[],
     Dbi_Handle    *handle;
     Dbi_Statement *stmt;
     Tcl_Obj       *dictObjPtr;
-    const char    *poolname;
+    CONST char    *poolname;
     int            i, timeout;
 
     static CONST char *opts[] = {"-pool", "-timeout", "-bind", NULL};
@@ -671,7 +671,7 @@ ParseOptions(InterpData *idataPtr, int objc, Tcl_Obj *CONST objv[],
  */
 
 static Dbi_Handle*
-GetHandle(InterpData *idataPtr, const char *pool, int timeout)
+GetHandle(InterpData *idataPtr, CONST char *pool, int timeout)
 {
     Tcl_Interp    *interp = idataPtr->interp;
     Dbi_Handle    *handlePtr;
@@ -732,7 +732,7 @@ GetHandle(InterpData *idataPtr, const char *pool, int timeout)
  */
 
 static Dbi_Pool*
-GetPool(InterpData *idataPtr, const char *poolname)
+GetPool(InterpData *idataPtr, CONST char *poolname)
 {
     ServerData *sdataPtr = idataPtr->sdataPtr;
     Tcl_Interp *interp   = idataPtr->interp;
@@ -862,7 +862,7 @@ GetVar(Tcl_Interp *interp, Tcl_Obj *dictObjPtr, char *name, int *len)
 static int
 DictRowResult(Tcl_Interp *interp, Dbi_Handle *handle, Dbi_Statement *stmt)
 {
-    const char *column, *value;
+    CONST char *column, *value;
     int         cLen, vLen, status;
     Tcl_Obj     *dictObjPtr, *colObjPtr, *valObjPtr;
 
@@ -988,7 +988,7 @@ ReleaseAllHandles(InterpData *idataPtr)
  */
 
 static int
-Exception(Tcl_Interp *interp, const char *code, const char *msg, ...)
+Exception(Tcl_Interp *interp, CONST char *code, CONST char *msg, ...)
 {
     Tcl_Obj    *objPtr;
     Ns_DString  ds;

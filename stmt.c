@@ -14,8 +14,8 @@ NS_RCSID("@(#) $Header$");
  * Static functions defined in this file
  */
 
-static void ParseBindVars(Statement *stmtPtr, const char *sql, int len);
-static void DefineBindVar(Statement *stmtPtr, char *name);
+static void ParseBindVars(Statement *stmtPtr, CONST char *sql, int len);
+static void DefineBindVar(Statement *stmtPtr, CONST char *name);
 
 
 
@@ -37,7 +37,7 @@ static void DefineBindVar(Statement *stmtPtr, char *name);
  */
 
 Dbi_Statement *
-Dbi_StatementAlloc(Dbi_Pool *pool, const char *sql, int len)
+Dbi_StatementAlloc(Dbi_Pool *pool, CONST char *sql, int len)
 {
     Statement *stmtPtr;
 
@@ -141,7 +141,7 @@ Dbi_StatementBindValue(Dbi_Statement *stmt, char *name, char *value, int len)
  */
 
 static void
-ParseBindVars(Statement *stmtPtr, const char *sql, int len)
+ParseBindVars(Statement *stmtPtr, CONST char *sql, int len)
 {
     Dbi_Driver *driver = stmtPtr->poolPtr->driver;
     Ns_DString  ds;
@@ -189,7 +189,7 @@ ParseBindVars(Statement *stmtPtr, const char *sql, int len)
 }
 
 static void
-DefineBindVar(Statement *stmtPtr, char *name)
+DefineBindVar(Statement *stmtPtr, CONST char *name)
 {
     Dbi_Driver    *driver = stmtPtr->poolPtr->driver;
     Tcl_HashEntry *hPtr;

@@ -97,11 +97,11 @@ Dbi_RegisterDriver(Dbi_Driver *driver)
  *----------------------------------------------------------------------
  */
 
-const char *
+CONST char *
 Dbi_DriverName(Dbi_Handle *handle)
 {
     Dbi_Driver *driver = handle->pool->driver;
-    const char *name   = NULL;
+    CONST char *name   = NULL;
 
     if (driver->nameProc != NULL) {
         name = (*driver->nameProc)(handle);
@@ -127,11 +127,11 @@ Dbi_DriverName(Dbi_Handle *handle)
  *----------------------------------------------------------------------
  */
 
-const char *
+CONST char *
 Dbi_DriverDbType(Dbi_Handle *handle)
 {
     Dbi_Driver *driver = handle->pool->driver;
-    const char *type   = NULL;
+    CONST char *type   = NULL;
 
     if (driver->typeProc != NULL && handle->connected) {
         type = (*driver->typeProc)(handle);
@@ -281,7 +281,7 @@ Dbi_Exec(Dbi_Handle *handle, Dbi_Statement *stmt, int *nrows, int *ncols)
  */
 
 int
-Dbi_NextValue(Dbi_Statement *stmt, const char **value, int *vLen, const char **column, int *cLen)
+Dbi_NextValue(Dbi_Statement *stmt, CONST char **value, int *vLen, CONST char **column, int *cLen)
 {
     Statement  *stmtPtr = (Statement *) stmt;
     Dbi_Handle *handle  = (Dbi_Handle *) stmtPtr->handlePtr;

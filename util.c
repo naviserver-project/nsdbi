@@ -64,7 +64,7 @@ NS_RCSID("@(#) $Header$");
  */
 
 void
-Dbi_QuoteValue(Ns_DString *pds, const char *string)
+Dbi_QuoteValue(Ns_DString *pds, CONST char *string)
 {
     while (*string != '\0') {
         if (*string == '\'') {
@@ -163,7 +163,7 @@ Dbi_1Row(Dbi_Handle *handle, Dbi_Statement *stmt, int *ncols)
  */
 
 void
-Dbi_SetException(Dbi_Handle *handle, const char *sqlstate, const char *fmt, ...)
+Dbi_SetException(Dbi_Handle *handle, CONST char *sqlstate, CONST char *fmt, ...)
 {
     Handle      *handlePtr = (Handle *) handle;
     Ns_DString  *ds = &handlePtr->dsExceptionMsg;
