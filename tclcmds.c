@@ -43,6 +43,7 @@ NS_RCSID("@(#) $Header$");
  * Static functions defined in this file
  */
 
+static Dbi_Pool* GetPool(char *server, Tcl_Interp *interp, char *pool);
 static Dbi_Handle *GetHandle(char *server, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[]);
 static int Exception(Tcl_Interp *interp, char *info, char *fmt, ...);
 static int DbiException(Tcl_Interp *interp, Dbi_Handle *handle);
@@ -130,6 +131,7 @@ GetHandle(char *server, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
 
     timeout = -1;
     pool = NULL;
+
     for (i = 1; i < objc - 1; i += 2) {
         if (Tcl_GetIndexFromObj(interp, objv[i], opts, "option", 0, (int *) &opt) != TCL_OK) {
             Exception(interp, "ERROR", NULL);
@@ -148,22 +150,9 @@ GetHandle(char *server, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
         }
     }
 
-    if (pool == NULL) {
-        poolPtr = Dbi_PoolDefault(server);
-        if (poolPtr == NULL) {
-            Exception(interp, "ERROR", "no default pool configured");
-            return NULL;
-        }
-    } else {
-        poolPtr = Dbi_GetPool(pool);
-        if (poolPtr == NULL) {
-            Exception(interp, "ERROR", "pool '%s' not valid", pool);
-            return NULL;
-        }
-        if (!Dbi_PoolAllowable(server, poolPtr)) {
-            Exception(interp, "ERROR", "pool '%s' not available to server", pool);
-            return NULL;
-        }
+    poolPtr = GetPool(server, interp, pool);
+    if (poolPtr == NULL) {
+        return NULL;
     }
 
     handlePtr = NULL;
@@ -177,6 +166,49 @@ GetHandle(char *server, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
     }
 
     return handlePtr;
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ * GetPool --
+ *
+ *      Grab a Dbi_Pool, handling defaults, permissions and non
+ *      existant pools.
+ *
+ * Results:
+ *      Return pointer to Dbi_Pool or NULL on error.
+ *
+ * Side effects:
+ *      Tcl error result may be in iterp.
+ *
+ *----------------------------------------------------------------------
+ */
+
+static Dbi_Pool*
+GetPool(char *server, Tcl_Interp *interp, char *pool)
+{
+    Dbi_Pool *poolPtr;
+
+    if (pool == NULL || *pool == '\0') {
+        poolPtr = Dbi_PoolDefault(server);
+        if (poolPtr == NULL) {
+            Exception(interp, "ERROR", "no pool specified and no default configured");
+            return NULL;
+        }
+    } else {
+        poolPtr = Dbi_GetPool(pool);
+        if (poolPtr == NULL) {
+            Exception(interp, "ERROR", "pool '%s' not valid", pool);
+            return NULL;
+        }
+        if (!Dbi_PoolAllowable(server, poolPtr)) {
+            Exception(interp, "ERROR", "pool '%s' not available to server '%s'", pool, server);
+            return NULL;
+        }
+    }
+
+    return poolPtr;
 }
 
 
@@ -365,13 +397,7 @@ TclBouncepoolCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *C
     }
 
     pool = Tcl_GetString(objv[1]);
-    poolPtr = Dbi_GetPool(pool);
-    if (poolPtr == NULL) {
-        Exception(interp, "ERROR", "pool '%s' not valid", pool);
-        return TCL_ERROR;
-    }
-    if (!Dbi_PoolAllowable(server, poolPtr)) {
-        Exception(interp, "ERROR", "pool '%s' not available to server", pool);
+    if ((poolPtr = GetPool(server, interp, pool)) == NULL) {
         return TCL_ERROR;
     }
     if (Dbi_BouncePool(poolPtr) == NS_ERROR) {
@@ -465,13 +491,7 @@ TclPoolCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *CONST o
     }
 
     pool = Tcl_GetString(objv[2]);
-    poolPtr = Dbi_GetPool(pool);
-    if (poolPtr == NULL) {
-        Exception(interp, "ERROR", "invalid pool name '%s'", pool);
-        return TCL_ERROR;
-    }
-    if (!Dbi_PoolAllowable(server, poolPtr)) {
-        Exception(interp, "ERROR", "pool '%s' not available to server", pool);
+    if ((poolPtr = GetPool(server, interp, pool)) == NULL) {
         return TCL_ERROR;
     }
 
