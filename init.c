@@ -130,10 +130,12 @@ static Ns_Tls tls;
  *
  * Dbi_GetPool --
  *
- *      Return the Dbi_Pool structure for the given pool name.
+ *      Return the Dbi_Pool structure for the given pool name, checking
+ *      that the virtual server has been given access to it.
  *
  * Results:
- *      Pointer to Dbi_Pool structure or NULL if pool does not exist.
+ *      Pointer to Dbi_Pool structure or NULL if pool does not exist or
+ *      access not allowed.
  *
  * Side effects:
  *      None.
@@ -142,16 +144,30 @@ static Ns_Tls tls;
  */
 
 Dbi_Pool *
-Dbi_GetPool(char *pool)
+Dbi_GetPool(char *server, char *pool)
 {
-    Tcl_HashEntry   *hPtr;
+    Tcl_HashEntry *hPtr;
+    Dbi_Pool      *poolPtr;
+    ServData      *sdataPtr;
 
     hPtr = Tcl_FindHashEntry(&poolsTable, pool);
     if (hPtr == NULL) {
         return NULL;
     }
+    poolPtr = Tcl_GetHashValue(hPtr);
+    sdataPtr = GetServer(server);
+    if (sdataPtr == NULL) {
+        Ns_Log(Error, "nsdbi: invalid server '%s' while getting pool '%s'",
+               server, pool);
+        return NULL;
+    }
+    if (Tcl_FindHashEntry(&sdataPtr->allowedTable, (char *) poolPtr) == NULL) {
+        Ns_Log(Warning, "nsdbi: pool '%s' not available to server '%s'",
+               pool, server);
+        return NULL;
+    }
 
-    return (Dbi_Pool *) Tcl_GetHashValue(hPtr);
+    return poolPtr;
 }
 
 
@@ -278,37 +294,6 @@ Dbi_PoolList(Ns_DString *ds, char *server)
         Ns_DStringAppendElement(ds, poolPtr->name);
     }
     return NS_OK;
-}
-
-
-/*
- *----------------------------------------------------------------------
- *
- * Dbi_PoolAllowable --
- *
- *      Check that virtual server is allowed access to a pool.
- *
- * Results:
- *      NS_TRUE if allowed, NS_FALSE otherwise.
- *
- * Side effects:
- *      None.
- *
- *----------------------------------------------------------------------
- */
-
-int
-Dbi_PoolAllowable(char *server, Dbi_Pool *poolPtr)
-{
-    ServData *sdataPtr = GetServer(server);
-
-    if (sdataPtr == NULL) {
-        return NS_FALSE;
-    }
-    if (Tcl_FindHashEntry(&sdataPtr->allowedTable, (char *) poolPtr) == NULL) {
-        return NS_FALSE;
-    }
-    return NS_TRUE;
 }
 
 

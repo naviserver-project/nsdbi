@@ -170,12 +170,11 @@ NS_EXTERN char *Dbi_BestRow(Ns_DString *ds, Dbi_Handle *handle, char *table);
  * init.c:
  */
 
-NS_EXTERN Dbi_Pool *Dbi_GetPool(char *pool);
+NS_EXTERN Dbi_Pool *Dbi_GetPool(char *server, char *pool);
 NS_EXTERN Dbi_Pool *Dbi_PoolDefault(char *server);
 NS_EXTERN char *Dbi_PoolDbType(Dbi_Pool *poolPtr);
 NS_EXTERN char *Dbi_PoolDriverName(Dbi_Pool *poolPtr);
 NS_EXTERN int Dbi_PoolList(Ns_DString *ds, char *server);
-NS_EXTERN int Dbi_PoolAllowable(char *server, Dbi_Pool *poolPtr);
 NS_EXTERN void Dbi_PoolPutHandle(Dbi_Handle *handle);
 NS_EXTERN int Dbi_PoolGetHandle(Dbi_Handle **handlePtrPtr, char *server,
                                 Dbi_Pool *poolPtr);

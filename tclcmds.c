@@ -197,13 +197,10 @@ GetPool(char *server, Tcl_Interp *interp, char *pool)
             return NULL;
         }
     } else {
-        poolPtr = Dbi_GetPool(pool);
+        poolPtr = Dbi_GetPool(server, pool);
         if (poolPtr == NULL) {
-            Exception(interp, "ERROR", "pool '%s' not valid", pool);
-            return NULL;
-        }
-        if (!Dbi_PoolAllowable(server, poolPtr)) {
-            Exception(interp, "ERROR", "pool '%s' not available to server '%s'", pool, server);
+            Exception(interp, "ERROR", "pool '%s' not valid or not available for server '%s'",
+                      pool, server);
             return NULL;
         }
     }
