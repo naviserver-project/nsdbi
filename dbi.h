@@ -137,13 +137,26 @@ typedef struct Statement {
 } Statement;
 
 
+/*
+ * The following structure maintains per-server data.
+ */
+
+typedef struct ServerData {
+    char          *server;
+    Pool          *defpoolPtr;
+    Tcl_HashTable  poolsTable;
+} ServerData;
+
+
 
 /*
  * init.c
  */
 
 extern void DbiInitPools(void);
+extern Dbi_Pool *DbiGetPool(ServerData *sdataPtr, const char *poolname) _nsnonnull();
 extern void DbiInitServer(char *server) _nsnonnull();
+extern ServerData *DbiGetServer(const char *server) _nsnonnull();
 extern void DbiLogSql(Dbi_Statement *) _nsnonnull();
 
 /*

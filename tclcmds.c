@@ -44,10 +44,10 @@ NS_RCSID("@(#) $Header$");
  */
 
 typedef struct InterpData {
-    const char    *server;
-    int            cleanup;
-    Tcl_HashTable  handles;
+    ServerData    *sdataPtr;
     Tcl_Interp    *interp;
+    Tcl_HashTable  handles;
+    int            cleanup;
 } InterpData;
 
 
@@ -135,13 +135,16 @@ static char *blockingCmds[] = {
 int
 DbiAddCmds(Tcl_Interp *interp, void *arg)
 {
+    char       *server = arg;
+    ServerData *sdataPtr;
     InterpData *idataPtr;
-    int i;
+    int         i;
 
+    sdataPtr = DbiGetServer(server);
     idataPtr = ns_malloc(sizeof(InterpData));
-    idataPtr->server  = arg;
-    idataPtr->cleanup = 0;
-    idataPtr->interp  = interp;
+    idataPtr->sdataPtr  = sdataPtr;
+    idataPtr->interp    = interp;
+    idataPtr->cleanup   = 0;
     Tcl_InitHashTable(&idataPtr->handles, TCL_STRING_KEYS);
     Tcl_SetAssocData(interp, datakey, FreeData, idataPtr);
 
@@ -496,7 +499,7 @@ TclPoolsCmd(ClientData clientData, Tcl_Interp *interp, int objc _nsunused, Tcl_O
     char       *p, *q;
 
     Ns_DStringInit(&ds);
-    if (Dbi_PoolList(&ds, idataPtr->server) != NS_OK) {
+    if (Dbi_PoolList(&ds, idataPtr->sdataPtr->server) != NS_OK) {
         return TCL_ERROR;
     }
     result = Tcl_GetObjResult(interp);
@@ -536,9 +539,9 @@ static int
 TclDefaultpoolCmd(ClientData clientData, Tcl_Interp *interp, int objc _nsunused, Tcl_Obj *CONST objv[] _nsunused)
 {
     InterpData *idataPtr = clientData;
-    Dbi_Pool *poolPtr;
+    Dbi_Pool   *poolPtr;
 
-    poolPtr = Dbi_PoolDefault(idataPtr->server);
+    poolPtr = Dbi_PoolDefault(idataPtr->sdataPtr->server);
     if (poolPtr != NULL) {
         Tcl_SetObjResult(interp, Tcl_NewStringObj(poolPtr->name, -1));
     }
@@ -729,26 +732,25 @@ GetHandle(InterpData *idataPtr, const char *pool, int timeout)
  */
 
 static Dbi_Pool*
-GetPool(InterpData *idataPtr, const char *pool)
+GetPool(InterpData *idataPtr, const char *poolname)
 {
-    Tcl_Interp *interp = idataPtr->interp;
-    Dbi_Pool *poolPtr;
+    ServerData *sdataPtr = idataPtr->sdataPtr;
+    Tcl_Interp *interp   = idataPtr->interp;
+    Dbi_Pool   *poolPtr;
 
-    if (pool == NULL || *pool == '\0') {
-        poolPtr = Dbi_PoolDefault(idataPtr->server);
-        if (poolPtr == NULL) {
+    if (poolname == NULL || *poolname == '\0') {
+        if ((poolPtr = (Dbi_Pool *) sdataPtr->defpoolPtr) == NULL) {
             Exception(interp, NULL, "no pool specified and no default configured");
             return NULL;
         }
     } else {
-        poolPtr = Dbi_GetPool(idataPtr->server, pool);
+        poolPtr = DbiGetPool(sdataPtr, poolname);
         if (poolPtr == NULL) {
             Exception(interp, NULL, "pool '%s' not valid or not available for server '%s'",
-                      pool, idataPtr->server);
+                      poolname, sdataPtr->server);
             return NULL;
         }
     }
-
     return poolPtr;
 }
 

@@ -42,15 +42,6 @@ NS_RCSID("@(#) $Header$");
 
 
 /*
- * The following structure maintains per-server data.
- */
-
-typedef struct ServData {
-    Pool          *defpoolPtr;
-    Tcl_HashTable  allowedTable;
-} ServData;
-
-/*
  * Local functions defined in this file
  */
 
@@ -59,7 +50,6 @@ static int          IsStale(Handle *, time_t now) _nsnonnull();
 static int          Connect(Handle *) _nsnonnull();
 static void         Disconnect(Handle *) _nsnonnull();
 static Pool        *CreatePool(char *poolname, char *path, char *drivername) _nsnonnull();
-static ServData    *GetServer(const char *server) _nsnonnull();
 static void         CheckPool(Pool *poolPtr, int stale);
 static Ns_Callback  ScheduledPoolCheck;
 static Ns_Callback  LogStats;
@@ -103,30 +93,30 @@ static CONST char *reasons[] = {"?", "bounced", "aged", "idle", "used"};
  */
 
 Dbi_Pool *
-Dbi_GetPool(const char *server, const char *pool)
+Dbi_GetPool(const char *server, const char *poolname)
 {
-    Tcl_HashEntry *hPtr;
-    Dbi_Pool      *poolPtr;
-    ServData      *sdataPtr;
+    ServerData *sdataPtr;
+    Dbi_Pool   *poolPtr;
 
-    hPtr = Tcl_FindHashEntry(&poolsTable, (char *) pool);
-    if (hPtr == NULL) {
+    if ((sdataPtr = DbiGetServer(server)) == NULL) {
+        Ns_Log(Error, "nsdbi: invalid server '%s' while getting pool '%s'", server, poolname);
         return NULL;
     }
-    poolPtr = Tcl_GetHashValue(hPtr);
-    sdataPtr = GetServer(server);
-    if (sdataPtr == NULL) {
-        Ns_Log(Error, "nsdbi: invalid server '%s' while getting pool '%s'",
-               server, pool);
+    if ((poolPtr = DbiGetPool(sdataPtr, poolname)) == NULL) {
+        Ns_Log(Error, "nsdbi: invalid pool '%s' for server '%s'", poolname, server);
         return NULL;
     }
-    if (Tcl_FindHashEntry(&sdataPtr->allowedTable, (char *) poolPtr) == NULL) {
-        Ns_Log(Error, "nsdbi: pool '%s' not available to server '%s'",
-               pool, server);
-        return NULL;
-    }
-
     return poolPtr;
+
+}
+
+Dbi_Pool *
+DbiGetPool(ServerData *sdataPtr, const char *poolname)
+{
+   Tcl_HashEntry *hPtr;
+
+   hPtr = Tcl_FindHashEntry(&sdataPtr->poolsTable, poolname);
+   return hPtr ? Tcl_GetHashValue(hPtr) : NULL;
 }
 
 
@@ -149,7 +139,7 @@ Dbi_GetPool(const char *server, const char *pool)
 Dbi_Pool *
 Dbi_PoolDefault(const char *server)
 {
-    ServData *sdataPtr = GetServer(server);
+    ServerData *sdataPtr = DbiGetServer(server);
 
     return (sdataPtr ? (Dbi_Pool *) sdataPtr->defpoolPtr : NULL);
 }
@@ -239,16 +229,16 @@ Dbi_PoolDriverName(Dbi_Pool *poolPtr)
 int
 Dbi_PoolList(Ns_DString *ds, const char *server)
 {
-    ServData       *sdataPtr;
+    ServerData     *sdataPtr;
     Pool           *poolPtr;
     Tcl_HashEntry  *hPtr;
     Tcl_HashSearch  search;
 
-    if ((sdataPtr = GetServer(server)) == NULL) {
+    if ((sdataPtr = DbiGetServer(server)) == NULL) {
         return NS_ERROR;
     }
-    for_each_hash_entry(hPtr, &sdataPtr->allowedTable, &search) {
-        poolPtr = (Pool *) Tcl_GetHashKey(&sdataPtr->allowedTable, hPtr);
+    for_each_hash_entry(hPtr, &sdataPtr->poolsTable, &search) {
+        poolPtr = Tcl_GetHashValue(hPtr);
         Ns_DStringAppendElement(ds, poolPtr->name);
     }
     return NS_OK;
@@ -536,7 +526,7 @@ void
 DbiInitServer(char *server)
 {
     Pool           *poolPtr;
-    ServData       *sdataPtr;
+    ServerData     *sdataPtr;
     Tcl_HashEntry  *hPtr;
     Tcl_HashSearch  search;
     char           *path, *pool, *pools, *p;
@@ -548,15 +538,16 @@ DbiInitServer(char *server)
      * Verify the default pool exists, if any.
      */
 
-    sdataPtr = ns_malloc(sizeof(ServData));
     hPtr = Tcl_CreateHashEntry(&serversTable, server, &new);
+    sdataPtr = ns_malloc(sizeof(ServerData));
+    sdataPtr->server = server;
     Tcl_SetHashValue(hPtr, sdataPtr);
 
     pool = Ns_ConfigGetValue(path, "defaultpool");
     if (pool != NULL) {
         hPtr = Tcl_FindHashEntry(&poolsTable, pool);
         if (hPtr == NULL) {
-            Ns_Log(Error, "nsdbi: no such default pool '%s'", pool);
+            Ns_Log(Error, "nsdbi: no such pool for default '%s'", pool);
             sdataPtr->defpoolPtr = NULL;
         } else {
             sdataPtr->defpoolPtr = Tcl_GetHashValue(hPtr);
@@ -564,10 +555,10 @@ DbiInitServer(char *server)
     }
 
     /*
-     * Construct the allowed list and call the server-specific init.
+     * Construct per-server pool list and call the server-specific init.
      */
 
-    Tcl_InitHashTable(&sdataPtr->allowedTable, TCL_ONE_WORD_KEYS);
+    Tcl_InitHashTable(&sdataPtr->poolsTable, TCL_STRING_KEYS);
     pools = Ns_ConfigGetValue(path, "pools");
 
     if (pools != NULL && poolsTable.numEntries > 0) {
@@ -575,7 +566,8 @@ DbiInitServer(char *server)
             for_each_hash_entry(hPtr, &poolsTable, &search) {
                 poolPtr = Tcl_GetHashValue(hPtr);
                 DbiDriverInit(server, poolPtr->driver);
-                Tcl_CreateHashEntry(&sdataPtr->allowedTable, (char *) poolPtr, &new);
+                hPtr = Tcl_CreateHashEntry(&sdataPtr->poolsTable, poolPtr->name, &new);
+                Tcl_SetHashValue(hPtr, poolPtr);
             }
         } else {
             p = pools;
@@ -588,7 +580,8 @@ DbiInitServer(char *server)
                 if (hPtr != NULL) {
                     poolPtr = Tcl_GetHashValue(hPtr);
                     DbiDriverInit(server, poolPtr->driver);
-                    Tcl_CreateHashEntry(&sdataPtr->allowedTable, (char *) poolPtr, &new);
+                    hPtr = Tcl_CreateHashEntry(&sdataPtr->poolsTable, poolPtr->name, &new);
+                    Tcl_SetHashValue(hPtr, poolPtr);
                 }
                 if (p != NULL) {
                     *p++ = ',';
@@ -989,12 +982,12 @@ Disconnect(Handle *handlePtr)
 /*
  *----------------------------------------------------------------------
  *
- * GetServer --
+ * DbiGetServer --
  *
  *      Get per-server data.
  *
  * Results:
- *      Pointer to per-server data.
+ *      Pointer to per-server data structure.
  *
  * Side effects:
  *      None.
@@ -1002,16 +995,13 @@ Disconnect(Handle *handlePtr)
  *----------------------------------------------------------------------
  */
 
-static ServData *
-GetServer(const char *server)
+ServerData *
+DbiGetServer(const char *server)
 {
     Tcl_HashEntry *hPtr;
 
-    hPtr = Tcl_FindHashEntry(&serversTable, (char *) server);
-    if (hPtr != NULL) {
-        return Tcl_GetHashValue(hPtr);
-    }
-    return NULL;
+    hPtr = Tcl_FindHashEntry(&serversTable, server);
+    return hPtr ? Tcl_GetHashValue(hPtr) : NULL;
 }
 
 
