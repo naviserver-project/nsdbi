@@ -44,22 +44,22 @@ NS_RCSID("@(#) $Header$");
  */
 
 typedef struct DbiDriver {
-    char              *name;
-    int                registered;
-    Dbi_InitProc      *initProc;
-    Dbi_NameProc      *nameProc;
-    Dbi_DbTypeProc    *typeProc;
-    Dbi_OpenProc      *openProc;
-    Dbi_CloseProc     *closeProc;
-    Dbi_ExecProc      *execProc;
-    Dbi_BindRowProc   *bindProc;
-    Dbi_GetRowProc    *getProc;
-    Dbi_CancelProc    *cancelProc;
-    Dbi_FlushProc     *flushProc;
-    Dbi_ResetProc     *resetProc;
-    Dbi_TableListProc *tableListProc;
-    Dbi_TableInfoProc *tableInfoProc;
-    Dbi_BestRowProc   *bestRowProc;
+    char                 *name;
+    int                   registered;
+    Dbi_InitProc         *initProc;
+    Dbi_NameProc         *nameProc;
+    Dbi_DbTypeProc       *typeProc;
+    Dbi_OpenProc         *openProc;
+    Dbi_CloseProc        *closeProc;
+    Dbi_ExecProc         *execProc;
+    Dbi_BindRowProc      *bindProc;
+    Dbi_GetRowProc       *getProc;
+    Dbi_CancelProc       *cancelProc;
+    Dbi_FlushProc        *flushProc;
+    Dbi_ResetProc        *resetProc;
+    Dbi_TableListProc    *tableListProc;
+    Dbi_GetTableInfoProc *tableInfoProc;
+    Dbi_BestRowProc      *bestRowProc;
 } DbiDriver;
 
 /*
@@ -150,8 +150,8 @@ Dbi_RegisterDriver(char *driver, Dbi_Proc *procs)
             case Dbi_TableListId:
                 driverPtr->tableListProc = (Dbi_TableListProc *) procs->func;
                 break;
-            case Dbi_TableInfoId:
-                driverPtr->tableInfoProc = (Dbi_TableInfoProc *) procs->func;
+            case Dbi_GetTableInfoId:
+                driverPtr->tableInfoProc = (Dbi_GetTableInfoProc *) procs->func;
                 break;
             case Dbi_BestRowId:
                 driverPtr->bestRowProc = (Dbi_BestRowProc *) procs->func;

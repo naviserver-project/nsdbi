@@ -304,3 +304,133 @@ Dbi_SetException(Dbi_Handle *handle, char *code, char *msg)
     Ns_DStringAppend(&(handle->dsExceptionMsg), msg);
 }
 
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * Dbi_NewTableInfo --
+ *
+ *      Allocate structure for table information.
+ *
+ * Results:
+ *      Pointer to new Dbi_TableInfo structure.
+ *
+ * Side effects:
+ *      None.
+ *
+ *----------------------------------------------------------------------
+ */
+
+Dbi_TableInfo *
+Dbi_NewTableInfo(char *table)
+{
+    Dbi_TableInfo *tinfo;
+
+    tinfo = Ns_Malloc(sizeof(Dbi_TableInfo));
+
+    tinfo->table = Ns_SetCreate(table);
+    tinfo->ncolumns = 0;
+    tinfo->size = 5;
+    tinfo->columns = Ns_Malloc(sizeof(Ns_Set *) * tinfo->size);
+
+    return tinfo;
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * Dbi_FreeTableInfo --
+ *
+ *      Free memory associated with table information.
+ *
+ * Results:
+ *      None.
+ *
+ * Side effects:
+ *      None.
+ *
+ *----------------------------------------------------------------------
+ */
+
+void
+Dbi_FreeTableInfo(Dbi_TableInfo *tinfo)
+{
+    int i;
+
+    if (tinfo != NULL) {
+        for (i = 0; i < tinfo->ncolumns; i++) {
+            Ns_SetFree(tinfo->columns[i]);
+        }
+        Ns_SetFree(tinfo->table);
+        Ns_Free(tinfo->columns);
+        Ns_Free(tinfo);
+    }
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * Dbi_AddColumnInfo --
+ *
+ *      Add column information to a table.
+ *
+ * Results:
+ *      None.
+ *
+ * Side effects:
+ *      None.
+ *
+ *----------------------------------------------------------------------
+ */
+
+void
+Dbi_AddColumnInfo(Dbi_TableInfo *tinfo, Ns_Set *cinfo)
+{
+    tinfo->ncolumns++;
+    if (tinfo->ncolumns > tinfo->size) {
+        tinfo->size *= 2;
+        tinfo->columns = Ns_Realloc(tinfo->columns, tinfo->size * sizeof(Ns_Set *));
+    }
+    tinfo->columns[tinfo->ncolumns - 1] = cinfo;
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * Dbi_ColumnIndex --
+ *
+ *      Return the index of a column which can be passed to other
+ *      Dbi_Column functions.
+ *
+ * Results:
+ *      Index of column.
+ *
+ * Side effects:
+ *      None.
+ *
+ *----------------------------------------------------------------------
+ */
+
+int
+Dbi_ColumnIndex(Dbi_TableInfo *tinfo, char *name)
+{
+    int   i;
+    int   result = -1;
+    char *cname;
+
+    for (i = 0; i < tinfo->ncolumns; i++) {
+        cname = tinfo->columns[i]->name;
+        if ((cname == name)
+            || ((cname == NULL) && (name == NULL))
+            || (strcmp(cname, name) == 0)) {
+
+            result = i;
+            break;
+        }
+    }
+
+    return result;
+}

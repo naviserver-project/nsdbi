@@ -88,20 +88,20 @@ typedef struct {
  * drivers implement.
  */
 
-typedef int     (Dbi_InitProc)      (char *server, char *module, char *driver);
-typedef char   *(Dbi_NameProc)      (Dbi_Handle *handle);
-typedef char   *(Dbi_DbTypeProc)    (Dbi_Handle *handle);
-typedef int     (Dbi_OpenProc)      (Dbi_Handle *handle);
-typedef void    (Dbi_CloseProc)     (Dbi_Handle *handle);
-typedef int     (Dbi_ExecProc)      (Dbi_Handle *handle, char *sql);
-typedef Ns_Set *(Dbi_BindRowProc)   (Dbi_Handle *handle);
-typedef int     (Dbi_GetRowProc)    (Dbi_Handle *handle, Ns_Set *row);
-typedef int     (Dbi_CancelProc)    (Dbi_Handle *handle);
-typedef int     (Dbi_FlushProc)     (Dbi_Handle *handle);
-typedef int     (Dbi_ResetProc)     (Dbi_Handle *handle);
-typedef char   *(Dbi_TableListProc) (Ns_DString *ds, Dbi_Handle *handle, int includesystem);
-typedef int     (Dbi_TableInfoProc) (Dbi_Handle *handle, char *table);
-typedef char   *(Dbi_BestRowProc)   (Ns_DString *ds, Dbi_Handle *handle, char *table);
+typedef int            (Dbi_InitProc)        (char *server, char *module, char *driver);
+typedef char          *(Dbi_NameProc)        (Dbi_Handle *);
+typedef char          *(Dbi_DbTypeProc)      (Dbi_Handle *);
+typedef int            (Dbi_OpenProc)        (Dbi_Handle *);
+typedef void           (Dbi_CloseProc)       (Dbi_Handle *);
+typedef int            (Dbi_ExecProc)        (Dbi_Handle *, char *sql);
+typedef Ns_Set *       (Dbi_BindRowProc)     (Dbi_Handle *);
+typedef int            (Dbi_GetRowProc)      (Dbi_Handle *, Ns_Set *row);
+typedef int            (Dbi_CancelProc)      (Dbi_Handle *);
+typedef int            (Dbi_FlushProc)       (Dbi_Handle *);
+typedef int            (Dbi_ResetProc)       (Dbi_Handle *);
+typedef char          *(Dbi_TableListProc)   (Ns_DString *tables, Dbi_Handle *, int incsys);
+typedef Dbi_TableInfo *(Dbi_GetTableInfoProc)(Dbi_Handle *, char *table);
+typedef char          *(Dbi_BestRowProc)     (Ns_DString *pk, Dbi_Handle *, char *table);
 
 /* 
  * The following enum defines known dbi driver function ids.
@@ -120,7 +120,7 @@ typedef enum {
     Dbi_FlushId,
     Dbi_ResetId,
     Dbi_TableListId,
-    Dbi_TableInfoId,
+    Dbi_GetTableInfoId,
     Dbi_BestRowId
 } Dbi_ProcId;
 
@@ -150,6 +150,9 @@ NS_EXTERN int Dbi_GetRow(Dbi_Handle *handle, Ns_Set *row);
 NS_EXTERN int Dbi_Flush(Dbi_Handle *handle);
 NS_EXTERN int Dbi_Cancel(Dbi_Handle *handle);
 NS_EXTERN int Dbi_ResetHandle(Dbi_Handle *handle);
+NS_EXTERN char *Dbi_TableList(Ns_DString *ds, Dbi_Handle *handle, int incsys);
+NS_EXTERN Dbi_TableInfo *Dbi_GetTableInfo(Ns_DString *ds, Dbi_Handle *handle, char *table);
+NS_EXTERN char *Dbi_BestRow(Ns_DString *ds, Dbi_Handle *handle, char *table);
 
 /*
  * init.c:
@@ -190,5 +193,9 @@ NS_EXTERN Ns_Set *Dbi_0or1Row(Dbi_Handle *handle, char *sql, int *nrows);
 NS_EXTERN Ns_Set *Dbi_1Row(Dbi_Handle *handle, char *sql);
 NS_EXTERN int Dbi_InterpretSqlFile(Dbi_Handle *handle, char *filename);
 NS_EXTERN void Dbi_SetException(Dbi_Handle *handle, char *code, char *msg);
+NS_EXTERN Dbi_TableInfo *Dbi_NewTableInfo(char *table);
+NS_EXTERN void Dbi_FreeTableInfo(Dbi_TableInfo *tinfo);
+NS_EXTERN void Dbi_AddColumnInfo(Dbi_TableInfo *tinfo, Ns_Set *cinfo);
+NS_EXTERN int Dbi_ColumnIndex(Dbi_TableInfo *tinfo, char *name);
 
 #endif /* NSDBI_H */
