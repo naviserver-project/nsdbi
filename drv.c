@@ -297,6 +297,12 @@ Dbi_Select(Dbi_Handle *handle, char *sql)
     DbiDriver *driverPtr = DbiGetDriver(handle);
     Ns_Set *setPtr = NULL;
 
+    if (!handle->fetchingRows) {
+        Ns_Log(Error, "%s[%s]: no rows waiting to bind",
+               handle->driver, handle->poolname);
+        return setPtr;
+    }
+
     if (driverPtr != NULL
         && driverPtr->execProc != NULL
         && handle->connected) {
@@ -341,6 +347,11 @@ Dbi_Exec(Dbi_Handle *handle, char *sql)
 
         status = (*driverPtr->execProc)(handle, sql);
         DbiLogSql(handle, sql);
+
+        if (status == DBI_ROWS) {
+            handle->fetchingRows = NS_TRUE;
+            handle->currentRow = 0;
+        }
     }
 
     return status;
@@ -408,11 +419,25 @@ Dbi_GetRow(Dbi_Handle *handle, Ns_Set *row)
     DbiDriver *driverPtr = DbiGetDriver(handle);
     int        status = NS_ERROR;
 
+    if (!handle->fetchingRows) {
+        Ns_Log(Error, "%s[%s]: no waiting rows",
+               handle->driver, handle->poolname);
+        return status;
+    }
+    if (handle->currentRow == handle->numRows) {
+        return DBI_END_DATA;
+    }
+
     if (driverPtr != NULL
         && driverPtr->getProc != NULL
         && handle->connected) {
 
         status = (*driverPtr->getProc)(handle, row);
+        handle->currentRow++;
+
+        if (status == DBI_END_DATA) {
+            handle->fetchingRows = NS_FALSE;
+        }
     }
     
     return status;
@@ -447,6 +472,9 @@ Dbi_Cancel(Dbi_Handle *handle)
         && handle->connected) {
 
         status = (*driverPtr->cancelProc)(handle);
+
+        handle->fetchingRows = NS_FALSE;
+        handle->currentRow = 0;
     }
 
     return status;
@@ -481,6 +509,9 @@ Dbi_Flush(Dbi_Handle *handle)
         && handle->connected) {
 
         status = (*driverPtr->flushProc)(handle);
+
+        handle->fetchingRows = NS_FALSE;
+        handle->currentRow = 0;
     }
 
     return status;

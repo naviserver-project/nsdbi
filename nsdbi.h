@@ -49,6 +49,9 @@
 #define DBI_END_DATA           4
 #define DBI_NO_DATA            8
 
+#define DBI_READONLY             -3
+
+
 /*
  * Database handle structure.
  */
@@ -58,16 +61,18 @@ typedef struct Dbi_Handle {
     char       *datasource;
     char       *user;
     char       *password;
-    void       *connection;
     char       *poolname;
-    int         connected;
     int         verbose;
+    int         connected;
+    int         fetchingRows;
+    int         currentRow;
+    int         numRows;      /*<< num rows selected / num rows affected (DML) */
+    void       *connection;
+    void       *statement;
+    void       *context;
     Ns_Set     *row;
     char        cExceptionCode[6];
     Ns_DString  dsExceptionMsg;
-    void       *context;
-    void       *statement;
-    int         fetchingRows;
 } Dbi_Handle;
 
 /*
@@ -169,8 +174,9 @@ NS_EXTERN char *Dbi_PoolUser(char *pool);
 NS_EXTERN char *Dbi_PoolList(char *server);
 NS_EXTERN int Dbi_PoolAllowable(char *server, char *pool);
 NS_EXTERN void Dbi_PoolPutHandle(Dbi_Handle *handle);
-NS_EXTERN Dbi_Handle *Dbi_PoolTimedGetHandle(char *server, char *pool, int wait);
-NS_EXTERN Dbi_Handle *Dbi_PoolGetHandle(char *server, char *pool);
+NS_EXTERN int Dbi_PoolGetHandle(Dbi_Handle **handlePtrPtr, char *server, char *pool);
+NS_EXTERN int Dbi_PoolTimedGetHandle(Dbi_Handle **handlePtrPtr, char *server,
+                                     char *pool, int wait);
 NS_EXTERN int Dbi_PoolGetMultipleHandles(Dbi_Handle **handles, char *server,
                                          char *pool, int nwant);
 NS_EXTERN int Dbi_PoolTimedGetMultipleHandles(Dbi_Handle **handles, char *server,

@@ -236,8 +236,7 @@ Dbi_PoolDbType(char *pool)
     Dbi_Handle *handle;
     char       *dbtype;
 
-    handle = Dbi_PoolGetHandle(NULL, pool);
-    if (handle == NULL) {
+    if ((Dbi_PoolGetHandle(&handle, NULL, pool)) != NS_OK) {
         return NULL;
     }
     dbtype = Dbi_DriverDbType(handle);
@@ -269,8 +268,7 @@ Dbi_PoolDriverName(char *pool)
     Dbi_Handle *handle;
     char       *name;
 
-    handle = Dbi_PoolGetHandle(NULL, pool);
-    if (handle == NULL) {
+    if ((Dbi_PoolGetHandle(&handle, NULL, pool)) != NS_OK) {
         return NULL;
     }
     name = Dbi_DriverName(handle);
@@ -500,15 +498,10 @@ Dbi_PoolPutHandle(Dbi_Handle *handle)
  *----------------------------------------------------------------------
  */
 
-Dbi_Handle *
-Dbi_PoolTimedGetHandle(char *server, char *pool, int wait)
+int
+Dbi_PoolTimedGetHandle(Dbi_Handle **handlePtrPtr, char *server, char *pool, int wait)
 {
-    Dbi_Handle *handle;
-
-    if (Dbi_PoolTimedGetMultipleHandles(&handle, server, pool, 1, wait) != NS_OK) {
-        return NULL;
-    }
-    return handle;
+    return Dbi_PoolTimedGetMultipleHandles(handlePtrPtr, server, pool, 1, wait);
 }
 
 
@@ -528,10 +521,10 @@ Dbi_PoolTimedGetHandle(char *server, char *pool, int wait)
  *----------------------------------------------------------------------
  */
 
-Dbi_Handle *
-Dbi_PoolGetHandle(char *server, char *pool)
+int
+Dbi_PoolGetHandle(Dbi_Handle **handlePtrPtr, char *server, char *pool)
 {
-    return Dbi_PoolTimedGetHandle(server, pool, 0);
+    return Dbi_PoolTimedGetHandle(handlePtrPtr, server, pool, 0);
 }
 
 
