@@ -63,12 +63,12 @@ static Dbi_Statement *BindVars(Tcl_Interp *interp, Dbi_Pool *pool, Tcl_Obj *dict
 static char *GetVar(Tcl_Interp *interp, Tcl_Obj *dictObjPtr, char *name, int *len) _nsnonnull();
 static int DictRowResult(Tcl_Interp *interp, Dbi_Handle *handle, Dbi_Statement *stmt) _nsnonnull();
 static void ReleaseHandle(Dbi_Handle *handle) _nsnonnull();
-static void ReleaseAllHandles(Tcl_Interp *interp, void *arg) _nsnonnull(1);
+static int ReleaseAllHandles(InterpData *idataPtr) _nsnonnull();
 static int Exception(Tcl_Interp *interp, const char *code, const char *msg, ...)
      _nsprintflike(3, 4) _nsnonnull(1);
 static int SqlException(Tcl_Interp *interp, Dbi_Handle *handle) _nsnonnull();
 
-static Ns_TclDeferProc ReleaseAllHandles;
+static Ns_TclDeferProc CleanupInterp;
 static Tcl_InterpDeleteProc FreeData;
 
 static Tcl_ObjCmdProc
@@ -599,8 +599,11 @@ TclReleasehandlesCmd(ClientData clientData, Tcl_Interp *interp,
                      int objc _nsunused, Tcl_Obj *CONST objv[] _nsunused)
 {
     InterpData *idataPtr = clientData;
+    int         nHandles;
 
-    ReleaseAllHandles(interp, idataPtr);
+    nHandles = ReleaseAllHandles(idataPtr);
+    Tcl_SetObjResult(interp, Tcl_NewIntObj(nHandles));
+
     return TCL_OK;
 }
 
@@ -745,7 +748,7 @@ GetHandle(InterpData *idataPtr, const char *pool, int timeout)
         Tcl_SetHashValue(hPtr, handlePtr);
         if (!idataPtr->cleanup) {
             idataPtr->cleanup = 1;
-            Ns_TclRegisterDeferred(interp, ReleaseAllHandles, idataPtr);
+            Ns_TclRegisterDeferred(interp, CleanupInterp, idataPtr);
         }
     }
 
@@ -972,12 +975,10 @@ ReleaseHandle(Dbi_Handle *handle)
  *----------------------------------------------------------------------
  * ReleaseAllHandles --
  *
- *      Release all database handles owned by this interp.
- *      Called by AOLserver on interp cleanup, bu the dbi_releasehandles
- *      command, and by the blocking command traces.
+ *      Release all database handles owned by the given interp.
  *
  * Results:
- *      None.
+ *      Number of handles released.
  *
  * Side effects:
  *      None.
@@ -985,20 +986,22 @@ ReleaseHandle(Dbi_Handle *handle)
  *----------------------------------------------------------------------
  */
 
-static void
-ReleaseAllHandles(Tcl_Interp *interp _nsunused, void *arg)
+static int
+ReleaseAllHandles(InterpData *idataPtr)
 {
-    InterpData     *idataPtr = arg;
     Dbi_Handle     *handle;
     Tcl_HashEntry  *hPtr;
     Tcl_HashSearch  search;
+    int             i = 0;
 
     for_each_hash_entry(hPtr, &idataPtr->handles, &search) {
     	handle = Tcl_GetHashValue(hPtr);
    	Dbi_PoolPutHandle(handle);
         Tcl_DeleteHashEntry(hPtr);
+        i++;
     }
     idataPtr->cleanup = 0;
+    return i;
 }
 
 
@@ -1051,6 +1054,31 @@ SqlException(Tcl_Interp *interp, Dbi_Handle *handle)
 
 /*
  *----------------------------------------------------------------------
+ * CleanupInterp --
+ *
+ *      Release all database handles owned by this interp.  Called by
+ *      the server on interp cleanup after every connection.
+ *
+ * Results:
+ *      None.
+ *
+ * Side effects:
+ *      None.
+ *
+ *----------------------------------------------------------------------
+ */
+
+static void
+CleanupInterp(Tcl_Interp *interp _nsunused, void *arg)
+{
+    InterpData *idataPtr = arg;
+
+    (void) ReleaseAllHandles(idataPtr);
+}
+
+
+/*
+ *----------------------------------------------------------------------
  * FreeData --
  *
  *      Free per-interp data at interp delete time.
@@ -1069,7 +1097,7 @@ FreeData(ClientData arg, Tcl_Interp *interp)
 {
     InterpData *idataPtr = arg;
 
-    ReleaseAllHandles(interp, idataPtr);
+    (void) ReleaseAllHandles(idataPtr);
     Tcl_DeleteHashTable(&idataPtr->handles);
     ns_free(idataPtr);
 }
