@@ -239,6 +239,7 @@ Dbi_Exec(Dbi_Handle *handle, Dbi_Statement *stmt, int *nrows, int *ncols)
 
         status = (*driver->execProc)(handle, stmt, &stmtPtr->numRows, &stmtPtr->numCols);
 
+        stmtPtr->handlePtr->stats.opps++;
         if (nrows != NULL) {
             *nrows = stmtPtr->numRows;
         }
@@ -515,8 +516,6 @@ DbiOpen(Dbi_Handle *handle)
                handle->pool->name,
                Dbi_ExceptionCode(handle), Dbi_ExceptionMsg(handle));
         return NS_ERROR;
-    } else {
-        Ns_Log(Notice, "nsdbi: opened handle in pool '%s'", handle->pool->name);
     }
 
     return NS_OK;
@@ -545,8 +544,8 @@ DbiClose(Dbi_Handle *handle)
 {
     Dbi_Driver *driver = handle->pool->driver;
 
-    Ns_Log(Notice, "nsdbi: closing handle in pool '%s'", handle->pool->name);
     if (driver->closeProc != NULL && handle->connected) {
         (*driver->closeProc)(handle);
+        handle->connected = NS_FALSE;
     }
 }

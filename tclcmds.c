@@ -73,7 +73,7 @@ static Tcl_InterpDeleteProc FreeData;
 
 static Tcl_ObjCmdProc
     Tcl0or1rowCmd, Tcl1rowCmd, TclRowsCmd, TclDmlCmd, TclReleasehandlesCmd,
-    TclPoolCmd, TclPoolsCmd, TclDefaultpoolCmd, TclBouncepoolCmd;
+    TclPoolCmd, TclPoolsCmd, TclDefaultpoolCmd;
 
 
 /*
@@ -98,7 +98,6 @@ static struct Cmd {
     {"dbi_pool",           TclPoolCmd},
     {"dbi_pools",          TclPoolsCmd},
     {"dbi_defaultpool",    TclDefaultpoolCmd},
-    {"dbi_bouncepool",     TclBouncepoolCmd},
     {NULL, NULL}
 };
 
@@ -370,47 +369,6 @@ TclDmlCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *CONST ob
 /*
  *----------------------------------------------------------------------
  *
- * TclBouncepoolCmd --
- *
- *      Implements dbi_bouncepool command.
- *      See: Dbi_BouncePool.
- *
- * Results:
- *      Tcl result.
- *
- * Side effects:
- *      None.
- *
- *----------------------------------------------------------------------
- */
-
-static int
-TclBouncepoolCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
-{
-    InterpData *idataPtr = clientData;
-    const char *pool;
-    Dbi_Pool   *poolPtr;
-
-    if (objc != 2) {
-        Tcl_WrongNumArgs(interp, 1, objv, "pool");
-        return TCL_ERROR;
-    }
-
-    pool = Tcl_GetString(objv[1]);
-    if ((poolPtr = GetPool(idataPtr, pool)) == NULL) {
-        return TCL_ERROR;
-    }
-    if (Dbi_BouncePool(poolPtr) == NS_ERROR) {
-        return Exception(interp, NULL, "could not bounce pool: %s", pool);
-    }
-
-    return TCL_OK;
-}
-
-
-/*
- *----------------------------------------------------------------------
- *
  * TclPoolCmd --
  *
  *      Implements the dbi_pool command.
@@ -431,15 +389,16 @@ TclPoolCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *CONST o
     const char *pool     = NULL;
     Dbi_Handle *handle   = NULL;
     Dbi_Pool   *poolPtr  = NULL;
+    Ns_DString  ds;
 
     static CONST char *opts[] = {
-        "datasource", "dbtype", "description", "driver",
-        "nhandles", "password", "user", NULL
+        "bounce", "datasource", "dbtype", "description", "driver",
+        "nhandles", "password", "stats", "user", NULL
     };
 
     enum IPoolIdx {
-        IDatasourceIdx, IDbtypeIdx, IDescriptionIdx, IDriverIdx,
-        INhandlesIdx, IPasswordIdx, IUserIdx
+        IBounceIdx, IDatasourceIdx, IDbtypeIdx, IDescriptionIdx, IDriverIdx,
+        INhandlesIdx, IPasswordIdx, IStatsIdx, IUserIdx
     } _nsmayalias opt;
 
     if (objc != 2 && objc != 3) {
@@ -465,6 +424,10 @@ TclPoolCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *CONST o
 
     switch (opt) {
 
+    case IBounceIdx:
+        Dbi_BouncePool(poolPtr);
+        break;
+
     case IDriverIdx:
         Tcl_SetObjResult(interp, Tcl_NewStringObj((char *) Dbi_DriverName(handle), -1));
         ReleaseHandle(handle);
@@ -489,6 +452,13 @@ TclPoolCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *CONST o
 
     case IPasswordIdx:
         Tcl_SetObjResult(interp, Tcl_NewStringObj(poolPtr->password, -1));
+        break;
+
+    case IStatsIdx:
+        Ns_DStringInit(&ds);
+        Dbi_PoolStats(&ds, poolPtr);
+        Tcl_DStringResult(interp, &ds);
+        Ns_DStringFree(&ds);
         break;
 
     case IUserIdx:

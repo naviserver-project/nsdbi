@@ -169,7 +169,8 @@ NS_EXTERN int Dbi_PoolList(Ns_DString *ds, const char *server) _nsnonnull();
 NS_EXTERN void Dbi_PoolPutHandle(Dbi_Handle *handle) _nsnonnull();
 NS_EXTERN int Dbi_PoolGetHandle(Dbi_Handle **handlePtrPtr, Dbi_Pool *poolPtr) _nsnonnull();
 NS_EXTERN int Dbi_PoolTimedGetHandle(Dbi_Handle **handlePtrPtr, Dbi_Pool *poolPtr, int wait) _nsnonnull();
-NS_EXTERN int Dbi_BouncePool(Dbi_Pool *poolPtr) _nsnonnull();
+NS_EXTERN void Dbi_BouncePool(Dbi_Pool *poolPtr) _nsnonnull();
+NS_EXTERN void Dbi_PoolStats(Ns_DString *ds, Dbi_Pool *poolPtr) _nsnonnull();
 
 /*
  * stmt.c

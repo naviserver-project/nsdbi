@@ -40,6 +40,7 @@
 NS_RCSID("@(#) $Header$");
 
 
+
 /*
  * The following structure maintains per-server data.
  */
@@ -56,10 +57,13 @@ typedef struct ServData {
 static void         ReturnHandle(Handle * handle) _nsnonnull();
 static int          IsStale(Handle *, time_t now) _nsnonnull();
 static int          Connect(Handle *) _nsnonnull();
+static void         Disconnect(Handle *) _nsnonnull();
 static Pool        *CreatePool(char *poolname, char *path, char *drivername) _nsnonnull();
 static ServData    *GetServer(const char *server) _nsnonnull();
-static Ns_Callback  CheckPool;
-static Ns_ArgProc   CheckArgProc;
+static void         CheckPool(Pool *poolPtr, int stale);
+static Ns_Callback  ScheduledPoolCheck;
+static Ns_Callback  LogStats;
+static Ns_ArgProc   PoolCheckArgProc;
 
 /*
  * Static variables defined in this file
@@ -67,6 +71,16 @@ static Ns_ArgProc   CheckArgProc;
 
 static Tcl_HashTable serversTable;
 static Tcl_HashTable poolsTable;
+static CONST char *reasons[] = {"?", "bounced", "aged", "idle", "used"};
+
+/*
+ * Handle disconnection reasons.
+ */
+
+#define DBI_CLOSE_STALE 1
+#define DBI_CLOSE_OTIME 2
+#define DBI_CLOSE_ATIME 3
+#define DBI_CLOSE_OPPS  4
 
 
 
@@ -277,7 +291,7 @@ Dbi_PoolPutHandle(Dbi_Handle *handle)
 
     time(&now);
     if (IsStale(handlePtr, now)) {
-        DbiDisconnect(handle);
+        Disconnect(handlePtr);
     } else {
         handlePtr->atime = now;
     }
@@ -324,7 +338,9 @@ Dbi_PoolTimedGetHandle(Dbi_Handle **handlePtrPtr, Dbi_Pool *pool, int wait)
 
     status = NS_OK;
     Ns_MutexLock(&poolPtr->lock);
+    poolPtr->stats.attempts++;
     while (status == NS_OK && poolPtr->firstPtr == NULL) {
+        poolPtr->stats.attempts++;
         status = Ns_CondTimedWait(&poolPtr->getCond, &poolPtr->lock, timePtr);
     }
     if (poolPtr->firstPtr != NULL) {
@@ -334,6 +350,12 @@ Dbi_PoolTimedGetHandle(Dbi_Handle **handlePtrPtr, Dbi_Pool *pool, int wait)
         if (poolPtr->lastPtr == handlePtr) {
             poolPtr->lastPtr = NULL;
         }
+        poolPtr->stats.successes++;
+        poolPtr->npresent--;
+        handlePtr->n = poolPtr->nhandles - poolPtr->npresent;
+        handlePtr->stale_on_close = poolPtr->stale_on_close;
+    } else {
+        poolPtr->stats.misses++;
     }
     Ns_MutexUnlock(&poolPtr->lock);
 
@@ -389,34 +411,54 @@ Dbi_PoolGetHandle(Dbi_Handle **handlePtrPtr, Dbi_Pool *poolPtr)
  *      Close all handles in the pool not currently being used.
  *
  * Results:
- *      NS_OK if pool was bounce, NS_ERROR otherwise.
+ *      None.
  *
  * Side effects:
- *      Handles are all marked stale and then closed by CheckPool.
+ *      All handles in the pool are marked stale, but only the unused
+ *      handles are disconnected immediately.  Active handles will be
+ *      disconnected as they are returned to the pool.
  *
  *----------------------------------------------------------------------
  */
 
-int
+void
 Dbi_BouncePool(Dbi_Pool *pool)
 {
-    Pool    *poolPtr = (Pool *) pool;
-    Handle  *handlePtr;
+    Pool *poolPtr = (Pool *) pool;
+
+    CheckPool(poolPtr, 1);
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * Dbi_PoolStats --
+ *
+ *      Append a list of statistics to the given dstring.
+ *
+ * Results:
+ *      None.
+ *
+ * Side effects:
+ *      None.
+ *
+ *----------------------------------------------------------------------
+ */
+
+void
+Dbi_PoolStats(Ns_DString *ds, Dbi_Pool *pool)
+{
+    Pool *poolPtr = (Pool *) pool;
 
     Ns_MutexLock(&poolPtr->lock);
-    poolPtr->stale_on_close++;
-    handlePtr = poolPtr->firstPtr;
-    while (handlePtr != NULL) {
-        if (handlePtr->connected) {
-            handlePtr->stale = 1;
-        }
-        handlePtr->stale_on_close = poolPtr->stale_on_close;
-        handlePtr = handlePtr->nextPtr;
-    }
+    Ns_DStringPrintf(ds, "attempts %d successes %d misses %d opps %d "
+                     "agedcloses %d idlecloses %d oppscloses %d bounces %d",
+                     poolPtr->stats.attempts,    poolPtr->stats.successes,
+                     poolPtr->stats.misses,      poolPtr->stats.opps,
+                     poolPtr->stats.otimecloses, poolPtr->stats.atimecloses,
+                     poolPtr->stats.oppscloses,  poolPtr->stale_on_close);
     Ns_MutexUnlock(&poolPtr->lock);
-    CheckPool(poolPtr);
-
-    return NS_OK;
 }
 
 
@@ -468,7 +510,9 @@ DbiInitPools(void)
             Tcl_SetHashValue(hPtr, poolPtr);
         }
     }
-    Ns_RegisterProcInfo(CheckPool, "nsdbi:check", CheckArgProc);
+    Ns_RegisterAtShutdown(LogStats, NULL);
+    Ns_RegisterProcInfo(LogStats, "nsdbi:shutdown", NULL);
+    Ns_RegisterProcInfo(ScheduledPoolCheck, "nsdbi:check", PoolCheckArgProc);
 }
 
 
@@ -559,35 +603,6 @@ DbiInitServer(char *server)
 /*
  *----------------------------------------------------------------------
  *
- * DbiDisconnect --
- *
- *      Disconnect a handle by closing the database if needed.
- *
- * Results:
- *      None.
- *
- * Side effects:
- *      None.
- *
- *----------------------------------------------------------------------
- */
-
-void
-DbiDisconnect(Dbi_Handle *handle)
-{
-    Handle *handlePtr = (Handle *) handle;
-
-    DbiClose(handle);
-    handlePtr->connected = NS_FALSE;
-    handlePtr->arg = NULL;
-    handlePtr->atime = handlePtr->otime = 0;
-    handlePtr->stale = NS_FALSE;
-}
-
-
-/*
- *----------------------------------------------------------------------
- *
  * DbiLogSql --
  *
  *      Log a SQL statement depending on the verbose state of the
@@ -637,6 +652,22 @@ ReturnHandle(Handle *handlePtr)
 {
     Pool *poolPtr = (Pool *) handlePtr->poolPtr;
 
+    if (!handlePtr->connected) {
+        poolPtr->stats.opps += handlePtr->stats.opps;
+        handlePtr->stats.opps = 0;
+        switch (handlePtr->reason) {
+        case DBI_CLOSE_OTIME:
+            poolPtr->stats.otimecloses++;
+            break;
+        case DBI_CLOSE_ATIME:
+            poolPtr->stats.atimecloses++;
+            break;
+        case DBI_CLOSE_OPPS:
+            poolPtr->stats.oppscloses++;
+            break;
+        }
+        handlePtr->reason = 0;
+    }
     if (poolPtr->firstPtr == NULL) {
         poolPtr->firstPtr = poolPtr->lastPtr = handlePtr;
         handlePtr->nextPtr = NULL;
@@ -648,6 +679,7 @@ ReturnHandle(Handle *handlePtr)
         poolPtr->lastPtr = handlePtr;
         handlePtr->nextPtr = NULL;
     }
+    poolPtr->npresent++;
 }
 
 
@@ -662,7 +694,7 @@ ReturnHandle(Handle *handlePtr)
  *      NS_TRUE if handle stale, NS_FALSE otherwise.
  *
  * Side effects:
- *      None.
+ *      Staleness reason is updated.
  *
  *----------------------------------------------------------------------
  */
@@ -670,53 +702,24 @@ ReturnHandle(Handle *handlePtr)
 static int
 IsStale(Handle *handlePtr, time_t now)
 {
-    Pool   *poolPtr = (Pool *) handlePtr->poolPtr;
-    time_t  minAccess, minOpen;
-
+    Pool *poolPtr = handlePtr->poolPtr;
 
     if (handlePtr->connected) {
-        minAccess = now - poolPtr->maxidle;
-        minOpen = now - poolPtr->maxopen;
-        if ((poolPtr->maxidle && (handlePtr->atime < minAccess))
-            || (poolPtr->maxopen && (handlePtr->otime < minOpen))
-            || (handlePtr->stale == NS_TRUE)
-            || (poolPtr->stale_on_close > handlePtr->stale_on_close)) {
-
-            if (poolPtr->fVerbose) {
-                Ns_Log(Notice, "dbiinit: closing %s handle in pool '%s'",
-                       handlePtr->atime < minAccess ? "idle" : "old",
-                       poolPtr->name);
-            }
+        if (poolPtr->stale_on_close > handlePtr->stale_on_close) {
+            handlePtr->reason = DBI_CLOSE_STALE;
+            return NS_TRUE;
+        } else if (poolPtr->maxopen && (handlePtr->otime < (now - poolPtr->maxopen))) {
+            handlePtr->reason = DBI_CLOSE_OTIME;
+            return NS_TRUE;
+        } else if (poolPtr->maxidle && (handlePtr->atime < (now - poolPtr->maxidle))) {
+            handlePtr->reason = DBI_CLOSE_ATIME;
+            return NS_TRUE;
+        } else if (poolPtr->maxopps && (handlePtr->stats.opps >= poolPtr->maxopps)) {
+            handlePtr->reason = DBI_CLOSE_OPPS;
             return NS_TRUE;
         }
     }
-
     return NS_FALSE;
-}
-
-
-/*
- *----------------------------------------------------------------------
- *
- * CheckArgProc --
- *
- *      Ns_ArgProc callback for the pool checker.
- *
- * Results:
- *      None.
- *
- * Side effects:
- *      Copies name of pool to given dstring.
- *
- *----------------------------------------------------------------------
- */
-
-static void
-CheckArgProc(Tcl_DString *dsPtr, void *arg)
-{
-    Pool *poolPtr = arg;
-
-    Tcl_DStringAppendElement(dsPtr, poolPtr->name);
 }
 
 
@@ -725,21 +728,20 @@ CheckArgProc(Tcl_DString *dsPtr, void *arg)
  *
  * CheckPool --
  *
- *      Verify all handles in a pool are not stale.
+ *      Verify all handles currently in a pool are not stale.
  *
  * Results:
  *      None.
  *
  * Side effects:
- *      Stale handles, if any, are closed.
+ *      Stale handles, if any, are disconnected.
  *
  *----------------------------------------------------------------------
  */
 
 static void
-CheckPool(void *arg)
+CheckPool(Pool *poolPtr, int stale)
 {
-    Pool         *poolPtr = arg;
     Handle       *handlePtr, *nextPtr;
     Handle       *checkedPtr;
     time_t        now;
@@ -752,6 +754,9 @@ CheckPool(void *arg)
      */
 
     Ns_MutexLock(&poolPtr->lock);
+    if (stale) {
+        poolPtr->stale_on_close++;
+    }
     handlePtr = poolPtr->firstPtr;
     poolPtr->firstPtr = poolPtr->lastPtr = NULL;
     Ns_MutexUnlock(&poolPtr->lock);
@@ -764,9 +769,10 @@ CheckPool(void *arg)
 
     if (handlePtr != NULL) {
         while (handlePtr != NULL) {
+            poolPtr->npresent--;
             nextPtr = handlePtr->nextPtr;
             if (IsStale(handlePtr, now)) {
-                DbiDisconnect((Dbi_Handle *) handlePtr);
+                Disconnect(handlePtr);
             }
             handlePtr->nextPtr = checkedPtr;
             checkedPtr = handlePtr;
@@ -777,12 +783,46 @@ CheckPool(void *arg)
         handlePtr = checkedPtr;
         while (handlePtr != NULL) {
             nextPtr = handlePtr->nextPtr;
+            
             ReturnHandle(handlePtr);
             handlePtr = nextPtr;
         }
         Ns_CondSignal(&poolPtr->getCond);
         Ns_MutexUnlock(&poolPtr->lock);
     }
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * ScheduledPoolCheck, PoolCheckArgProc --
+ *
+ *      Periodically check a pool for stale handles.
+ *
+ * Results:
+ *      None.
+ *
+ * Side effects:
+ *      None.
+ *
+ *----------------------------------------------------------------------
+ */
+
+static void
+ScheduledPoolCheck(void *arg)
+{
+    Pool *poolPtr = arg;
+
+    CheckPool(poolPtr, 0);
+}
+
+static void
+PoolCheckArgProc(Tcl_DString *dsPtr, void *arg)
+{
+    Pool *poolPtr = arg;
+
+    Tcl_DStringAppendElement(dsPtr, poolPtr->name);
 }
 
 
@@ -857,12 +897,16 @@ CreatePool(char *poolname, char *path, char *drivername)
         || poolPtr->maxopen < 0) {
         poolPtr->maxopen = 0;
     }
+    if (!Ns_ConfigGetInt(path, "maxopps", (int *) &poolPtr->maxopps)
+        || poolPtr->maxopps < 0) {
+        poolPtr->maxopps = 0;
+    }
     if (poolPtr->maxidle || poolPtr->maxopen) {
         if (!Ns_ConfigGetInt(path, "checkinterval", &i) || i < 0) {
             i = 600;        /* 10 minutes. */
         }
         Ns_Log(Notice, "nsdbi: checking pool '%s' every %d seconds", poolname, i);
-        Ns_ScheduleProc(CheckPool, poolPtr, 0, i);
+        Ns_ScheduleProc(ScheduledPoolCheck, poolPtr, 0, i);
     }
     poolPtr->firstPtr = poolPtr->lastPtr = NULL;
     handlePtr = ns_calloc((size_t) poolPtr->nhandles, sizeof(Handle));
@@ -895,19 +939,50 @@ CreatePool(char *poolname, char *path, char *drivername)
 static int
 Connect(Handle *handlePtr)
 {
-    int status;
+    Pool *poolPtr = handlePtr->poolPtr;
+    int   status;
 
     status = DbiOpen((Dbi_Handle *) handlePtr);
     if (status != NS_OK) {
         handlePtr->connected = NS_FALSE;
         handlePtr->atime = handlePtr->otime = 0;
-        handlePtr->stale = NS_FALSE;
     } else {
         handlePtr->connected = NS_TRUE;
         handlePtr->atime = handlePtr->otime = time(NULL);
+        Ns_Log(Notice, "nsdbi: opened handle %d/%d in pool '%s'",
+               handlePtr->n, poolPtr->nhandles, poolPtr->name);
     }
 
     return status;
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * Disconnect --
+ *
+ *      Disconnect a handle by closing the database if needed.
+ *
+ * Results:
+ *      None.
+ *
+ * Side effects:
+ *      None.
+ *
+ *----------------------------------------------------------------------
+ */
+
+void
+Disconnect(Handle *handlePtr)
+{
+    Pool *poolPtr = handlePtr->poolPtr;
+
+    Ns_Log(Notice, "nsdbi: closing %s handle in pool '%s', %d opperations",
+           reasons[handlePtr->reason], poolPtr->name, handlePtr->stats.opps);
+    DbiClose((Dbi_Handle *) handlePtr);
+    handlePtr->arg = NULL;
+    handlePtr->atime = handlePtr->otime = 0;
 }
 
 
@@ -937,4 +1012,40 @@ GetServer(const char *server)
         return Tcl_GetHashValue(hPtr);
     }
     return NULL;
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * LogStats --
+ *
+ *      Log the accumulated stats for each pool at server shutdown.
+ *
+ * Results:
+ *      None.
+ *
+ * Side effects:
+ *      None.
+ *
+ *----------------------------------------------------------------------
+ */
+
+static void
+LogStats(void *arg)
+{
+    Tcl_HashEntry  *hPtr;
+    Tcl_HashSearch  search;
+    Pool           *poolPtr;
+    Ns_DString      ds;
+
+    Ns_DStringInit(&ds);
+    for_each_hash_entry(hPtr, &poolsTable, &search) {
+        poolPtr = Tcl_GetHashValue(hPtr);
+        Dbi_PoolStats(&ds, (Dbi_Pool *) poolPtr);
+        Ns_Log(Notice, "nsdbi: stats for pool '%s': %s",
+               poolPtr->name, Ns_DStringValue(&ds));
+        Ns_DStringTrunc(&ds, 0);
+    }
+    Ns_DStringFree(&ds);
 }

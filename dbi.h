@@ -57,13 +57,27 @@ typedef struct Pool {
 
     struct Handle     *firstPtr;
     struct Handle     *lastPtr;
+    int                npresent;
     Ns_Mutex           lock;
     Ns_Cond            getCond;
     int                cache_handles;
+
     int                maxwait;
     time_t             maxidle;
     time_t             maxopen;
+    int                maxopps;
     int                stale_on_close;
+
+    struct {
+        unsigned int attempts;
+        unsigned int successes;
+        unsigned int misses;
+        unsigned int opps;
+        unsigned int otimecloses;
+        unsigned int atimecloses;
+        unsigned int oppscloses;
+    } stats;
+
 } Pool;
 
 
@@ -88,8 +102,14 @@ typedef struct Handle {
     Ns_DString        dsExceptionMsg;
     time_t            otime;
     time_t            atime;
-    int               stale;
+    int               n;      /* handle n of nhandles when acquired */
     int               stale_on_close;
+    int               reason; /* why the handle is being disconnected */
+
+    struct {
+        unsigned int opps;
+    } stats;
+
 } Handle;
 
 
@@ -125,7 +145,6 @@ typedef struct Statement {
 extern void DbiInitPools(void);
 extern void DbiInitServer(char *server) _nsnonnull();
 extern void DbiLogSql(Dbi_Statement *) _nsnonnull();
-extern void DbiDisconnect(Dbi_Handle *) _nsnonnull();
 
 /*
  * drv.c
