@@ -37,69 +37,6 @@
 
 #include "dbi.h"
 
-NS_RCSID("@(#) $Header$");
-
-/*
- * The following structure defines a database pool.
- */
-
-struct Handle;
-
-typedef struct Pool {
-    char              *name;
-    char              *description;
-    char              *driver;
-    char              *datasource;
-    char              *user;
-    char             *password;
-    int               nhandles;
-    int               fVerbose;
-    int               fVerboseError;
-    /* Members above must match Dbi_Pool */
-    struct DbiDriver *driverPtr;
-    struct Handle    *firstPtr;
-    struct Handle    *lastPtr;
-    Ns_Mutex           lock;
-    Ns_Cond            getCond;
-    int                waiting;
-    time_t             maxidle;
-    time_t             maxopen;
-    int                stale_on_close;
-} Pool;
-
-/*
- * The following structure defines the internal
- * state of a database handle.
- */
-
-typedef struct Handle {
-
-    /*
-     * The following members are visible in an Ns_Handle.
-     */
-
-    Dbi_Pool       *poolPtr;
-    int             connected;
-    int             fetchingRows;
-    int             numCols;
-    int             currentCol;
-    int             numRows;
-    int             currentRow;
-    char            cExceptionCode[6];
-    Ns_DString      dsExceptionMsg;
-    void           *arg;
-
-    /*
-     * The following members are private to a Handle.
-     */
-
-    struct Handle  *nextPtr;
-    time_t          otime;
-    time_t          atime;
-    int             stale;
-    int             stale_on_close;
-
-} Handle;
 
 /*
  * The following structure maintains per-server data.
@@ -114,13 +51,13 @@ typedef struct ServData {
  * Local functions defined in this file
  */
 
-static void      ReturnHandle(Handle * handle);
-static int       IsStale(Handle *, time_t now);
-static int       Connect(Handle *);
-static Pool     *CreatePool(char *pool, char *path, char *driver);
-static ServData *GetServer(char *server);
-static Ns_Callback CheckPool;
-static Ns_ArgProc CheckArgProc;
+static void         ReturnHandle(Handle * handle);
+static int          IsStale(Handle *, time_t now);
+static int          Connect(Handle *);
+static Pool        *CreatePool(char *pool, char *path, char *driver);
+static ServData    *GetServer(char *server);
+static Ns_Callback  CheckPool;
+static Ns_ArgProc   CheckArgProc;
 
 /*
  * Static variables defined in this file
@@ -128,6 +65,7 @@ static Ns_ArgProc CheckArgProc;
 
 static Tcl_HashTable serversTable;
 static Tcl_HashTable poolsTable;
+
 
 
 /*
@@ -323,12 +261,9 @@ Dbi_PoolList(Ns_DString *ds, char *server)
 void
 Dbi_PoolPutHandle(Dbi_Handle *handle)
 {
-    Handle  *handlePtr;
-    Pool    *poolPtr;
-    time_t   now;
-
-    handlePtr = (Handle *) handle;
-    poolPtr = (Pool *) handlePtr->poolPtr;
+    Handle *handlePtr = (Handle *) handle;
+    Pool   *poolPtr = (Pool *) handlePtr->poolPtr;
+    time_t  now;
 
     /*
      * Cleanup the handle.
@@ -337,8 +272,8 @@ Dbi_PoolPutHandle(Dbi_Handle *handle)
     Dbi_Flush(handle);
     Dbi_ResetHandle(handle);
 
-    Ns_DStringFree(&handle->dsExceptionMsg);
-    handle->cExceptionCode[0] = '\0';
+    Ns_DStringFree(&handlePtr->dsExceptionMsg);
+    handlePtr->cExceptionCode[0] = '\0';
 
     /*
      * Close the handle if it's stale, otherwise update
@@ -533,7 +468,7 @@ DbiInitPools(void)
         pool = Ns_SetKey(pools, i);
         hPtr = Tcl_CreateHashEntry(&poolsTable, pool, &new);
         if (!new) {
-            Ns_Log(Error, "dbiinit: duplicate pool: %s", pool);
+            Ns_Log(Error, "nsdbi: duplicate pool '%s'", pool);
             continue;
         }
         path = Ns_ConfigGetPath(NULL, NULL, "dbi", "pool", pool, NULL);
@@ -589,7 +524,7 @@ DbiInitServer(char *server)
     if (pool != NULL) {
         hPtr = Tcl_FindHashEntry(&poolsTable, pool);
         if (hPtr == NULL) {
-            Ns_Log(Error, "dbiinit: no such default pool '%s'", pool);
+            Ns_Log(Error, "nsdbi: no such default pool '%s'", pool);
             sdataPtr->defpoolPtr = NULL;
         } else {
             sdataPtr->defpoolPtr = Tcl_GetHashValue(hPtr);
@@ -684,46 +619,15 @@ DbiDisconnect(Dbi_Handle *handle)
 void
 DbiLogSql(Dbi_Handle *handle, char *sql)
 {
-    Pool *poolPtr = (Pool *) handle->poolPtr;
+    Handle *handlePtr = (Handle *) handle;
+    Pool *poolPtr = (Pool *) handlePtr->poolPtr;
 
-    if (handle->dsExceptionMsg.length > 0 && poolPtr->fVerboseError) {
-        Ns_Log(Error, "dbiinit: error(%s,%s): '%s'",
-               poolPtr->datasource, handle->dsExceptionMsg.string, sql);
+    if (Ns_DStringLength(&handlePtr->dsExceptionMsg) > 0 && poolPtr->fVerboseError) {
+        Ns_Log(Error, "nsdbi: error(%s,%s): '%s'",
+               poolPtr->datasource, Ns_DStringValue(&handlePtr->dsExceptionMsg), sql);
     } else if (poolPtr->fVerbose) {
-        Ns_Log(Notice, "dbiinit: sql(%s): '%s'", poolPtr->datasource, sql);
+        Ns_Log(Notice, "nsdbi: sql(%s): '%s'", poolPtr->datasource, sql);
     }
-}
-
-
-/*
- *----------------------------------------------------------------------
- *
- * DbiGetDriver --
- *
- *      Return a pointer to the driver structure for a handle.
- *
- * Results:
- *      Pointer to driver or NULL on error.
- *
- * Side effects:
- *      None.
- *
- *----------------------------------------------------------------------
- */
-
-struct DbiDriver *
-DbiGetDriver(Dbi_Handle *handle)
-{
-    Pool *poolPtr;
-
-    if (handle != NULL) {
-        poolPtr = (Pool *) handle->poolPtr;
-        if (poolPtr != NULL) {
-            return poolPtr->driverPtr;
-        }
-    }
-
-    return NULL;
 }
 
 
@@ -922,14 +826,14 @@ CheckPool(void *arg)
 static Pool  *
 CreatePool(char *pool, char *path, char *driver)
 {
-    Pool             *poolPtr;
-    Handle           *handlePtr;
-    struct DbiDriver *driverPtr;
-    int               i;
-    char             *datasource;
+    Pool        *poolPtr;
+    Handle      *handlePtr;
+    Dbi_Driver  *driverPtr;
+    int          i;
+    char        *datasource;
 
     if (driver == NULL) {
-        Ns_Log(Error, "dbiinit: no driver for pool '%s'", pool);
+        Ns_Log(Error, "nsdbi: no driver for pool '%s'", pool);
         return NULL;
     }
     driverPtr = DbiLoadDriver(driver);
@@ -938,7 +842,7 @@ CreatePool(char *pool, char *path, char *driver)
     }
     datasource = Ns_ConfigGetValue(path, "datasource");
     if (datasource == NULL) {
-        Ns_Log(Error, "dbiinit: missing datasource for pool '%s'", pool);
+        Ns_Log(Error, "nsdbi: missing datasource for pool '%s'", pool);
         return NULL;
     }
     poolPtr = ns_malloc(sizeof(Pool));
@@ -963,12 +867,13 @@ CreatePool(char *pool, char *path, char *driver)
     poolPtr->firstPtr = poolPtr->lastPtr = NULL;
     for (i = 0; i < poolPtr->nhandles; ++i) {
         handlePtr = ns_malloc(sizeof(Handle));
-        Ns_DStringInit(&handlePtr->dsExceptionMsg);
         handlePtr->poolPtr = (Dbi_Pool *) poolPtr;
         handlePtr->connected = NS_FALSE;
         handlePtr->fetchingRows = 0;
         handlePtr->numRows = 0;
         handlePtr->currentRow = 0;
+        handlePtr->numCols = 0;
+        handlePtr->currentCol = 0;
         handlePtr->arg = NULL;
         handlePtr->cExceptionCode[0] = '\0';
         Ns_DStringInit(&handlePtr->dsExceptionMsg);
@@ -980,7 +885,7 @@ CreatePool(char *pool, char *path, char *driver)
     }
     if (poolPtr->maxidle || poolPtr->maxopen) {
         i = Ns_ConfigIntRange(path, "checkinterval", 600, 0, INT_MAX);
-        Ns_Log(Notice, "dbiinit: checking pools every %d seconds", i);
+        Ns_Log(Notice, "nsdbi: checking pools every %d seconds", i);
         Ns_ScheduleProc(CheckPool, poolPtr, 0, i);
     }
     return poolPtr;

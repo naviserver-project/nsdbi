@@ -32,18 +32,85 @@
 
 #include "nsdbi.h"
 
+
+/*
+ * The following structure defines a database pool.
+ */
+
+struct Handle;
+struct Dbi_Driver;
+
+typedef struct Pool {
+
+    /* Publicly visible in a Dbi_Pool struct */
+
+    char              *name;
+    char              *description;
+    char              *driver;
+    char              *datasource;
+    char              *user;
+    char              *password;
+    int                nhandles;
+    int                fVerbose;
+    int                fVerboseError;
+
+    /* Private to a Pool struct */
+
+    struct Handle     *firstPtr;
+    struct Handle     *lastPtr;
+    struct Dbi_Driver *driverPtr;
+    Ns_Mutex           lock;
+    Ns_Cond            getCond;
+    int                waiting;
+    time_t             maxidle;
+    time_t             maxopen;
+    int                stale_on_close;
+} Pool;
+
+
+/*
+ * The following structure defines the internal
+ * state of a database handle.
+ */
+
+typedef struct Handle {
+
+    /* Publicly visible in a Dbi_Handle struct */
+
+    Dbi_Pool         *poolPtr;
+    int               connected;
+    int               fetchingRows;
+    void             *arg;
+
+    /* Private to a Handle struct */
+
+    struct Handle    *nextPtr;
+    int               numCols;
+    int               currentCol;
+    int               numRows;
+    int               currentRow;
+    char              cExceptionCode[6];
+    Ns_DString        dsExceptionMsg;
+    time_t            otime;
+    time_t            atime;
+    int               stale;
+    int               stale_on_close;
+} Handle;
+
+
+
 extern void DbiInitPools(void);
 extern void DbiInitServer(char *server);
-extern Ns_TclTraceProc DbiAddCmds, DbiReleaseHandles;
-extern void              DbiClose(Dbi_Handle *);
-extern void              DbiDisconnect(Dbi_Handle *);
-extern struct DbiDriver *DbiGetDriver(Dbi_Handle *);
-extern struct DbiDriver *DbiLoadDriver(char *driver);
-extern void              DbiLogSql(Dbi_Handle *, char *sql);
-extern int               DbiOpen(Dbi_Handle *);
-extern void              DbiDriverInit(char *server, struct DbiDriver *);
-extern int               DbiValue(Dbi_Handle *, char **value, int *len);
-extern int               DbiColumn(Dbi_Handle *, char **column, int *len);
+extern void DbiClose(Dbi_Handle *);
+extern void DbiDisconnect(Dbi_Handle *);
+extern Dbi_Driver *DbiGetDriver(Dbi_Handle *);
+extern Dbi_Driver *DbiLoadDriver(char *drivername);
+extern void DbiLogSql(Dbi_Handle *, char *sql);
+extern int DbiOpen(Dbi_Handle *);
+extern void DbiDriverInit(char *server, Dbi_Driver *driverPtr);
+extern int DbiValue(Dbi_Handle *, char **value, int *len);
+extern int DbiColumn(Dbi_Handle *, char **column, int *len);
+extern Ns_TclTraceProc DbiAddCmds;
 
 
 #endif

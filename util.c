@@ -94,19 +94,18 @@ Dbi_QuoteValue(Ns_DString *pds, char *string)
  */
 
 int
-Dbi_0or1Row(Dbi_Handle *handle, char *sql, int *nrows)
+Dbi_0or1Row(Dbi_Handle *handle, char *sql, int *nrows, int *ncols)
 {
-    if (Dbi_Select(handle, sql, nrows) != NS_OK) {
+    if (Dbi_Select(handle, sql, nrows, ncols) != NS_OK) {
         return NS_ERROR;
     }
-    if (handle->numRows > 1) {
+    if (*nrows > 1) {
         Dbi_SetException(handle, DBI_SQLERRORCODE,
             "Query returned more than one row.");
         Dbi_Flush(handle);
         return NS_ERROR;
     }
-    *nrows = handle->numRows;
-
+ 
     return NS_OK;
 }
 
@@ -128,14 +127,14 @@ Dbi_0or1Row(Dbi_Handle *handle, char *sql, int *nrows)
  */
 
 int
-Dbi_1Row(Dbi_Handle *handle, char *sql)
+Dbi_1Row(Dbi_Handle *handle, char *sql, int *ncols)
 {
     int nrows;
 
-    if (Dbi_0or1Row(handle, sql, &nrows) != NS_OK) {
+    if (Dbi_0or1Row(handle, sql, &nrows, ncols) != NS_OK) {
         return NS_ERROR;
     }
-    if (nrows != 1) {
+    if (nrows == 0) {
         Dbi_SetException(handle, DBI_SQLERRORCODE,
             "Query did not return a row.");
         return NS_ERROR;
@@ -165,13 +164,14 @@ Dbi_1Row(Dbi_Handle *handle, char *sql)
 void
 Dbi_SetException(Dbi_Handle *handle, char *sqlstate, char *fmt, ...)
 {
-    Ns_DString *ds = &handle->dsExceptionMsg;
-    va_list ap;
-    int len;
+    Handle      *handlePtr = (Handle *) handle;
+    Ns_DString  *ds = &handlePtr->dsExceptionMsg;
+    va_list      ap;
+    int          len;
 
     if (sqlstate != NULL) {
-        strncpy(handle->cExceptionCode, sqlstate, 6);
-        handle->cExceptionCode[5] = '\0';
+        strncpy(handlePtr->cExceptionCode, sqlstate, 6);
+        handlePtr->cExceptionCode[5] = '\0';
     }
     if (fmt != NULL) {
         Ns_DStringFree(ds);

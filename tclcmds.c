@@ -269,14 +269,15 @@ Exception(Tcl_Interp *interp, char *code, char *info, char *msg, ...)
 static void
 DbiException(Tcl_Interp *interp, Dbi_Handle *handle)
 {
-    char *code    = NULL;
-    char *message = "No exception message available.";
+    Handle *handlePtr = (Handle *) handle;
+    char   *code      = NULL;
+    char   *message   = "No exception message available.";
 
-    if (handle->cExceptionCode[0] != '\0') {
-        code = handle->cExceptionCode;
+    if (handlePtr->cExceptionCode[0] != '\0') {
+        code = handlePtr->cExceptionCode;
     }
-    if (handle->dsExceptionMsg.length > 0) {
-        message = Ns_DStringValue(&handle->dsExceptionMsg);
+    if (handlePtr->dsExceptionMsg.length > 0) {
+        message = Ns_DStringValue(&handlePtr->dsExceptionMsg);
     }
     Exception(interp, code, NULL, message);
 }
@@ -324,7 +325,7 @@ SingleRowCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *CONST
     char       *server = (char *) clientData;
     Dbi_Handle *handle;
     char       *column, *value;
-    int         cLen, vLen, nrows, status;
+    int         cLen, vLen, nrows, status, ignore;
     Tcl_Obj    *colObjPtr, *valObjPtr;
 
     if (objc < 2 || objc > 6) {
@@ -335,7 +336,7 @@ SingleRowCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *CONST
     if (handle == NULL) {
         return TCL_ERROR;
     }
-    if (Dbi_0or1Row(handle, Tcl_GetString(objv[objc - 1]), &nrows) != NS_OK) {
+    if (Dbi_0or1Row(handle, Tcl_GetString(objv[objc - 1]), &nrows, &ignore) != NS_OK) {
         DbiException(interp, handle);
         Dbi_PoolPutHandle(handle);
         return TCL_ERROR;
@@ -429,8 +430,9 @@ TclBouncepoolCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *C
 static int
 TclDmlCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
 {
-    char       *server = (char *) clientData;
+    char       *server = clientData;
     Dbi_Handle *handle;
+    int         nrows, ignore;
 
     if (objc < 2 || objc > 6) {
         Tcl_WrongNumArgs(interp, 1, objv, "?-pool pool? ?-timeout timeout? sql");
@@ -441,12 +443,12 @@ TclDmlCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *CONST ob
         return TCL_ERROR;
     }
 
-    if (Dbi_DML(handle, Tcl_GetString(objv[objc - 1])) != NS_OK) {
+    if (Dbi_DML(handle, Tcl_GetString(objv[objc - 1]), &nrows, &ignore) != NS_OK) {
         DbiException(interp, handle);
         Dbi_PoolPutHandle(handle);
         return TCL_ERROR;
     }
-    Tcl_SetObjResult(interp, Tcl_NewIntObj(handle->numRows));
+    Tcl_SetObjResult(interp, Tcl_NewIntObj(nrows));
     Dbi_PoolPutHandle(handle);
 
     return TCL_OK;
@@ -619,7 +621,7 @@ TclRowsCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *CONST o
     char        *server = (char *) clientData;
     Dbi_Handle  *handle;
     char        *value;
-    int          len, status;
+    int          len, status, ignore;
     Tcl_Obj     *result;
     
 
@@ -631,7 +633,7 @@ TclRowsCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *CONST o
     if (handle == NULL) {
         return TCL_ERROR;
     }
-    if (Dbi_Select(handle, Tcl_GetString(objv[objc - 1]), NULL) != NS_OK) {
+    if (Dbi_Select(handle, Tcl_GetString(objv[objc - 1]), &ignore, &ignore) != NS_OK) {
         DbiException(interp, handle);
         Dbi_PoolPutHandle(handle);
         return TCL_ERROR;

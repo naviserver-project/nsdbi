@@ -36,37 +36,13 @@
 
 #include "dbi.h"
 
-NS_RCSID("@(#) $Header$");
-
-/*
- * The following structure specifies the driver-specific functions
- * to call for each Dbi_ routine.
- */
-
-typedef struct DbiDriver {
-    char                 *name;
-    int                   registered;
-    Dbi_InitProc         *initProc;
-    Dbi_NameProc         *nameProc;
-    Dbi_DbTypeProc       *typeProc;
-    Dbi_OpenProc         *openProc;
-    Dbi_CloseProc        *closeProc;
-    Dbi_ExecProc         *execProc;
-    Dbi_ValueProc        *valueProc;
-    Dbi_ColumnProc       *columnProc;
-    Dbi_CancelProc       *cancelProc;
-    Dbi_FlushProc        *flushProc;
-    Dbi_ResetProc        *resetProc;
-    Dbi_TableListProc    *tableListProc;
-    Dbi_GetTableInfoProc *tableInfoProc;
-    Dbi_BestRowProc      *bestRowProc;
-} DbiDriver;
 
 /*
  * Static variables defined in this file
  */
 
 static Tcl_HashTable driversTable;
+
 
 
 /*
@@ -88,76 +64,17 @@ static Tcl_HashTable driversTable;
  */
 
 int
-Dbi_RegisterDriver(char *driver, Dbi_Proc *procs)
+Dbi_RegisterDriver(Dbi_Driver *driver)
 {
     Tcl_HashEntry *hPtr;
-    DbiDriver *driverPtr = NULL;
+    int new;
 
-    hPtr = Tcl_FindHashEntry(&driversTable, driver);
-    if (hPtr == NULL) {
-        Ns_Log(Error, "dbidrv: no such driver '%s'", driver);
+    hPtr = Tcl_CreateHashEntry(&driversTable, driver->name, &new);
+    if (!new) {
+        Ns_Log(Error, "nsdbi: a driver is already registered as '%s'", driver->name);
         return NS_ERROR;
     }
-    driverPtr = (DbiDriver *) Tcl_GetHashValue(hPtr);
-    if (driverPtr->registered) {
-        Ns_Log(Error, "dbidrv: a driver is already registered as '%s'",
-               driver);
-        return NS_ERROR;
-    }
-    driverPtr->registered = 1;
-    
-    while (procs->func != NULL) {
-        switch (procs->id) {
-            case Dbi_InitId:
-                driverPtr->initProc = (Dbi_InitProc *) procs->func;
-                break;
-            case Dbi_NameId:
-                driverPtr->nameProc = (Dbi_NameProc *) procs->func;
-                break;
-            case Dbi_DbTypeId:
-                driverPtr->typeProc = (Dbi_DbTypeProc *) procs->func;
-                break;
-            case Dbi_OpenId:
-                driverPtr->openProc = (Dbi_OpenProc *) procs->func;
-                break;
-            case Dbi_CloseId:
-                driverPtr->closeProc = (Dbi_CloseProc *) procs->func;
-                break;
-            case Dbi_ExecId:
-                driverPtr->execProc = (Dbi_ExecProc *) procs->func;
-                break;
-            case Dbi_ValueId:
-                driverPtr->valueProc = (Dbi_ValueProc *) procs->func;
-                break;
-            case Dbi_ColumnId:
-                driverPtr->columnProc = (Dbi_ColumnProc *) procs->func;
-                break;
-            case Dbi_CancelId:
-                driverPtr->cancelProc = (Dbi_CancelProc *) procs->func;
-                break;
-            case Dbi_FlushId:
-                driverPtr->flushProc = (Dbi_FlushProc *) procs->func;
-                break;
-            case Dbi_ResetId:
-                driverPtr->resetProc = (Dbi_ResetProc *) procs->func;
-                break;
-            case Dbi_TableListId:
-                driverPtr->tableListProc = (Dbi_TableListProc *) procs->func;
-                break;
-            case Dbi_GetTableInfoId:
-                driverPtr->tableInfoProc = (Dbi_GetTableInfoProc *) procs->func;
-                break;
-            case Dbi_BestRowId:
-                driverPtr->bestRowProc = (Dbi_BestRowProc *) procs->func;
-                break;
-                
-            default:
-                Ns_Log(Error, "dbidrv: unknown driver id '%d'", procs->id);
-                return NS_ERROR;
-                break;
-        }
-        ++procs;
-    }
+    Tcl_SetHashValue(hPtr, driver);
 
     return NS_OK;
 }
@@ -182,10 +99,10 @@ Dbi_RegisterDriver(char *driver, Dbi_Proc *procs)
 char *
 Dbi_DriverName(Dbi_Handle *handle)
 {
-    DbiDriver *driverPtr = DbiGetDriver(handle);
+    Dbi_Driver *driverPtr = DbiGetDriver(handle);
     char *name = NULL;
 
-    if (driverPtr != NULL && driverPtr->nameProc != NULL) {
+    if (driverPtr->nameProc != NULL) {
         name = (*driverPtr->nameProc)(handle);
     }
 
@@ -212,16 +129,14 @@ Dbi_DriverName(Dbi_Handle *handle)
 char *
 Dbi_DriverDbType(Dbi_Handle *handle)
 {
-    DbiDriver *driverPtr = DbiGetDriver(handle);
+    Dbi_Driver *driverPtr = DbiGetDriver(handle);
+    char *type = NULL;
 
-    if (driverPtr == NULL ||
-        driverPtr->typeProc == NULL ||
-        handle->connected == NS_FALSE) {
-
-        return NULL;
+    if (driverPtr->typeProc != NULL && handle->connected) {
+        type = (*driverPtr->typeProc)(handle);;
     }
 
-    return (*driverPtr->typeProc)(handle);
+    return type;
 }
 
 
@@ -242,27 +157,20 @@ Dbi_DriverDbType(Dbi_Handle *handle)
  */
 
 int
-Dbi_DML(Dbi_Handle *handle, char *sql)
+Dbi_DML(Dbi_Handle *handle, char *sql, int *nrows, int *ncols)
 {
-    DbiDriver *driverPtr = DbiGetDriver(handle);
-    int status = NS_ERROR;
+    int status;
 
-    if (driverPtr != NULL
-        && driverPtr->execProc != NULL
-        && handle->connected) {
-
-        status = Dbi_Exec(handle, sql);
-
-        if (status == DBI_DML) {
-            status = NS_OK;
-        } else {
-            if (status == DBI_ROWS) {
-                Dbi_SetException(handle, "DBI",
-                                 "Query was not a DML or DDL command.");
-                Dbi_Flush(handle);
-            }
-            status = NS_ERROR;
+    status = Dbi_Exec(handle, sql, nrows, ncols);
+    if (status == DBI_DML) {
+        status = NS_OK;
+    } else {
+        if (status == DBI_ROWS) {
+            Dbi_SetException(handle, "DBI",
+                "Query was not a DML or DDL command.");
+            Dbi_Flush(handle);
         }
+        status = NS_ERROR;
     }
 
     return status;
@@ -286,17 +194,16 @@ Dbi_DML(Dbi_Handle *handle, char *sql)
  */
 
 int
-Dbi_Select(Dbi_Handle *handle, char *sql, int *nrows)
+Dbi_Select(Dbi_Handle *handle, char *sql, int *nrows, int *ncols)
 {
-    if (Dbi_Exec(handle, sql) != DBI_ROWS) {
-        if (handle->dsExceptionMsg.length == 0) {
+    Handle *handlePtr = (Handle *) handle;
+
+    if (Dbi_Exec(handle, sql, nrows, ncols) != DBI_ROWS) {
+        if (Ns_DStringLength(&handlePtr->dsExceptionMsg) == 0) {
             Dbi_SetException(handle, "DBI",
                 "Query was not a statement returning rows.");
         }
         return NS_ERROR;
-    }
-    if (nrows != NULL) {
-        *nrows = handle->numRows;
     }
 
     return NS_OK;
@@ -320,23 +227,31 @@ Dbi_Select(Dbi_Handle *handle, char *sql, int *nrows)
  */
 
 int
-Dbi_Exec(Dbi_Handle *handle, char *sql)
+Dbi_Exec(Dbi_Handle *handle, char *sql, int *nrows, int *ncols)
 {
-    DbiDriver *driverPtr = DbiGetDriver(handle);
-    int status = NS_ERROR;
+    Dbi_Driver *driverPtr = DbiGetDriver(handle);
+    Handle     *handlePtr = (Handle *) handle;
+    int         status    = NS_ERROR;
 
-    handle->cExceptionCode[0] = '\0';
-    Ns_DStringTrunc(&handle->dsExceptionMsg, 0);
+    handlePtr->cExceptionCode[0] = '\0';
+    Ns_DStringTrunc(&handlePtr->dsExceptionMsg, 0);
 
-    if (driverPtr->execProc != NULL
-        && handle->connected) {
+    if (driverPtr->execProc != NULL && handlePtr->connected) {
 
-        status = (*driverPtr->execProc)(handle, sql);
+        status = (*driverPtr->execProc)(handle, sql,
+                                        &handlePtr->numRows, &handlePtr->numCols);
+        if (nrows != NULL) {
+            *nrows = handlePtr->numRows;
+        }
+        if (ncols != NULL) {
+            *ncols = handlePtr->numCols;
+        }
         DbiLogSql(handle, sql);
 
         if (status == DBI_ROWS) {
-            handle->fetchingRows = NS_TRUE;
-            handle->currentRow = 0;
+            handlePtr->fetchingRows = NS_TRUE;
+            handlePtr->currentRow = 0;
+            handlePtr->currentCol = 0;
         }
     }
 
@@ -368,16 +283,17 @@ Dbi_Exec(Dbi_Handle *handle, char *sql)
 int
 Dbi_NextValue(Dbi_Handle *handle, char **value, int *vLen, char **column, int *cLen)
 {
-    int status;
+    Handle *handlePtr = (Handle *) handle;
+    int     status;
 
-    if (!handle->fetchingRows || !handle->connected
-        || handle->numCols == 0 || handle->numRows == 0) {
+    if (!handlePtr->fetchingRows || !handlePtr->connected
+        || handlePtr->numCols == 0 || handlePtr->numRows == 0) {
 
-        Dbi_SetException(handle, "ERROR", "No waiting rows.");
+        Dbi_SetException(handle, "DBI", "No waiting rows.");
         return NS_ERROR;
     }
-    if (handle->currentCol == handle->numCols) {
-        handle->currentCol = 0;
+    if (handlePtr->currentCol == handlePtr->numCols) {
+        handlePtr->currentCol = 0;
     }
     if ((status = DbiValue(handle, value, vLen)) == NS_ERROR) {
         return NS_ERROR;
@@ -387,13 +303,13 @@ Dbi_NextValue(Dbi_Handle *handle, char **value, int *vLen, char **column, int *c
             return NS_ERROR;
         }
     }
-    handle->currentCol++;
-    if (handle->currentCol == handle->numCols) {
-        if (handle->currentRow == (handle->numRows - 1)) {
-            handle->fetchingRows = NS_FALSE;
+    handlePtr->currentCol++;
+    if (handlePtr->currentCol == handlePtr->numCols) {
+        if (handlePtr->currentRow == (handlePtr->numRows - 1)) {
+            handlePtr->fetchingRows = NS_FALSE;
             status = DBI_END_DATA;
         } else {
-            handle->currentRow++;
+            handlePtr->currentRow++;
             status = DBI_LAST_COL;
         }
     }
@@ -422,14 +338,15 @@ Dbi_NextValue(Dbi_Handle *handle, char **value, int *vLen, char **column, int *c
 int
 Dbi_CurrentColumn(Dbi_Handle *handle, char **column, int *len)
 {
-    DbiDriver *driverPtr = DbiGetDriver(handle);
+    Dbi_Driver *driverPtr = DbiGetDriver(handle);
+    Handle     *handlePtr = (Handle *) handle;
 
-    if (!handle->fetchingRows) {
-        Dbi_SetException(handle, "ERROR", "No rows waiting to bind.");
+    if (!handlePtr->fetchingRows) {
+        Dbi_SetException(handle, "DBI", "No rows waiting to bind.");
         return NS_ERROR;
     }
-    if (driverPtr->columnProc != NULL && handle->connected) {
-        return (*driverPtr->columnProc)(handle, handle->currentCol, column, len);
+    if (driverPtr->columnProc != NULL && handlePtr->connected) {
+        return (*driverPtr->columnProc)(handle, handlePtr->currentCol, column, len);
     }
 
     return NS_ERROR;
@@ -456,18 +373,17 @@ Dbi_CurrentColumn(Dbi_Handle *handle, char **column, int *len)
 int
 Dbi_Cancel(Dbi_Handle *handle)
 {
-    DbiDriver *driverPtr = DbiGetDriver(handle);
-    int status = NS_ERROR;
+    Dbi_Driver *driverPtr = DbiGetDriver(handle);
+    Handle     *handlePtr = (Handle *) handle;
+    int         status = NS_ERROR;
 
-    if (driverPtr != NULL
-        && driverPtr->cancelProc != NULL
-        && handle->connected) {
+    if (driverPtr->cancelProc != NULL && handlePtr->connected) {
 
         status = (*driverPtr->cancelProc)(handle);
 
-        handle->fetchingRows = NS_FALSE;
-        handle->numRows = handle->numCols = 0;
-        handle->currentRow = handle->currentCol = 0;
+        handlePtr->fetchingRows = NS_FALSE;
+        handlePtr->numRows = handlePtr->numCols = 0;
+        handlePtr->currentRow = handlePtr->currentCol = 0;
     }
 
     return status;
@@ -494,18 +410,17 @@ Dbi_Cancel(Dbi_Handle *handle)
 int
 Dbi_Flush(Dbi_Handle *handle)
 {
-    DbiDriver *driverPtr = DbiGetDriver(handle);
-    int status = NS_ERROR;
+    Dbi_Driver *driverPtr = DbiGetDriver(handle);
+    Handle     *handlePtr = (Handle *) handle;
+    int         status = NS_ERROR;
 
-    if (driverPtr != NULL
-        && driverPtr->flushProc != NULL
-        && handle->connected) {
+    if (driverPtr->flushProc != NULL && handlePtr->connected) {
 
         status = (*driverPtr->flushProc)(handle);
 
-        handle->fetchingRows = NS_FALSE;
-        handle->numRows = handle->numCols = 0;
-        handle->currentRow = handle->currentCol = 0;
+        handlePtr->fetchingRows = NS_FALSE;
+        handlePtr->numRows = handlePtr->numCols = 0;
+        handlePtr->currentRow = handlePtr->currentCol = 0;
     }
 
     return status;
@@ -531,17 +446,16 @@ Dbi_Flush(Dbi_Handle *handle)
 int
 Dbi_ResetHandle (Dbi_Handle *handle)
 {
-    DbiDriver *driverPtr = DbiGetDriver(handle);
-    int status = NS_ERROR;
+    Dbi_Driver *driverPtr = DbiGetDriver(handle);
+    Handle     *handlePtr = (Handle *) handle;
+    int         status = NS_ERROR;
 
-    if (driverPtr != NULL
-        && driverPtr->resetProc != NULL
-        && handle->connected) {
+    if (driverPtr->resetProc != NULL && handlePtr->connected) {
 
         status = (*driverPtr->resetProc)(handle);
 
-        handle->cExceptionCode[0] = '\0';
-        Ns_DStringTrunc(&handle->dsExceptionMsg, 0);
+        handlePtr->cExceptionCode[0] = '\0';
+        Ns_DStringTrunc(&handlePtr->dsExceptionMsg, 0);
     }
     
     return status;
@@ -564,13 +478,12 @@ Dbi_ResetHandle (Dbi_Handle *handle)
  *----------------------------------------------------------------------
  */
 
-struct DbiDriver *
-DbiLoadDriver(char *driver)
+struct Dbi_Driver *
+DbiLoadDriver(char *name)
 {
     Tcl_HashEntry  *hPtr;
+    Dbi_Driver     *driverPtr;
     char           *module, *path;
-    int             new;
-    DbiDriver      *driverPtr;
     static int      initialized = NS_FALSE;
 
     if (initialized == NS_FALSE) {
@@ -578,29 +491,18 @@ DbiLoadDriver(char *driver)
         initialized = NS_TRUE;
     }
 
-    hPtr = Tcl_CreateHashEntry(&driversTable, driver, &new);
-    if (new == 0) {
-        driverPtr = (DbiDriver *) Tcl_GetHashValue(hPtr);
-    } else {
-        driverPtr = ns_malloc(sizeof(DbiDriver));
-        memset(driverPtr, 0, sizeof(DbiDriver));
-        driverPtr->name = Tcl_GetHashKey(&driversTable, hPtr);
-        Tcl_SetHashValue(hPtr, driverPtr);
-        module = Ns_ConfigGetValue("ns/dbi/drivers", driver);
-        if (module == NULL) {
-            Ns_Log(Error, "dbidrv: no such driver '%s'", driver);
-        } else {
-            path = Ns_ConfigGetPath(NULL, NULL, "dbi", "driver", driver, NULL);
-            if (Ns_ModuleLoad(driver, path, module, "Dbi_DriverInit")
-                    != NS_OK) {
-                Ns_Log(Error, "dbidrv: failed to load driver '%s'",
-                       driver);
-            }
-        }
-    }
-    if (driverPtr->registered == 0) {
+    module = Ns_ConfigGetValue("ns/dbi/drivers", name);
+    if (module == NULL) {
+        Ns_Log(Error, "nsdbi: no such driver '%s'", name);
         return NULL;
     }
+    path = Ns_ConfigGetPath(NULL, NULL, "dbi", "driver", name, NULL);
+    if (Ns_ModuleLoad(name, path, module, "Dbi_DriverInit") != NS_OK) {
+        Ns_Log(Error, "nsdbi: failed to load driver '%s'", name);
+        return NULL;
+    }
+    hPtr = Tcl_FindHashEntry(&driversTable, name);
+    driverPtr = (Dbi_Driver *) Tcl_GetHashValue(hPtr);
 
     return driverPtr;
 }
@@ -624,12 +526,12 @@ DbiLoadDriver(char *driver)
  */
 
 void
-DbiDriverInit(char *server, DbiDriver *driverPtr)
+DbiDriverInit(char *server, Dbi_Driver *driverPtr)
 {
     if (driverPtr->initProc != NULL &&
         ((*driverPtr->initProc) (server, "dbi", driverPtr->name)) != NS_OK) {
 
-        Ns_Log(Warning, "dbidrv: init proc failed for driver '%s'",
+        Ns_Log(Warning, "nsdbi: init proc failed for driver '%s'",
                driverPtr->name);
     }
 }
@@ -655,16 +557,18 @@ DbiDriverInit(char *server, DbiDriver *driverPtr)
 int
 DbiOpen(Dbi_Handle *handle)
 {
-    DbiDriver *driverPtr = DbiGetDriver(handle);
+    Dbi_Driver *driverPtr = DbiGetDriver(handle);
+    Handle     *handlePtr = (Handle *) handle;
 
     if (driverPtr->openProc == NULL ||
         (*driverPtr->openProc) (handle) != NS_OK) {
 
         Ns_Log(Error, "nsdbi: failed to open handle in pool '%s': %s",
-               handle->poolPtr->name, handle->dsExceptionMsg);
+               handlePtr->poolPtr->name,
+               Ns_DStringValue(&handlePtr->dsExceptionMsg));
         return NS_ERROR;
     } else {
-        Ns_Log(Notice, "nsdbi: opened handle in pool '%s'", handle->poolPtr->name);
+        Ns_Log(Notice, "nsdbi: opened handle in pool '%s'", handlePtr->poolPtr->name);
     }
 
     return NS_OK;
@@ -691,10 +595,10 @@ DbiOpen(Dbi_Handle *handle)
 void
 DbiClose(Dbi_Handle *handle)
 {
-    DbiDriver *driverPtr = DbiGetDriver(handle);
+    Dbi_Driver *driverPtr = DbiGetDriver(handle);
 
     Ns_Log(Notice, "nsdbi: closing handle in pool '%s'", handle->poolPtr->name);
-    if (handle->connected && driverPtr->closeProc != NULL) {
+    if (driverPtr->closeProc != NULL && handle->connected) {
         (*driverPtr->closeProc)(handle);
     }
 }
@@ -719,12 +623,13 @@ DbiClose(Dbi_Handle *handle)
 int
 DbiValue(Dbi_Handle *handle, char **value, int *len)
 {
-    DbiDriver *driverPtr = DbiGetDriver(handle);
-    int status = NS_ERROR;
+    Dbi_Driver *driverPtr = DbiGetDriver(handle);
+    Handle     *handlePtr = (Handle *) handle;
+    int         status = NS_ERROR;
 
     if (driverPtr->valueProc != NULL) {
-        status = (*driverPtr->valueProc)(handle, handle->currentRow,
-                                         handle->currentCol, value, len);
+        status = (*driverPtr->valueProc)(handle, handlePtr->currentRow,
+                                         handlePtr->currentCol, value, len);
     }
     return status;
 }
@@ -749,11 +654,37 @@ DbiValue(Dbi_Handle *handle, char **value, int *len)
 int
 DbiColumn(Dbi_Handle *handle, char **column, int *len)
 {
-    DbiDriver *driverPtr = DbiGetDriver(handle);
-    int status = NS_ERROR;
+    Dbi_Driver *driverPtr = DbiGetDriver(handle);
+    Handle     *handlePtr = (Handle *) handle;
+    int         status = NS_ERROR;
 
     if (driverPtr->columnProc != NULL) {
-        status = (*driverPtr->columnProc)(handle, handle->currentCol, column, len);
+        status = (*driverPtr->columnProc)(handle, handlePtr->currentCol, column, len);
     }
     return status;
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * DbiGetDriver --
+ *
+ *      Return a pointer to the driver structure for a handle.
+ *
+ * Results:
+ *      Pointer to driver.
+ *
+ * Side effects:
+ *      None.
+ *
+ *----------------------------------------------------------------------
+ */
+
+Dbi_Driver *
+DbiGetDriver(Dbi_Handle *handle)
+{
+    Pool *poolPtr = (Pool *) handle->poolPtr;
+
+    return poolPtr->driverPtr;
 }
