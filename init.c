@@ -586,21 +586,16 @@ Dbi_PoolTimedGetMultipleHandles(Dbi_Handle **handles, char *server,
      */
 
     if (pool == NULL || *pool == '\0') {
-        sdataPtr = GetServer(server);
-        if (sdataPtr == NULL) {
-            Ns_Log(Error, "dbiinit: no such server '%s' while getting default pool", server);
+        pool = Dbi_PoolDefault(server);
+        if (pool == NULL) {
+            Ns_Log(Error, "dbiinit: pool not specified and no default available");
             return NS_ERROR;
         }
-        if ((poolPtr = sdataPtr->defpoolPtr) == NULL) {
-            Ns_Log(Error, "dbiinit: pool not specified and no default available", server);
-            return NS_ERROR;
-        }
-    } else {
-        poolPtr = GetPool(pool);
-        if (poolPtr == NULL) {
-            Ns_Log(Error, "dbiinit: no such pool '%s'", pool);
-            return NS_ERROR;
-        }
+    }
+    poolPtr = GetPool(pool);
+    if (poolPtr == NULL) {
+        Ns_Log(Error, "dbiinit: no such pool '%s'", pool);
+        return NS_ERROR;
     }
 
     /*
