@@ -133,7 +133,7 @@ GetHandle(char *server, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
     pool = NULL;
 
     for (i = 1; i < objc - 1; i += 2) {
-        if (Tcl_GetIndexFromObj(interp, objv[i], opts, "option", 0, (int *) &opt) != TCL_OK) {
+        if (Tcl_GetIndexFromObj(interp, objv[i], opts, "option", 0, (int*) &opt) != TCL_OK) {
             Exception(interp, "ERROR", NULL);
             return NULL;
         }
@@ -239,7 +239,7 @@ Exception(Tcl_Interp *interp, char *info, char *fmt, ...)
         va_start(ap, fmt);
         Ns_DStringVPrintf(&ds, fmt, ap);
         va_end(ap);
-        Tcl_AppendResult(interp, Ns_DStringValue(&ds));
+        Tcl_DStringResult(interp, &ds);
         Ns_DStringFree(&ds);
     }
     return TCL_ERROR;
@@ -294,7 +294,8 @@ Tcl0or1rowCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *CONS
     char       *server = (char *) clientData;
     Dbi_Handle *handle;
     Ns_Set     *row;
-    int         nrows;
+    Tcl_Obj    *var, *value;
+    int         i, nrows;
 
     if (objc < 2 || objc > 6) {
         Tcl_WrongNumArgs(interp, 1, objv, "?-pool pool? ?-timeout timeout? sql");
@@ -312,8 +313,15 @@ Tcl0or1rowCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *CONS
     }
     if (nrows == 0) {
         Ns_SetFree(row);
+        Tcl_SetObjResult(interp, Tcl_NewIntObj(0));
     } else {
-        Ns_TclEnterSet(interp, row, NS_TCL_SET_DYNAMIC);
+        for (i = 0; i < Ns_SetSize(row); i++) {
+            var   = Tcl_NewStringObj(Ns_SetKey(row, i), -1);
+            value = Tcl_NewStringObj(Ns_SetValue(row, i), -1);
+            Tcl_ObjSetVar2(interp, var, NULL, value, TCL_LEAVE_ERR_MSG);
+        }
+        Ns_SetFree(row);
+        Tcl_SetObjResult(interp, Tcl_NewIntObj(1));
     }
     Dbi_PoolPutHandle(handle);
 
@@ -343,6 +351,8 @@ Tcl1rowCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *CONST o
     char       *server = (char *) clientData;
     Dbi_Handle *handle;
     Ns_Set     *row;
+    Tcl_Obj    *var, *value;
+    int         i;
 
     if (objc < 2 || objc > 6) {
         Tcl_WrongNumArgs(interp, 1, objv, "?-pool pool? ?-timeout timeout? sql");
@@ -358,7 +368,14 @@ Tcl1rowCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *CONST o
         Dbi_PoolPutHandle(handle);
         return DbiException(interp, handle);
     }
-    Ns_TclEnterSet(interp, row, NS_TCL_SET_DYNAMIC);
+    for (i = 0; i < Ns_SetSize(row); i++) {
+        var   = Tcl_NewStringObj(Ns_SetKey(row, i), -1);
+        value = Tcl_NewStringObj(Ns_SetValue(row, i), -1);
+        Tcl_ObjSetVar2(interp, var, NULL, value, TCL_LEAVE_ERR_MSG);
+    }
+    Ns_SetFree(row);
+    Tcl_SetObjResult(interp, Tcl_NewIntObj(1));
+
     Dbi_PoolPutHandle(handle);
 
     return TCL_OK;
@@ -440,6 +457,7 @@ TclDmlCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *CONST ob
         Dbi_PoolPutHandle(handle);
         return DbiException(interp, handle);
     }
+    Dbi_PoolPutHandle(handle);
 
     return TCL_OK;
 }
@@ -550,10 +568,8 @@ TclPoolsCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *CONST 
     Ns_DString  ds;
 
     Ns_DStringInit(&ds);
-    if (Dbi_PoolList(&ds, server)) {
-        Tcl_SetObjResult(interp, Tcl_NewStringObj(Ns_DStringValue(&ds),
-                                                  Ns_DStringLength(&ds)));
-    }
+    Dbi_PoolList(&ds, server);
+    Tcl_DStringResult(interp, &ds);
     Ns_DStringFree(&ds);
 
     return TCL_OK;
@@ -612,8 +628,7 @@ TclRowsCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *CONST o
 {
     char        *server = (char *) clientData;
     Dbi_Handle  *handle;
-    Ns_Set      *columns;
-    Ns_Set       row;
+    Ns_Set      *row;
     int          status;
     Tcl_Obj     *value, *result;
 
@@ -626,16 +641,16 @@ TclRowsCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *CONST o
         return TCL_ERROR;
     }
 
-    columns = Dbi_Select(handle, Tcl_GetString(objv[objc - 1]));
-    if (columns == NULL) {
+    row = Dbi_Select(handle, Tcl_GetString(objv[objc - 1]));
+    if (row == NULL) {
         Dbi_PoolPutHandle(handle);
         return DbiException(interp, handle);
     }
     result = Tcl_GetObjResult(interp);
-    while ((status = Dbi_GetRow(handle, &row)) == NS_OK) {
+    while ((status = Dbi_GetRow(handle, row)) == NS_OK) {
         int i;
-        for (i = 0; i < Ns_SetSize(&row); ++i) {
-            value = Tcl_NewStringObj(Ns_SetValue(&row, i), -1);
+        for (i = 0; i < Ns_SetSize(row); ++i) {
+            value = Tcl_NewStringObj(Ns_SetValue(row, i), -1);
             Tcl_ListObjAppendElement(interp, result, value);
         }
     }

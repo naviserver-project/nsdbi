@@ -159,6 +159,7 @@ Dbi_1Row(Dbi_Handle *handle, char *sql)
         if (nrows != 1) {
             Dbi_SetException(handle, DBI_SQLERRORCODE,
                 "Query did not return a row.");
+            Ns_SetFree(row);
             row = NULL;
         }
     }

@@ -288,7 +288,9 @@ Dbi_PoolList(Ns_DString *ds, char *server)
     while (hPtr != NULL) {
         poolPtr = (Pool *) Tcl_GetHashKey(&sdataPtr->allowedTable, hPtr);
         Ns_DStringAppendElement(ds, poolPtr->name);
+        hPtr = Tcl_NextHashEntry(&search);
     }
+
     return NS_OK;
 }
 
@@ -408,7 +410,7 @@ Dbi_PoolTimedGetHandle(Dbi_Handle **handlePtrPtr, Dbi_Pool *pool, int wait)
     if (handlePtr != NULL && handlePtr->connected == NS_FALSE) {
         status = Connect(handlePtr);
     }
-    if (status != NS_OK) {
+    if (status != NS_OK && handlePtr != NULL) {
         Ns_MutexLock(&poolPtr->lock);
         ReturnHandle(handlePtr);
         Ns_CondSignal(&poolPtr->getCond);

@@ -305,10 +305,10 @@ Dbi_Select(Dbi_Handle *handle, char *sql)
             setPtr = Dbi_BindRow(handle);
         } else {
             Dbi_SetException(handle, "DBI",
-                             "Query was not a statement returning rows.");
+                "Query was not a statement returning rows.");
         }
     }
-    
+
     return setPtr;
 }
 
@@ -411,11 +411,11 @@ int
 Dbi_GetRow(Dbi_Handle *handle, Ns_Set *row)
 {
     DbiDriver *driverPtr = DbiGetDriver(handle);
+    Dbi_Pool  *poolPtr   = handle->poolPtr;
     int        status = NS_ERROR;
 
     if (!handle->fetchingRows) {
-        Ns_Log(Error, "%s[%s]: no waiting rows",
-               handle->poolPtr->driver, handle->poolPtr->name);
+        Ns_Log(Error, "%s[%s]: no waiting rows", poolPtr->driver, poolPtr->name);
         return status;
     }
     if (handle->currentRow == handle->numRows) {
