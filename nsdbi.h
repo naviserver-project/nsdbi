@@ -28,20 +28,20 @@
  */
 
 /*
- * nsdb.h --
+ * nsdbi.h --
  *
- *      Public types and function declarations for the nsdb module.
+ *      Public types and function declarations for the nsdbi module.
  *
  *	$Header$
  */
 
-#ifndef NSDB_H
-#define NSDB_H
+#ifndef NSDBI_H
+#define NSDBI_H
 
 #include "ns.h"
 
 /*
- * The following are nsdb return codes.
+ * The following are nsdbi return codes.
  */
 
 #define NS_DML  		  1
@@ -179,4 +179,4 @@ NS_EXTERN Ns_Set *Ns_Db1Row(Ns_DbHandle *handle, char *sql);
 NS_EXTERN int Ns_DbInterpretSqlFile(Ns_DbHandle *handle, char *filename);
 NS_EXTERN void Ns_DbSetException(Ns_DbHandle *handle, char *code, char *msg);
 
-#endif /* NSDB_H */
+#endif /* NSDBI_H */

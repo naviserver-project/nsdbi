@@ -29,12 +29,12 @@
 
 
 /* 
- * dbutil.c --
+ * util.c --
  *
  *	Utility db routines.
  */
 
-#include "db.h"
+#include "dbi.h"
 
 NS_RCSID("@(#) $Header$");
 

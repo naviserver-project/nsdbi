@@ -29,13 +29,13 @@
 
 
 /* 
- * dbinit.c --
+ * init.c --
  *
  *	This file contains routines for creating and accessing
  *	pools of database handles.
  */
 
-#include "db.h"
+#include "dbi.h"
 
 NS_RCSID("@(#) $Header$");
 

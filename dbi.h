@@ -27,10 +27,10 @@
  * version of this file under either the License or the GPL.
  */
 
-#ifndef DB_H
-#define DB_H
+#ifndef DBI_H
+#define DBI_H
 
-#include "nsdb.h"
+#include "nsdbi.h"
 
 extern void NsDbInitPools(void);
 extern void NsDbInitServer(char *server);

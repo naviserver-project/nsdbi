@@ -29,12 +29,12 @@
 
 
 /* 
- * dbdrv.c --
+ * drv.c --
  *
  *	Routines for handling the loadable db driver interface.
  */
 
-#include "db.h"
+#include "dbi.h"
 
 NS_RCSID("@(#) $Header$");
 

@@ -29,12 +29,12 @@
 
 
 /*
- * dbtcl.c --
+ * tclcmds.c --
  *
  *	Tcl database access routines.
  */
 
-#include "db.h"
+#include "dbi.h"
 
 NS_RCSID("@(#) $Header$");
 

@@ -29,9 +29,20 @@
 #
 # $Header$
 
-LIB	= nsdb
-LIBOBJS	= dbinit.o dbdrv.o dbtcl.o dbutil.o
-MOD	= nsdb.so
-OBJS	= nsdb.o
-HDRS	= db.h
-include ../include/Makefile.build
+NAVISERVER  = /usr/local/ns
+NSD         = $(NAVISERVER)/bin/nsd
+
+MODNAME     = nsdbi
+
+LIB         = nsdbi
+LIBOBJS     = init.o drv.o tclcmds.o util.o
+HDRS        = dbi.h
+LIBHDRS     = nsdbi.h
+
+MOD         = nsdbi.so
+MODOBJS     = nsdbi.o
+
+TCL         = util.tcl
+
+
+include $(NAVISERVER)/include/Makefile.module

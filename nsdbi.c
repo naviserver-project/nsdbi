@@ -28,12 +28,12 @@
  */
 
 /* 
- * nsdb.c --
+ * nsdbi.c --
  *
  *	Database module entry point.
  */
 
-#include "db.h"
+#include "dbi.h"
 
 NS_RCSID("@(#) $Header$");
 
