@@ -80,7 +80,6 @@ typedef struct Handle {
 
     Dbi_Pool       *poolPtr;
     int             connected;
-    Ns_Set         *row;
     int             fetchingRows;
     int             numCols;
     int             currentCol;
@@ -967,7 +966,6 @@ CreatePool(char *pool, char *path, char *driver)
         Ns_DStringInit(&handlePtr->dsExceptionMsg);
         handlePtr->poolPtr = (Dbi_Pool *) poolPtr;
         handlePtr->connected = NS_FALSE;
-        handlePtr->row = Ns_SetCreate(NULL);
         handlePtr->fetchingRows = 0;
         handlePtr->numRows = 0;
         handlePtr->currentRow = 0;

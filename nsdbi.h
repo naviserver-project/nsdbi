@@ -72,7 +72,6 @@ typedef struct Dbi_Pool {
 typedef struct Dbi_Handle {
     Dbi_Pool   *poolPtr;
     int         connected;
-    Ns_Set     *row;
     int         fetchingRows;
     int         numCols;      /*<< number of cols in current result set */
     int         currentCol;
