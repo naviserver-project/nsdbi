@@ -59,9 +59,9 @@ static int ParseOptions(InterpData *idataPtr, int objc, Tcl_Obj *CONST objv[],
                         Dbi_Handle **handlePtrPtr, Dbi_Statement **stmtPtrPtr) _nsnonnull();
 static Dbi_Handle* GetHandle(InterpData *idataPtr, const char *pool, int timeout) _nsnonnull();
 static Dbi_Pool* GetPool(InterpData *idataPtr, const char *pool) _nsnonnull(1);
-static Dbi_Statement *BindVars(Tcl_Interp *interp, Dbi_Pool *pool, Tcl_Obj *sqlObj) _nsnonnull();
+static Dbi_Statement *BindVars(Tcl_Interp *interp, Dbi_Pool *pool, Tcl_Obj *dictObjPtr, Tcl_Obj *sqlObjPtr) _nsnonnull();
+static char *GetVar(Tcl_Interp *interp, Tcl_Obj *dictObjPtr, char *name, int *len) _nsnonnull();
 static int DictRowResult(Tcl_Interp *interp, Dbi_Handle *handle, Dbi_Statement *stmt) _nsnonnull();
-static char *GetVar(Tcl_Interp *interp, char *name, int *len) _nsnonnull();
 static void ReleaseHandle(Dbi_Handle *handle) _nsnonnull();
 static void ReleaseAllHandles(Tcl_Interp *interp, void *arg) _nsnonnull(1);
 static int Exception(Tcl_Interp *interp, const char *code, const char *msg, ...)
@@ -609,8 +609,9 @@ TclReleasehandlesCmd(ClientData clientData, Tcl_Interp *interp,
  *----------------------------------------------------------------------
  * ParseOptions --
  *
- *      Parse common command options to determine which pool to use and
- *      how long to wait when acquiring a handle.
+ *      Parse common command options to determine which pool to use, how
+ *      long to wait when acquiring a handle, and how bind variables are
+ *      specified.  Also create the statement from passed in SQL.
  *
  * Results:
  *      NS_OK if handle acquired, NS_ERROR otherwise.
@@ -628,19 +629,21 @@ ParseOptions(InterpData *idataPtr, int objc, Tcl_Obj *CONST objv[],
     Tcl_Interp    *interp = idataPtr->interp;
     Dbi_Handle    *handle;
     Dbi_Statement *stmt;
+    Tcl_Obj       *dictObjPtr;
     const char    *poolname;
     int            i, timeout;
 
-    static CONST char *opts[] = {"-pool", "-timeout", NULL};
-    enum IHandleOptsIdx {IPoolIdx, ITimeoutIdx} _nsmayalias opt;
+    static CONST char *opts[] = {"-pool", "-timeout", "-bind", NULL};
+    enum IHandleOptsIdx {IPoolIdx, ITimeoutIdx, IBindIdx} _nsmayalias opt;
 
-    if (objc < 2 || objc > 6) {
-        Tcl_WrongNumArgs(interp, 1, objv, "?-pool pool? -timeout timeout? sql");
+    if (objc < 2 || objc > 8 || objc % 2) {
+        Tcl_WrongNumArgs(interp, 1, objv, "?-pool pool? -timeout timeout? ?-bind dict? sql");
         return TCL_ERROR;
     }
 
-    timeout  = -1;
-    poolname = NULL;
+    timeout    = -1;
+    poolname   = NULL;
+    dictObjPtr = NULL;
 
     for (i = 1; i < objc - 1; i += 2) {
         if (Tcl_GetIndexFromObj(interp, objv[i], opts, "option", 0, (int*) &opt) != TCL_OK) {
@@ -656,13 +659,16 @@ ParseOptions(InterpData *idataPtr, int objc, Tcl_Obj *CONST objv[],
                 return NS_ERROR;
             }
             break;
+        case IBindIdx:
+            dictObjPtr = objv[i+1];
+            break;
         }
     }
     handle = GetHandle(idataPtr, poolname, timeout);
     if (handle == NULL) {
         return NS_ERROR;
     }
-    stmt = BindVars(interp, handle->pool, objv[objc-1]);
+    stmt = BindVars(interp, handle->pool, dictObjPtr, objv[objc-1]);
     if (stmt == NULL) {
         ReleaseHandle(handle);
         return NS_ERROR;
@@ -793,7 +799,8 @@ GetPool(InterpData *idataPtr, const char *pool)
  * BindVars --
  *
  *      Construct a statement with the given SQL and bind Tcl values to
- *      the named bind variables.
+ *      the named bind variables using either the passed in dictionary
+ *      or variables from the current scope.
  *
  * Results:
  *      Pointer to valid statment or NULL on error.
@@ -805,7 +812,7 @@ GetPool(InterpData *idataPtr, const char *pool)
  */
 
 static Dbi_Statement *
-BindVars(Tcl_Interp *interp, Dbi_Pool *pool, Tcl_Obj *sqlObj)
+BindVars(Tcl_Interp *interp, Dbi_Pool *pool, Tcl_Obj *dictObjPtr, Tcl_Obj *sqlObjPtr)
 {
     Dbi_Statement  *stmt;
     Tcl_HashSearch  search;
@@ -813,12 +820,12 @@ BindVars(Tcl_Interp *interp, Dbi_Pool *pool, Tcl_Obj *sqlObj)
     char           *sql, *name, *value;
     int             sqlLen, valueLen;
 
-    sql  = Tcl_GetStringFromObj(sqlObj, &sqlLen);
+    sql  = Tcl_GetStringFromObj(sqlObjPtr, &sqlLen);
     stmt = Dbi_StatementAlloc(pool, sql, sqlLen);
     if (stmt != NULL) {
         for_each_hash_entry(hPtr, &stmt->bindVars, &search) {
             name = Tcl_GetHashKey(&stmt->bindVars, hPtr);
-            if ((value = GetVar(interp, name, &valueLen)) == NULL) {
+            if ((value = GetVar(interp, dictObjPtr, name, &valueLen)) == NULL) {
                 Dbi_StatementFree(stmt);
                 return NULL;
             }
@@ -845,23 +852,30 @@ BindVars(Tcl_Interp *interp, Dbi_Pool *pool, Tcl_Obj *sqlObj)
  */
 
 static char *
-GetVar(Tcl_Interp *interp, char *name, int *len)
+GetVar(Tcl_Interp *interp, Tcl_Obj *dictObjPtr, char *name, int *len)
 {
     Tcl_Obj    *nameObjPtr, *valueObjPtr;
-    Ns_DString  ds;
-    char       *data;
+    char       *data = NULL;
 
     nameObjPtr = Tcl_NewStringObj(name, -1);
-    valueObjPtr = Tcl_ObjGetVar2(interp, nameObjPtr, NULL, TCL_LEAVE_ERR_MSG);
-    Tcl_DecrRefCount(nameObjPtr);
-    if (valueObjPtr == NULL) {
-        Ns_DStringInit(&ds);
-        Ns_DStringPrintf(&ds, ", nsdbi: bind variable :%s", name);
-        Tcl_AddObjErrorInfo(interp, ds.string, ds.length);
-        Ns_DStringFree(&ds);
-        return NULL;
+    if (dictObjPtr != NULL) {
+        if (Tcl_DictObjGet(interp, dictObjPtr, nameObjPtr, &valueObjPtr) != TCL_OK) {
+            Tcl_AddObjErrorInfo(interp,
+                "\nnsdbi: bind variable lookup in dictionary failed: ", -1);
+            Tcl_AddObjErrorInfo(interp, name, -1);
+            goto done;
+        }
+    } else {
+        valueObjPtr = Tcl_ObjGetVar2(interp, nameObjPtr, NULL, TCL_LEAVE_ERR_MSG);
+        if (valueObjPtr == NULL) {
+            Tcl_AddObjErrorInfo(interp, "\nnsdbi: bind variable lookup failed: ", -1);
+            Tcl_AddObjErrorInfo(interp, name, -1);
+            goto done;
+        }
     }
     data = Tcl_GetStringFromObj(valueObjPtr, len);
+ done:
+    Tcl_DecrRefCount(nameObjPtr);
     return data;
 }
 
