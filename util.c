@@ -84,9 +84,7 @@ Dbi_QuoteValue(Ns_DString *pds, char *string)
  *      exactly one row.
  *
  * Results:
- *      Pointer to new Ns_Set which must be eventually freed.  The
- *      set includes the names of the columns and, if a row was
- *      fetched, the values for the row.  On error, returns NULL.
+ *      NS_OK/NS_ERROR.
  *
  * Side effects:
  *      Given nrows pointer is set to 0 or 1 to indicate if a row
@@ -95,39 +93,21 @@ Dbi_QuoteValue(Ns_DString *pds, char *string)
  *----------------------------------------------------------------------
  */
 
-Ns_Set *
+int
 Dbi_0or1Row(Dbi_Handle *handle, char *sql, int *nrows)
 {
-    Ns_Set *row;
-
-    row = Dbi_Select(handle, sql);
-    if (row != NULL) {
-        if (Dbi_GetRow(handle, row) == DBI_END_DATA) {
-            *nrows = 0;
-        } else {
-            switch (Dbi_GetRow(handle, row)) {
-            case DBI_END_DATA:
-                *nrows = 1;
-                break;
-
-            case NS_OK:
-                Dbi_SetException(handle, DBI_SQLERRORCODE,
-                                 "Query returned more than one row.");
-                Dbi_Flush(handle);
-                /* FALLTHROUGH */
-
-            case NS_ERROR:
-                /* FALLTHROUGH */
-
-            default:
-                return NULL;
-                break;
-            }
-        }
-        row = Ns_SetCopy(row);
+    if (Dbi_Select(handle, sql, nrows) != NS_OK) {
+        return NS_ERROR;
     }
+    if (handle->numRows > 1) {
+        Dbi_SetException(handle, DBI_SQLERRORCODE,
+            "Query returned more than one row.");
+        Dbi_Flush(handle);
+        return NS_ERROR;
+    }
+    *nrows = handle->numRows;
 
-    return row;
+    return NS_OK;
 }
 
 
@@ -139,32 +119,29 @@ Dbi_0or1Row(Dbi_Handle *handle, char *sql, int *nrows)
  *      Send a SQL statement which is expected to return exactly 1 row.
  *
  * Results:
- *      Pointer to Ns_Set with row data or NULL on error.  Set must
- *      eventually be freed.
+ *      NS_OK/NS_ERROR
  *
  * Side effects:
- *      None.
+ *      An exception may be set if zero rows returned or other error.
  *
  *----------------------------------------------------------------------
  */
 
-Ns_Set *
+int
 Dbi_1Row(Dbi_Handle *handle, char *sql)
 {
-    Ns_Set         *row;
-    int             nrows;
+    int nrows;
 
-    row = Dbi_0or1Row(handle, sql, &nrows);
-    if (row != NULL) {
-        if (nrows != 1) {
-            Dbi_SetException(handle, DBI_SQLERRORCODE,
-                "Query did not return a row.");
-            Ns_SetFree(row);
-            row = NULL;
-        }
+    if (Dbi_0or1Row(handle, sql, &nrows) != NS_OK) {
+        return NS_ERROR;
+    }
+    if (nrows != 1) {
+        Dbi_SetException(handle, DBI_SQLERRORCODE,
+            "Query did not return a row.");
+        return NS_ERROR;
     }
 
-    return row;
+    return NS_OK;
 }
 
 
@@ -286,13 +263,14 @@ Dbi_InterpretSqlFile(Dbi_Handle *handle, char *filename)
  *
  * Dbi_SetException --
  *
- *      Set the stored SQL exception state and message in the handle.
+ *      Set the stored SQL exception state and message for the
+ *      given handle.
  *
  * Results:
  *      None.
  *
  * Side effects:
- *      State code and message are updated.
+ *      Status code and message may be updated.
  *
  *----------------------------------------------------------------------
  */
@@ -304,14 +282,19 @@ Dbi_SetException(Dbi_Handle *handle, char *sqlstate, char *fmt, ...)
     va_list ap;
     int len;
 
-    strcpy(handle->cExceptionCode, sqlstate);
-    Ns_DStringFree(ds);
-    va_start(ap, fmt);
-    Ns_DStringVPrintf(ds, fmt, ap);
-    va_end(ap);
-    len = Ns_DStringLength(ds);
-    if (ds->string[len - 1] == '\n') {
-        Ns_DStringTrunc(ds, len - 1);
+    if (sqlstate != NULL) {
+        strncpy(handle->cExceptionCode, sqlstate, 6);
+        handle->cExceptionCode[5] = '\0';
+    }
+    if (fmt != NULL) {
+        Ns_DStringFree(ds);
+        va_start(ap, fmt);
+        Ns_DStringVPrintf(ds, fmt, ap);
+        va_end(ap);
+        len = Ns_DStringLength(ds);
+        if (ds->string[len - 1] == '\n') {
+            Ns_DStringTrunc(ds, len - 1);
+        }
     }
 }
 

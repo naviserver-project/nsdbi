@@ -45,9 +45,9 @@ NS_RCSID("@(#) $Header$");
 
 static Dbi_Pool* GetPool(char *server, Tcl_Interp *interp, char *pool);
 static Dbi_Handle *GetHandle(char *server, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[]);
-static int Exception(Tcl_Interp *interp, char *info, char *fmt, ...);
-static int DbiException(Tcl_Interp *interp, Dbi_Handle *handle);
-static int RowCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[], int req);
+static int Exception(Tcl_Interp *interp, char *code, char *info, char *msg, ...);
+static void DbiException(Tcl_Interp *interp, Dbi_Handle *handle);
+static int SingleRowCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[], int req);
 
 static Tcl_ObjCmdProc
     Tcl0or1rowCmd, Tcl1rowCmd, TclRowsCmd, TclDmlCmd, TclPoolCmd,
@@ -135,7 +135,6 @@ GetHandle(char *server, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
 
     for (i = 1; i < objc - 1; i += 2) {
         if (Tcl_GetIndexFromObj(interp, objv[i], opts, "option", 0, (int*) &opt) != TCL_OK) {
-            Exception(interp, "ERROR", NULL);
             return NULL;
         }
         switch (opt) {
@@ -144,7 +143,7 @@ GetHandle(char *server, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
             break;
         case ITimeoutIdx:
             if (Tcl_GetIntFromObj(interp, objv[i+1], &timeout) != TCL_OK) {
-                Exception(interp, "ERROR", "invalid timeout value");
+                Exception(interp, NULL, NULL, "Invalid timeout value: %s", Tcl_GetString(objv[i+1]));
                 return NULL;
             }
             break;
@@ -159,10 +158,10 @@ GetHandle(char *server, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
     handlePtr = NULL;
     switch (Dbi_PoolTimedGetHandle(&handlePtr, poolPtr, timeout)) {
     case NS_TIMEOUT:
-        Exception(interp, "TIMEOUT", "wait for database handle timed out");
+        Exception(interp, "TIMEOUT", NULL, "wait for database handle timed out");
         break;
     case NS_ERROR:
-        Exception(interp, "ERROR", "database handle allocation failed");
+        Exception(interp, NULL, NULL, "database handle allocation failed");
         break;
     }
 
@@ -194,13 +193,13 @@ GetPool(char *server, Tcl_Interp *interp, char *pool)
     if (pool == NULL || *pool == '\0') {
         poolPtr = Dbi_PoolDefault(server);
         if (poolPtr == NULL) {
-            Exception(interp, "ERROR", "no pool specified and no default configured");
+            Exception(interp, NULL, NULL, "no pool specified and no default configured");
             return NULL;
         }
     } else {
         poolPtr = Dbi_GetPool(server, pool);
         if (poolPtr == NULL) {
-            Exception(interp, "ERROR", "pool '%s' not valid or not available for server '%s'",
+            Exception(interp, NULL, NULL, "pool '%s' not valid or not available for server '%s'",
                       pool, server);
             return NULL;
         }
@@ -214,10 +213,10 @@ GetPool(char *server, Tcl_Interp *interp, char *pool)
  *----------------------------------------------------------------------
  * Exception --
  *
- *      Set a Tcl exception with optional code, info and message.
+ *      Set a Tcl exception with optional code and message.
  *
  * Results:
- *      Return TCL_ERROR.
+ *      Always TCL_ERROR.
  *
  * Side effects:
  *      None.
@@ -226,23 +225,28 @@ GetPool(char *server, Tcl_Interp *interp, char *pool)
  */
 
 static int
-Exception(Tcl_Interp *interp, char *info, char *fmt, ...)
+Exception(Tcl_Interp *interp, char *code, char *info, char *msg, ...)
 {
+    Tcl_Obj *objPtr;
     Ns_DString ds;
     va_list ap;
 
-    Tcl_SetObjErrorCode(interp, Tcl_NewStringObj("DBI", 3));
-    if (info) {
+    objPtr = Tcl_NewStringObj("DBI", 3);
+    if (code != NULL) {
+        Tcl_ListObjAppendElement(interp, objPtr, Tcl_NewStringObj(code, -1));
+    }
+    Tcl_SetObjErrorCode(interp, objPtr);
+
+    if (info != NULL) {
         Tcl_AddObjErrorInfo(interp, info, -1);
     }
-    if (fmt) {
-        Ns_DStringInit(&ds);
-        va_start(ap, fmt);
-        Ns_DStringVPrintf(&ds, fmt, ap);
-        va_end(ap);
-        Tcl_DStringResult(interp, &ds);
-        Ns_DStringFree(&ds);
-    }
+    Ns_DStringInit(&ds);
+    va_start(ap, msg);
+    Ns_DStringVPrintf(&ds, msg, ap);
+    va_end(ap);
+    Tcl_DStringResult(interp, &ds);
+    Ns_DStringFree(&ds);
+
     return TCL_ERROR;
 }
 
@@ -262,21 +266,19 @@ Exception(Tcl_Interp *interp, char *info, char *fmt, ...)
  *----------------------------------------------------------------------
  */
 
-static int
+static void
 DbiException(Tcl_Interp *interp, Dbi_Handle *handle)
 {
-    char *info    = "ERROR";
-    char *message = "ERROR";
+    char *code    = NULL;
+    char *message = "No exception message available.";
 
     if (handle->cExceptionCode[0] != '\0') {
-        info = handle->cExceptionCode;
+        code = handle->cExceptionCode;
     }
     if (handle->dsExceptionMsg.length > 0) {
-        message = handle->dsExceptionMsg.string;
+        message = Ns_DStringValue(&handle->dsExceptionMsg);
     }
-    Exception(interp, info, "dbi: %s", message);
-
-    return TCL_ERROR;
+    Exception(interp, code, NULL, message);
 }
 
 
@@ -294,6 +296,7 @@ DbiException(Tcl_Interp *interp, Dbi_Handle *handle)
  *      Perform a query returning exactly one row and set the result
  *      as Tcl variables.  Throw an error if no rows are returned.
  *
+ *
  * Results:
  *      TCL_OK/TCL_ERROR.
  *
@@ -306,23 +309,23 @@ DbiException(Tcl_Interp *interp, Dbi_Handle *handle)
 static int
 Tcl0or1rowCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
 {
-    return RowCmd(clientData, interp, objc, objv, 0);
+    return SingleRowCmd(clientData, interp, objc, objv, 0);
 }
 
 static int
 Tcl1rowCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
 {
-    return RowCmd(clientData, interp, objc, objv, 1);
+    return SingleRowCmd(clientData, interp, objc, objv, 1);
 }
 
 static int
-RowCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[], int req)
+SingleRowCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[], int req)
 {
     char       *server = (char *) clientData;
     Dbi_Handle *handle;
-    Ns_Set     *row;
-    Tcl_Obj    *var, *value;
-    int         i, nrows;
+    char       *column, *value;
+    int         cLen, vLen, nrows, status;
+    Tcl_Obj    *colObjPtr, *valObjPtr;
 
     if (objc < 2 || objc > 6) {
         Tcl_WrongNumArgs(interp, 1, objv, "?-pool pool? ?-timeout timeout? sql");
@@ -332,33 +335,36 @@ RowCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[
     if (handle == NULL) {
         return TCL_ERROR;
     }
-
-    row = Dbi_0or1Row(handle, Tcl_GetString(objv[objc - 1]), &nrows);
-    if (row == NULL) {
+    if (Dbi_0or1Row(handle, Tcl_GetString(objv[objc - 1]), &nrows) != NS_OK) {
         DbiException(interp, handle);
         Dbi_PoolPutHandle(handle);
         return TCL_ERROR;
     }
-    Dbi_PoolPutHandle(handle);
-
     if (nrows == 0) {
-        Ns_SetFree(row);
         if (req == 1) {
-            Exception(interp, NULL, "Query was not a statement returning rows.");
+            Exception(interp, NULL, NULL, "Query was not a statement returning rows.");
+            Dbi_PoolPutHandle(handle);
             return TCL_ERROR;
+        } else {
+            Dbi_PoolPutHandle(handle);
+            Tcl_SetObjResult(interp, Tcl_NewIntObj(0));
+            return TCL_OK;
         }
-        Tcl_SetObjResult(interp, Tcl_NewIntObj(0));
-    } else {
-        for (i = 0; i < Ns_SetSize(row); i++) {
-            var   = Tcl_NewStringObj(Ns_SetKey(row, i), -1);
-            value = Tcl_NewStringObj(Ns_SetValue(row, i), -1);
-            Ns_SetFree(row);
-            if (Tcl_ObjSetVar2(interp, var, NULL, value, TCL_LEAVE_ERR_MSG) == NULL) {
-                return TCL_ERROR;
-            }
-        }
-        Tcl_SetObjResult(interp, Tcl_NewIntObj(1));
     }
+    do {
+        if ((status = Dbi_NextValue(handle, &value, &vLen, &column, &cLen) == NS_ERROR)) {
+            break;
+        }
+        colObjPtr = Tcl_NewStringObj(column, cLen);
+        valObjPtr = Tcl_NewStringObj(value, vLen);
+        if (Tcl_ObjSetVar2(interp, colObjPtr, NULL, valObjPtr, TCL_LEAVE_ERR_MSG) == NULL) {
+            status = NS_ERROR;
+            break;
+        }
+    } while (status != DBI_END_DATA && status != NS_ERROR);
+
+    Dbi_PoolPutHandle(handle);
+    Tcl_SetObjResult(interp, Tcl_NewIntObj(1));
 
     return TCL_OK;
 }
@@ -397,7 +403,7 @@ TclBouncepoolCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *C
         return TCL_ERROR;
     }
     if (Dbi_BouncePool(poolPtr) == NS_ERROR) {
-        return Exception(interp, "ERROR", "could not bounce pool: %s", pool);
+        return Exception(interp, NULL, NULL, "could not bounce pool: %s", pool);
     }
 
     return TCL_OK;
@@ -612,9 +618,10 @@ TclRowsCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *CONST o
 {
     char        *server = (char *) clientData;
     Dbi_Handle  *handle;
-    Ns_Set      *row;
-    int          status;
-    Tcl_Obj     *value, *result;
+    char        *value;
+    int          len, status;
+    Tcl_Obj     *result;
+    
 
     if (objc < 2 || objc > 6) {
         Tcl_WrongNumArgs(interp, 1, objv, "?-pool pool? -timeout timeout? sql");
@@ -624,21 +631,19 @@ TclRowsCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *CONST o
     if (handle == NULL) {
         return TCL_ERROR;
     }
-
-    row = Dbi_Select(handle, Tcl_GetString(objv[objc - 1]));
-    if (row == NULL) {
+    if (Dbi_Select(handle, Tcl_GetString(objv[objc - 1]), NULL) != NS_OK) {
         DbiException(interp, handle);
         Dbi_PoolPutHandle(handle);
         return TCL_ERROR;
     }
     result = Tcl_GetObjResult(interp);
-    while ((status = Dbi_GetRow(handle, row)) == NS_OK) {
-        int i;
-        for (i = 0; i < Ns_SetSize(row); ++i) {
-            value = Tcl_NewStringObj(Ns_SetValue(row, i), -1);
-            Tcl_ListObjAppendElement(interp, result, value);
+    do {
+        if ((status = Dbi_NextValue(handle, &value, &len, NULL, NULL)) == NS_ERROR) {
+            break;
         }
-    }
+        Tcl_ListObjAppendElement(interp, result, Tcl_NewStringObj(value, len));
+    } while (status != DBI_END_DATA && status != NS_ERROR);
+
     if (status != DBI_END_DATA) {
         DbiException(interp, handle);
         Dbi_PoolPutHandle(handle);

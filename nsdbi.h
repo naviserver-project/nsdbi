@@ -44,10 +44,11 @@
  * The following are dbi return codes.
  */
 
-#define DBI_DML                1
-#define DBI_ROWS               2
-#define DBI_END_DATA           4
-#define DBI_NO_DATA            8
+#define DBI_DML                   1
+#define DBI_ROWS                  2
+#define DBI_LAST_COL              4
+#define DBI_END_DATA              8
+#define DBI_NO_DATA              16
 
 #define DBI_READONLY             -3
 
@@ -73,6 +74,8 @@ typedef struct Dbi_Handle {
     int         connected;
     Ns_Set     *row;
     int         fetchingRows;
+    int         numCols;      /*<< number of cols in current result set */
+    int         currentCol;
     int         numRows;      /*<< num rows selected / num rows affected (DML) */
     int         currentRow;
     char        cExceptionCode[6];
@@ -104,13 +107,13 @@ typedef char          *(Dbi_DbTypeProc)      (Dbi_Handle *);
 typedef int            (Dbi_OpenProc)        (Dbi_Handle *);
 typedef void           (Dbi_CloseProc)       (Dbi_Handle *);
 typedef int            (Dbi_ExecProc)        (Dbi_Handle *, char *sql);
-typedef Ns_Set *       (Dbi_BindRowProc)     (Dbi_Handle *);
-typedef int            (Dbi_GetRowProc)      (Dbi_Handle *, Ns_Set *row, int rowNum);
+typedef int            (Dbi_ValueProc)       (Dbi_Handle *, int rowIdx, int colIdx, char **value, int *len);
+typedef int            (Dbi_ColumnProc)      (Dbi_Handle *, int colIdx, char **column, int *len);
 typedef int            (Dbi_CancelProc)      (Dbi_Handle *);
 typedef int            (Dbi_FlushProc)       (Dbi_Handle *);
 typedef int            (Dbi_ResetProc)       (Dbi_Handle *);
-typedef char          *(Dbi_TableListProc)   (Ns_DString *tables, Dbi_Handle *, int incsys);
-typedef Dbi_TableInfo *(Dbi_GetTableInfoProc)(Dbi_Handle *, char *table);
+typedef int            (Dbi_TableListProc)   (Dbi_Handle *, int incsys, int *ntables);
+typedef int            (Dbi_GetTableInfoProc)(Dbi_Handle *, char *table, int *ncols);
 typedef char          *(Dbi_BestRowProc)     (Ns_DString *pk, Dbi_Handle *, char *table);
 
 /* 
@@ -124,8 +127,8 @@ typedef enum {
     Dbi_OpenId,
     Dbi_CloseId,
     Dbi_ExecId,
-    Dbi_BindRowId,
-    Dbi_GetRowId,
+    Dbi_ValueId,
+    Dbi_ColumnId,
     Dbi_CancelId,
     Dbi_FlushId,
     Dbi_ResetId,
@@ -153,12 +156,12 @@ NS_EXTERN int Dbi_RegisterDriver(char *driver, Dbi_Proc *procs);
 NS_EXTERN char *Dbi_DriverName(Dbi_Handle *handle);
 NS_EXTERN char *Dbi_DriverDbType(Dbi_Handle *handle);
 NS_EXTERN int Dbi_DML(Dbi_Handle *handle, char *sql);
-NS_EXTERN Ns_Set *Dbi_Select(Dbi_Handle *handle, char *sql);
+NS_EXTERN int Dbi_Select(Dbi_Handle *handle, char *sql, int *nrows);
 NS_EXTERN int Dbi_Exec(Dbi_Handle *handle, char *sql);
-NS_EXTERN Ns_Set *Dbi_BindRow(Dbi_Handle *handle);
-NS_EXTERN int Dbi_GetRow(Dbi_Handle *handle, Ns_Set *row);
-NS_EXTERN int Dbi_Flush(Dbi_Handle *handle);
+NS_EXTERN int Dbi_NextValue(Dbi_Handle *handle, char **value, int *vLen, char **column, int *cLen);
+NS_EXTERN int Dbi_CurrentColumn(Dbi_Handle *handle, char **column, int *len);
 NS_EXTERN int Dbi_Cancel(Dbi_Handle *handle);
+NS_EXTERN int Dbi_Flush(Dbi_Handle *handle);
 NS_EXTERN int Dbi_ResetHandle(Dbi_Handle *handle);
 NS_EXTERN char *Dbi_TableList(Ns_DString *ds, Dbi_Handle *handle, int incsys);
 NS_EXTERN Dbi_TableInfo *Dbi_GetTableInfo(Ns_DString *ds, Dbi_Handle *handle, char *table);
@@ -183,8 +186,8 @@ NS_EXTERN int Dbi_BouncePool(Dbi_Pool *poolPtr);
  */
 
 NS_EXTERN void Dbi_QuoteValue(Ns_DString *pds, char *string);
-NS_EXTERN Ns_Set *Dbi_0or1Row(Dbi_Handle *handle, char *sql, int *nrows);
-NS_EXTERN Ns_Set *Dbi_1Row(Dbi_Handle *handle, char *sql);
+NS_EXTERN int Dbi_0or1Row(Dbi_Handle *handle, char *sql, int *nrows);
+NS_EXTERN int Dbi_1Row(Dbi_Handle *handle, char *sql);
 NS_EXTERN int Dbi_InterpretSqlFile(Dbi_Handle *handle, char *filename);
 NS_EXTERN void Dbi_SetException(Dbi_Handle *handle, char *sqlstate, char *fmt, ...);
 NS_EXTERN Dbi_TableInfo *Dbi_NewTableInfo(char *table);

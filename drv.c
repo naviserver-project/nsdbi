@@ -52,8 +52,8 @@ typedef struct DbiDriver {
     Dbi_OpenProc         *openProc;
     Dbi_CloseProc        *closeProc;
     Dbi_ExecProc         *execProc;
-    Dbi_BindRowProc      *bindProc;
-    Dbi_GetRowProc       *getProc;
+    Dbi_ValueProc        *valueProc;
+    Dbi_ColumnProc       *columnProc;
     Dbi_CancelProc       *cancelProc;
     Dbi_FlushProc        *flushProc;
     Dbi_ResetProc        *resetProc;
@@ -126,11 +126,11 @@ Dbi_RegisterDriver(char *driver, Dbi_Proc *procs)
             case Dbi_ExecId:
                 driverPtr->execProc = (Dbi_ExecProc *) procs->func;
                 break;
-            case Dbi_BindRowId:
-                driverPtr->bindProc = (Dbi_BindRowProc *) procs->func;
+            case Dbi_ValueId:
+                driverPtr->valueProc = (Dbi_ValueProc *) procs->func;
                 break;
-            case Dbi_GetRowId:
-                driverPtr->getProc = (Dbi_GetRowProc *) procs->func;
+            case Dbi_ColumnId:
+                driverPtr->columnProc = (Dbi_ColumnProc *) procs->func;
                 break;
             case Dbi_CancelId:
                 driverPtr->cancelProc = (Dbi_CancelProc *) procs->func;
@@ -183,7 +183,7 @@ char *
 Dbi_DriverName(Dbi_Handle *handle)
 {
     DbiDriver *driverPtr = DbiGetDriver(handle);
-    char      *name = NULL;
+    char *name = NULL;
 
     if (driverPtr != NULL && driverPtr->nameProc != NULL) {
         name = (*driverPtr->nameProc)(handle);
@@ -277,7 +277,7 @@ Dbi_DML(Dbi_Handle *handle, char *sql)
  *      Execute an SQL statement which is expected to return rows.
  *
  * Results:
- *      Pointer to Ns_Set of selected columns or NULL on error.
+ *      NS_OK/NS_ERROR.
  *
  * Side effects:
  *      SQL is sent to database for evaluation.
@@ -285,33 +285,21 @@ Dbi_DML(Dbi_Handle *handle, char *sql)
  *----------------------------------------------------------------------
  */
 
-Ns_Set *
-Dbi_Select(Dbi_Handle *handle, char *sql)
+int
+Dbi_Select(Dbi_Handle *handle, char *sql, int *nrows)
 {
-    DbiDriver *driverPtr = DbiGetDriver(handle);
-    Ns_Set *setPtr = NULL;
-
-    if (!handle->fetchingRows) {
-        Ns_Log(Error, "%s[%s]: no rows waiting to bind",
-               handle->poolPtr->driver, handle->poolPtr->name);
-        return setPtr;
-    }
-
-    if (driverPtr != NULL
-        && driverPtr->execProc != NULL
-        && handle->connected) {
-
-        if (Dbi_Exec(handle, sql) == DBI_ROWS) {
-            setPtr = Dbi_BindRow(handle);
-        } else {
-            if (handle->dsExceptionMsg.length == 0) {
-                Dbi_SetException(handle, "DBI",
-                    "Query was not a statement returning rows.");
-            }
+    if (Dbi_Exec(handle, sql) != DBI_ROWS) {
+        if (handle->dsExceptionMsg.length == 0) {
+            Dbi_SetException(handle, "DBI",
+                "Query was not a statement returning rows.");
         }
+        return NS_ERROR;
+    }
+    if (nrows != NULL) {
+        *nrows = handle->numRows;
     }
 
-    return setPtr;
+    return NS_OK;
 }
 
 
@@ -320,7 +308,7 @@ Dbi_Select(Dbi_Handle *handle, char *sql)
  *
  * Dbi_Exec --
  *
- *       Execute an SQL statement.
+ *      Execute an SQL statement.
  *
  * Results:
  *      DBI_DML, DBI_ROWS, or NS_ERROR.
@@ -335,10 +323,12 @@ int
 Dbi_Exec(Dbi_Handle *handle, char *sql)
 {
     DbiDriver *driverPtr = DbiGetDriver(handle);
-    int        status = NS_ERROR;
+    int status = NS_ERROR;
 
-    if (driverPtr != NULL
-        && driverPtr->execProc != NULL
+    handle->cExceptionCode[0] = '\0';
+    Ns_DStringTrunc(&handle->dsExceptionMsg, 0);
+
+    if (driverPtr->execProc != NULL
         && handle->connected) {
 
         status = (*driverPtr->execProc)(handle, sql);
@@ -357,84 +347,92 @@ Dbi_Exec(Dbi_Handle *handle, char *sql)
 /*
  *----------------------------------------------------------------------
  *
- * Dbi_BindRow --
+ * Dbi_NextValue --
  *
- *      Bind the column names from a pending result set.  This routine
- *      is normally called right after an Dbi_Exec if the result
- *      was DBI_ROWS.
+ *      Fetch the result from the next column index of the next row. If
+ *      column is not null, set the column name also.
+ *      This routine is normally called repeatedly after a Dbi_Exec or
+ *      a series of Dbi_GetColumn calls.
  *
  * Results:
- *      Pointer to Ns_Set.
+ *      NS_OK:        the next result value was successfully retrieved
+ *      DBI_LAST_COL: the result of the last column in a row
+ *      DBI_END_DATA: the result of the last column in the last row
+ *      NS_ERROR:     an error occurred retrieving the result
  *
  * Side effects:
- *      Column names of result rows are set in the Ns_Set. 
+ *      The given handles currentCol and currentRow are maintained.
  *
  *----------------------------------------------------------------------
  */
-
-Ns_Set *
-Dbi_BindRow(Dbi_Handle *handle)
+int
+Dbi_NextValue(Dbi_Handle *handle, char **value, int *vLen, char **column, int *cLen)
 {
-    DbiDriver *driverPtr = DbiGetDriver(handle);
-    Ns_Set    *setPtr = NULL;
+    int status;
 
-    if (driverPtr != NULL
-        && driverPtr->bindProc != NULL
-        && handle->connected) {
+    if (!handle->fetchingRows || !handle->connected
+        || handle->numCols == 0 || handle->numRows == 0) {
 
-        Ns_SetTrunc(handle->row, 0);
-        setPtr = (*driverPtr->bindProc)(handle);
+        Dbi_SetException(handle, "ERROR", "No waiting rows.");
+        return NS_ERROR;
+    }
+    if (handle->currentCol == handle->numCols) {
+        handle->currentCol = 0;
+    }
+    if ((status = DbiValue(handle, value, vLen)) == NS_ERROR) {
+        return NS_ERROR;
+    }
+    if (column != NULL) {
+        if (DbiColumn(handle, column, cLen) == NS_ERROR) {
+            return NS_ERROR;
+        }
+    }
+    handle->currentCol++;
+    if (handle->currentCol == handle->numCols) {
+        if (handle->currentRow == (handle->numRows - 1)) {
+            handle->fetchingRows = NS_FALSE;
+            status = DBI_END_DATA;
+        } else {
+            handle->currentRow++;
+            status = DBI_LAST_COL;
+        }
     }
 
-    return setPtr;
+    return status;
 }
 
 
 /*
  *----------------------------------------------------------------------
  *
- * Dbi_GetRow --
+ * Dbi_CurrentColumn --
  *
- *      Fetch the next row waiting in a result set.  This routine
- *      is normally called repeatedly after an Dbi_Select or
- *      an Dbi_Exec and Dbi_BindRow.
+ *      Fetch the name of the current column in the result set. This
+ *      routine is normally called while iterating with Dbi_NextValue.
  *
  * Results:
- *      DBI_END_DATA if there are no more rows, NS_OK or NS_ERROR
- *      otherwise.
+ *      NS_OK/NS_ERROR
  *
  * Side effects:
- *      The values of the given set are filled in with those of the
- *      next row.
+ *      None.
  *
  *----------------------------------------------------------------------
  */
+
 int
-Dbi_GetRow(Dbi_Handle *handle, Ns_Set *row)
+Dbi_CurrentColumn(Dbi_Handle *handle, char **column, int *len)
 {
     DbiDriver *driverPtr = DbiGetDriver(handle);
-    Dbi_Pool  *poolPtr   = handle->poolPtr;
-    int        status = NS_ERROR;
 
     if (!handle->fetchingRows) {
-        Ns_Log(Error, "%s[%s]: no waiting rows", poolPtr->driver, poolPtr->name);
-        return status;
+        Dbi_SetException(handle, "ERROR", "No rows waiting to bind.");
+        return NS_ERROR;
     }
-    if (handle->currentRow == handle->numRows) {
-        return DBI_END_DATA;
-    }
-
-    if (driverPtr != NULL
-        && driverPtr->getProc != NULL
-        && handle->connected) {
-
-        status = (*driverPtr->getProc)(handle, row, handle->currentRow++);
-        if (status == DBI_END_DATA) {
-            handle->fetchingRows = NS_FALSE;
-        }
+    if (driverPtr->columnProc != NULL && handle->connected) {
+        return (*driverPtr->columnProc)(handle, handle->currentCol, column, len);
     }
 
-    return status;
+    return NS_ERROR;
 }
 
 
@@ -468,7 +466,8 @@ Dbi_Cancel(Dbi_Handle *handle)
         status = (*driverPtr->cancelProc)(handle);
 
         handle->fetchingRows = NS_FALSE;
-        handle->currentRow = 0;
+        handle->numRows = handle->numCols = 0;
+        handle->currentRow = handle->currentCol = 0;
     }
 
     return status;
@@ -505,7 +504,8 @@ Dbi_Flush(Dbi_Handle *handle)
         status = (*driverPtr->flushProc)(handle);
 
         handle->fetchingRows = NS_FALSE;
-        handle->currentRow = 0;
+        handle->numRows = handle->numCols = 0;
+        handle->currentRow = handle->currentCol = 0;
     }
 
     return status;
@@ -532,15 +532,18 @@ int
 Dbi_ResetHandle (Dbi_Handle *handle)
 {
     DbiDriver *driverPtr = DbiGetDriver(handle);
-    int        status = NS_ERROR;
+    int status = NS_ERROR;
 
     if (driverPtr != NULL
         && driverPtr->resetProc != NULL
         && handle->connected) {
 
         status = (*driverPtr->resetProc)(handle);
-    }
 
+        handle->cExceptionCode[0] = '\0';
+        Ns_DStringTrunc(&handle->dsExceptionMsg, 0);
+    }
+    
     return status;
 }
 
@@ -589,7 +592,7 @@ DbiLoadDriver(char *driver)
         } else {
             path = Ns_ConfigGetPath(NULL, NULL, "dbi", "driver", driver, NULL);
             if (Ns_ModuleLoad(driver, path, module, "Dbi_DriverInit")
-                != NS_OK) {
+                    != NS_OK) {
                 Ns_Log(Error, "dbidrv: failed to load driver '%s'",
                        driver);
             }
@@ -606,7 +609,7 @@ DbiLoadDriver(char *driver)
 /*
  *----------------------------------------------------------------------
  *
- * DbiServerInit --
+ * DbiDriverInit --
  *
  *      Invoke driver provided server init proc (e.g., to add driver
  *      specific Tcl commands).
@@ -694,4 +697,63 @@ DbiClose(Dbi_Handle *handle)
     if (handle->connected && driverPtr->closeProc != NULL) {
         (*driverPtr->closeProc)(handle);
     }
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * DbiValue --
+ *
+ *      Fetch the current result value identified by the given handles
+ *      currentRow and currentCol.
+ *
+ * Results:
+ *      NS_OK/NS_ERROR
+ *
+ * Side effects:
+ *      None.
+ *
+ *----------------------------------------------------------------------
+ */
+int
+DbiValue(Dbi_Handle *handle, char **value, int *len)
+{
+    DbiDriver *driverPtr = DbiGetDriver(handle);
+    int status = NS_ERROR;
+
+    if (driverPtr->valueProc != NULL) {
+        status = (*driverPtr->valueProc)(handle, handle->currentRow,
+                                         handle->currentCol, value, len);
+    }
+    return status;
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * DbiColumn --
+ *
+ *      Fetch the current column identified by the given handles
+ *      currentCol.
+ *
+ * Results:
+ *      NS_OK/NS_ERROR
+ *
+ * Side effects:
+ *      None.
+ *
+ *----------------------------------------------------------------------
+ */
+int
+DbiColumn(Dbi_Handle *handle, char **column, int *len)
+{
+    DbiDriver *driverPtr = DbiGetDriver(handle);
+    int status = NS_ERROR;
+
+    if (driverPtr->columnProc != NULL) {
+        status = (*driverPtr->columnProc)(handle, handle->currentCol, column, len);
+    }
+    return status;
 }

@@ -82,6 +82,8 @@ typedef struct Handle {
     int             connected;
     Ns_Set         *row;
     int             fetchingRows;
+    int             numCols;
+    int             currentCol;
     int             numRows;
     int             currentRow;
     char            cExceptionCode[6];

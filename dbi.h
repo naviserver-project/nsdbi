@@ -35,12 +35,15 @@
 extern void DbiInitPools(void);
 extern void DbiInitServer(char *server);
 extern Ns_TclTraceProc DbiAddCmds, DbiReleaseHandles;
-extern void 		DbiClose(Dbi_Handle *);
-extern void 		DbiDisconnect(Dbi_Handle *);
+extern void              DbiClose(Dbi_Handle *);
+extern void              DbiDisconnect(Dbi_Handle *);
 extern struct DbiDriver *DbiGetDriver(Dbi_Handle *);
 extern struct DbiDriver *DbiLoadDriver(char *driver);
-extern void 		DbiLogSql(Dbi_Handle *, char *sql);
-extern int 		DbiOpen(Dbi_Handle *);
-extern void 		DbiDriverInit(char *server, struct DbiDriver *);
+extern void              DbiLogSql(Dbi_Handle *, char *sql);
+extern int               DbiOpen(Dbi_Handle *);
+extern void              DbiDriverInit(char *server, struct DbiDriver *);
+extern int               DbiValue(Dbi_Handle *, char **value, int *len);
+extern int               DbiColumn(Dbi_Handle *, char **column, int *len);
+
 
 #endif
