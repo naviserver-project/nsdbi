@@ -148,12 +148,12 @@ NS_EXTERN char *Dbi_PoolUser(char *pool);
 NS_EXTERN char *Dbi_PoolList(char *server);
 NS_EXTERN int Dbi_PoolAllowable(char *server, char *pool);
 NS_EXTERN void Dbi_PoolPutHandle(Dbi_Handle *handle);
-NS_EXTERN Dbi_Handle *Dbi_PoolTimedGetHandle(char *pool, int wait);
-NS_EXTERN Dbi_Handle *Dbi_PoolGetHandle(char *pool);
-NS_EXTERN int Dbi_PoolGetMultipleHandles(Dbi_Handle **handles, char *pool,
-                                         int nwant);
-NS_EXTERN int Dbi_PoolTimedGetMultipleHandles(Dbi_Handle **handles, char *pool,
-                                              int nwant, int wait);
+NS_EXTERN Dbi_Handle *Dbi_PoolTimedGetHandle(char *server, char *pool, int wait);
+NS_EXTERN Dbi_Handle *Dbi_PoolGetHandle(char *server, char *pool);
+NS_EXTERN int Dbi_PoolGetMultipleHandles(Dbi_Handle **handles, char *server,
+                                         char *pool, int nwant);
+NS_EXTERN int Dbi_PoolTimedGetMultipleHandles(Dbi_Handle **handles, char *server,
+                                              char *pool, int nwant, int wait);
 NS_EXTERN int Dbi_BouncePool(char *pool);
 
 /*

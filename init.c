@@ -103,6 +103,7 @@ typedef struct Handle {
 
 typedef struct ServData {
     char *defpool;
+    Pool *defpoolPtr;
     char *allowed;
 } ServData;
 
@@ -235,7 +236,7 @@ Dbi_PoolDbType(char *pool)
     Dbi_Handle *handle;
     char       *dbtype;
 
-    handle = Dbi_PoolGetHandle(pool);
+    handle = Dbi_PoolGetHandle(NULL, pool);
     if (handle == NULL) {
         return NULL;
     }
@@ -268,7 +269,7 @@ Dbi_PoolDriverName(char *pool)
     Dbi_Handle *handle;
     char       *name;
 
-    handle = Dbi_PoolGetHandle(pool);
+    handle = Dbi_PoolGetHandle(NULL, pool);
     if (handle == NULL) {
         return NULL;
     }
@@ -500,11 +501,11 @@ Dbi_PoolPutHandle(Dbi_Handle *handle)
  */
 
 Dbi_Handle *
-Dbi_PoolTimedGetHandle(char *pool, int wait)
+Dbi_PoolTimedGetHandle(char *server, char *pool, int wait)
 {
-    Dbi_Handle       *handle;
+    Dbi_Handle *handle;
 
-    if (Dbi_PoolTimedGetMultipleHandles(&handle, pool, 1, wait) != NS_OK) {
+    if (Dbi_PoolTimedGetMultipleHandles(&handle, server, pool, 1, wait) != NS_OK) {
         return NULL;
     }
     return handle;
@@ -528,9 +529,9 @@ Dbi_PoolTimedGetHandle(char *pool, int wait)
  */
 
 Dbi_Handle *
-Dbi_PoolGetHandle(char *pool)
+Dbi_PoolGetHandle(char *server, char *pool)
 {
-    return Dbi_PoolTimedGetHandle(pool, 0);
+    return Dbi_PoolTimedGetHandle(server, pool, 0);
 }
 
 
@@ -552,9 +553,10 @@ Dbi_PoolGetHandle(char *pool)
  */
 
 int
-Dbi_PoolGetMultipleHandles(Dbi_Handle **handles, char *pool, int nwant)
+Dbi_PoolGetMultipleHandles(Dbi_Handle **handles, char *server,
+                           char *pool, int nwant)
 {
-    return Dbi_PoolTimedGetMultipleHandles(handles, pool, nwant, 0);
+    return Dbi_PoolTimedGetMultipleHandles(handles, server, pool, nwant, 0);
 }
 
 
@@ -579,9 +581,10 @@ Dbi_PoolGetMultipleHandles(Dbi_Handle **handles, char *pool, int nwant)
  */
 
 int
-Dbi_PoolTimedGetMultipleHandles(Dbi_Handle **handles, char *pool, 
-                                int nwant, int wait)
+Dbi_PoolTimedGetMultipleHandles(Dbi_Handle **handles, char *server, 
+                                char *pool, int nwant, int wait)
 {
+    ServData  *sdataPtr;
     Handle    *handlePtr;
     Handle   **handlesPtrPtr = (Handle **) handles;
     Pool      *poolPtr;
@@ -589,16 +592,33 @@ Dbi_PoolTimedGetMultipleHandles(Dbi_Handle **handles, char *pool,
     int        i, ngot, status;
 
     /*
-     * Verify the pool, the number of available handles in the pool,
-     * and that the calling thread does not already own handles from
-     * this pool.
+     * Verify the pool exists and as available to this server.
+     * If a pool isn't specified, pick the default pool.
      */
 
-    poolPtr = GetPool(pool);
-    if (poolPtr == NULL) {
-        Ns_Log(Error, "dbiinit: no such pool '%s'", pool);
-        return NS_ERROR;
+    if (pool == NULL || *pool == '\0') {
+        sdataPtr = GetServer(server);
+        if (sdataPtr == NULL) {
+            Ns_Log(Error, "dbiinit: no such server '%s' while getting default pool", server);
+            return NS_ERROR;
+        }
+        if ((poolPtr = sdataPtr->defpoolPtr) == NULL) {
+            Ns_Log(Error, "dbiinit: pool not specified and no default available", server);
+            return NS_ERROR;
+        }
+    } else {
+        poolPtr = GetPool(pool);
+        if (poolPtr == NULL) {
+            Ns_Log(Error, "dbiinit: no such pool '%s'", pool);
+            return NS_ERROR;
+        }
     }
+
+    /*
+     * Verify the number of available handles in the pool, and that
+     * the calling thread does not already own handles from this pool.
+     */
+
     if (poolPtr->nhandles < nwant) {
         Ns_Log(Error, "dbiinit: "
                "failed to get %d handles from a dbi pool of only %d handles: '%s'",
@@ -824,10 +844,15 @@ DbiInitServer(char *server)
     hPtr = Tcl_CreateHashEntry(&serversTable, server, &new);
     Tcl_SetHashValue(hPtr, sdataPtr);
     sdataPtr->defpool = Ns_ConfigGetValue(path, "defaultpool");
-    if (sdataPtr->defpool != NULL &&
-        (Tcl_FindHashEntry(&poolsTable, sdataPtr->defpool) == NULL)) {
-        Ns_Log(Error, "dbiinit: no such default pool '%s'", sdataPtr->defpool);
-        sdataPtr->defpool = NULL;
+    if (sdataPtr->defpool != NULL) {
+        hPtr = Tcl_FindHashEntry(&poolsTable, sdataPtr->defpool);
+        if (hPtr == NULL) {
+            Ns_Log(Error, "dbiinit: no such default pool '%s'", sdataPtr->defpool);
+            sdataPtr->defpool = NULL;
+            sdataPtr->defpoolPtr = NULL;
+        } else {
+            sdataPtr->defpoolPtr = Tcl_GetHashValue(hPtr);
+        }
     }
 
     /*

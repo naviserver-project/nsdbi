@@ -58,6 +58,7 @@ static int  DbiGetHandle(InterpData *idataPtr, Tcl_Interp *interp, char *handleI
                          Dbi_Handle **handlePtrPtr, Tcl_HashEntry **hashPtrPtr);
 static int  DbiGetFreshHandle(InterpData *idataPtr, Tcl_Interp *interp, char *handleId,
                               Dbi_Handle **handlePtrPtr, Tcl_HashEntry **hashPtrPtr);
+static Dbi_Handle* DbiGetHandle2(InterpData *idataPtr, Tcl_Interp *interp, char *pool);
 static Tcl_InterpDeleteProc FreeData;
 static Ns_TclDeferProc ReleaseHandles;
 
@@ -237,6 +238,41 @@ DbiGetFreshHandle(InterpData *idataPtr, Tcl_Interp *interp, char *id, Dbi_Handle
     *handlePtrPtr = handlePtr;
 
     return TCL_OK;
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ * DbiGetHandle2 --
+ *
+ *      Get database handle from pool.  Use server default pool if none
+ *      specified.
+ *
+ * Results:
+ *      Return TCL_OK if handle is found or TCL_ERROR otherwise.
+ *
+ * Side effects:
+ *      None.
+ *
+ *----------------------------------------------------------------------
+ */
+
+static Dbi_Handle*
+DbiGetHandle2(InterpData *idataPtr, Tcl_Interp *interp, char *pool)
+{
+    Dbi_Handle *handle;
+
+    if (!Dbi_PoolAllowable(idataPtr->server, pool)) {
+        Tcl_AppendResult(interp, "pool '", pool, "' not available to server '",
+                           idataPtr->server, "'.", NULL);
+        return NULL;
+    }
+    if ((handle = Dbi_PoolGetHandle(idataPtr->server, pool)) == NULL) {
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("handle allocation failed", -1));
+        return NULL;
+    }
+
+    return handle;
 }
 
 
@@ -923,7 +959,8 @@ TclGethandleCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *CO
     } else {
         handlesPtrPtr = ns_malloc(nhandles * sizeof(Dbi_Handle *));
     }
-    result = Dbi_PoolTimedGetMultipleHandles(handlesPtrPtr, pool, nhandles, timeout);
+    result = Dbi_PoolTimedGetMultipleHandles(handlesPtrPtr, idataPtr->server, pool,
+                                             nhandles, timeout);
     if (result == NS_OK) {
         int i;
             
@@ -1209,6 +1246,7 @@ static int
 TclRowsCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
 {
     InterpData  *idata = clientData;
+    char        *pool;
     Dbi_Handle  *handle;
     Ns_Set      *columns;
     Ns_Set       row;
@@ -1219,8 +1257,8 @@ TclRowsCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *CONST o
         Tcl_WrongNumArgs(interp, 1, objv, "sql");
         return TCL_ERROR;
     }
-    if ((handle = Dbi_PoolGetHandle(Dbi_PoolDefault(idata->server))) == NULL) {
-        Tcl_SetObjResult(interp, Tcl_NewStringObj("handle allocation failed", -1));
+    pool = NULL;
+    if ((handle = DbiGetHandle2(idata, interp, pool)) == NULL) {
         return TCL_ERROR;
     }
     columns = Dbi_Select(handle, Tcl_GetString(objv[1]));
