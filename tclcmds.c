@@ -306,7 +306,7 @@ TclDmlCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *CONST ob
  *      Implements the dbi_pool command.
  *
  * Results:
- *      Depends on sub command.
+ *      Depends on sub-command.
  *
  * Side effects:
  *      None.
@@ -318,7 +318,7 @@ static int
 TclPoolCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
 {
     InterpData *idataPtr = clientData;
-    char       *pool;
+    char       *pool     = NULL;
     Dbi_Pool   *poolPtr;
 
     static CONST char *opts[] = {
@@ -331,8 +331,8 @@ TclPoolCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *CONST o
         INhandlesIdx, IPasswordIdx, IUserIdx
     } opt;
 
-    if (objc != 3) {
-        Tcl_WrongNumArgs(interp, 1, objv, "option pool");
+    if (objc != 2 && objc != 3) {
+        Tcl_WrongNumArgs(interp, 1, objv, "option ?pool?");
         return TCL_ERROR;
     }
     if (Tcl_GetIndexFromObj(interp, objv[1], opts, "option", 0, (int *) &opt)
@@ -340,7 +340,9 @@ TclPoolCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *CONST o
         return TCL_ERROR;
     }
 
-    pool = Tcl_GetString(objv[2]);
+    if (objc == 3) {
+        pool = Tcl_GetString(objv[2]);
+    }
     if ((poolPtr = GetPool(idataPtr, pool)) == NULL) {
         return TCL_ERROR;
     }
