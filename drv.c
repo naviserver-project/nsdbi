@@ -36,6 +36,8 @@
 
 #include "dbi.h"
 
+NS_RCSID("@(#) $Header$");
+
 
 /*
  * Static variables defined in this file
@@ -701,7 +703,7 @@ DbiColumn(Dbi_Handle *handle, char **column, int *len)
  *----------------------------------------------------------------------
  */
 
-Dbi_Driver *
+inline Dbi_Driver *
 DbiGetDriver(Dbi_Handle *handle)
 {
     Pool *poolPtr = (Pool *) handle->poolPtr;

@@ -39,6 +39,7 @@
 #define NSDBI_H
 
 #include "ns.h"
+#include "nsattributes.h"
 
 /*
  * The following are dbi return codes.
@@ -130,16 +131,16 @@ typedef struct Dbi_Driver {
  */
 
 NS_EXTERN int   Dbi_RegisterDriver(Dbi_Driver *driver);
-NS_EXTERN char *Dbi_DriverName(Dbi_Handle *);
-NS_EXTERN char *Dbi_DriverDbType(Dbi_Handle *);
-NS_EXTERN int   Dbi_DML(Dbi_Handle *, char *sql, int *nrows, int *ncols);
-NS_EXTERN int   Dbi_Select(Dbi_Handle *, char *sql, int *nrows, int *ncols);
-NS_EXTERN int   Dbi_Exec(Dbi_Handle *, char *sql, int *nrows, int *ncols);
+NS_EXTERN char *Dbi_DriverName(Dbi_Handle *) _nsnonnull();
+NS_EXTERN char *Dbi_DriverDbType(Dbi_Handle *) _nsnonnull();
+NS_EXTERN int   Dbi_DML(Dbi_Handle *, char *sql, int *nrows, int *ncols) _nsnonnull(1, 2);
+NS_EXTERN int   Dbi_Select(Dbi_Handle *, char *sql, int *nrows, int *ncols) _nsnonnull(1, 2);
+NS_EXTERN int   Dbi_Exec(Dbi_Handle *, char *sql, int *nrows, int *ncols) _nsnonnull(1, 2);
 NS_EXTERN int   Dbi_NextValue(Dbi_Handle *, char **value, int *vLen, char **column, int *cLen);
 NS_EXTERN int   Dbi_CurrentColumn(Dbi_Handle *, char **column, int *len);
-NS_EXTERN int   Dbi_Cancel(Dbi_Handle *);
-NS_EXTERN int   Dbi_Flush(Dbi_Handle *);
-NS_EXTERN int   Dbi_ResetHandle(Dbi_Handle *);
+NS_EXTERN int   Dbi_Cancel(Dbi_Handle *) _nsnonnull();
+NS_EXTERN int   Dbi_Flush(Dbi_Handle *) _nsnonnull();
+NS_EXTERN int   Dbi_ResetHandle(Dbi_Handle *) _nsnonnull();
 NS_EXTERN int   Dbi_TableList(Dbi_Handle *, int incsys, int *ntables);
 NS_EXTERN int   Dbi_GetTableInfo(Dbi_Handle *, char *table, int *ncols);
 NS_EXTERN char *Dbi_BestRow(Ns_DString *ds, Dbi_Handle *handle, char *table);
@@ -148,24 +149,25 @@ NS_EXTERN char *Dbi_BestRow(Ns_DString *ds, Dbi_Handle *handle, char *table);
  * init.c:
  */
 
-NS_EXTERN Dbi_Pool *Dbi_GetPool(char *server, char *pool);
-NS_EXTERN Dbi_Pool *Dbi_PoolDefault(char *server);
-NS_EXTERN char *Dbi_PoolDbType(Dbi_Pool *poolPtr);
-NS_EXTERN char *Dbi_PoolDriverName(Dbi_Pool *poolPtr);
-NS_EXTERN int Dbi_PoolList(Ns_DString *ds, char *server);
-NS_EXTERN void Dbi_PoolPutHandle(Dbi_Handle *handle);
-NS_EXTERN int Dbi_PoolGetHandle(Dbi_Handle **handlePtrPtr, Dbi_Pool *poolPtr);
-NS_EXTERN int Dbi_PoolTimedGetHandle(Dbi_Handle **handlePtrPtr, Dbi_Pool *poolPtr, int wait);
-NS_EXTERN int Dbi_BouncePool(Dbi_Pool *poolPtr);
+NS_EXTERN Dbi_Pool *Dbi_GetPool(char *server, char *pool) _nsnonnull();
+NS_EXTERN Dbi_Pool *Dbi_PoolDefault(char *server) _nsnonnull();
+NS_EXTERN char *Dbi_PoolDbType(Dbi_Pool *poolPtr) _nsnonnull();
+NS_EXTERN char *Dbi_PoolDriverName(Dbi_Pool *poolPtr) _nsnonnull();
+NS_EXTERN int Dbi_PoolList(Ns_DString *ds, char *server) _nsnonnull();
+NS_EXTERN void Dbi_PoolPutHandle(Dbi_Handle *handle) _nsnonnull();
+NS_EXTERN int Dbi_PoolGetHandle(Dbi_Handle **handlePtrPtr, Dbi_Pool *poolPtr) _nsnonnull();
+NS_EXTERN int Dbi_PoolTimedGetHandle(Dbi_Handle **handlePtrPtr, Dbi_Pool *poolPtr, int wait) _nsnonnull();
+NS_EXTERN int Dbi_BouncePool(Dbi_Pool *poolPtr) _nsnonnull();
 
 /*
  * util.c:
  */
 
 NS_EXTERN void Dbi_QuoteValue(Ns_DString *pds, char *string);
-NS_EXTERN int Dbi_0or1Row(Dbi_Handle *handle, char *sql, int *nrows, int *ncols);
-NS_EXTERN int Dbi_1Row(Dbi_Handle *handle, char *sql, int *ncols);
+NS_EXTERN int Dbi_0or1Row(Dbi_Handle *handle, char *sql, int *nrows, int *ncols) _nsnonnull(1, 2);
+NS_EXTERN int Dbi_1Row(Dbi_Handle *handle, char *sql, int *ncols) _nsnonnull(1, 2);
 NS_EXTERN int Dbi_InterpretSqlFile(Dbi_Handle *handle, char *filename);
-NS_EXTERN void Dbi_SetException(Dbi_Handle *handle, char *sqlstate, char *fmt, ...);
+NS_EXTERN void Dbi_SetException(Dbi_Handle *handle, char *sqlstate, char *fmt, ...)
+     _nsprintflike(3, 4) _nsnonnull(1, 2);
 
 #endif /* NSDBI_H */

@@ -37,6 +37,8 @@
 
 #include "dbi.h"
 
+NS_RCSID("@(#) $Header$");
+
 
 /*
  * The following structure maintains per-server data.
@@ -51,11 +53,11 @@ typedef struct ServData {
  * Local functions defined in this file
  */
 
-static void         ReturnHandle(Handle * handle);
-static int          IsStale(Handle *, time_t now);
-static int          Connect(Handle *);
-static Pool        *CreatePool(char *pool, char *path, char *driver);
-static ServData    *GetServer(char *server);
+static void         ReturnHandle(Handle * handle) _nsnonnull();
+static int          IsStale(Handle *, time_t now) _nsnonnull();
+static int          Connect(Handle *) _nsnonnull();
+static Pool        *CreatePool(char *pool, char *path, char *driver) _nsnonnull();
+static ServData    *GetServer(char *server) _nsnonnull();
 static Ns_Callback  CheckPool;
 static Ns_ArgProc   CheckArgProc;
 

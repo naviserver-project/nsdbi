@@ -36,6 +36,8 @@
 
 #include "dbi.h"
 
+NS_RCSID("@(#) $Header$");
+
 
 /*
  * The following structure maintains per-interp data.
@@ -59,7 +61,7 @@ static Dbi_Pool* GetPool(InterpData *idataPtr, char *pool);
 static void ReleaseHandle(InterpData *idataPtr, Dbi_Handle *handle);
 static void ReleaseAllHandles(Tcl_Interp *interp, void *arg);
 static int SqlException(InterpData *idataPtr, Dbi_Handle *handle);
-static int Exception(Tcl_Interp *interp, char *code, char *info, char *msg, ...);
+static int Exception(Tcl_Interp *interp, char *code, char *info, char *msg, ...) _nsprintflike(4, 5);
 static int SingleRowCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[], int req);
 
 static Ns_TclDeferProc ReleaseAllHandles;
@@ -332,7 +334,7 @@ TclPoolCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *CONST o
     enum IPoolIdx {
         IDatasourceIdx, IDbtypeIdx, IDescriptionIdx, IDriverIdx,
         INhandlesIdx, IPasswordIdx, IUserIdx
-    } opt;
+    } _nsmayalias opt;
 
     if (objc != 2 && objc != 3) {
         Tcl_WrongNumArgs(interp, 1, objv, "option ?pool?");
@@ -578,7 +580,7 @@ ParseOptions(InterpData *idataPtr, int objc, Tcl_Obj *CONST objv[], Dbi_Handle *
     int            i, timeout;
 
     static CONST char *opts[] = {"-pool", "-timeout", NULL};
-    enum IHandleOptsIdx {IPoolIdx, ITimeoutIdx} opt;
+    enum IHandleOptsIdx {IPoolIdx, ITimeoutIdx} _nsmayalias opt;
 
     timeout = -1;
     pool    = NULL;
