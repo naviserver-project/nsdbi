@@ -47,22 +47,22 @@ struct Handle;
 
 typedef struct Pool {
     char              *name;
-    char              *desc;
-    char              *source;
+    char              *description;
+    char              *driver;
+    char              *datasource;
     char              *user;
-    char              *pass;
-    int                type;
+    char             *password;
+    int               nhandles;
+    int               fVerbose;
+    int               fVerboseError;
+    /* Members above must match Dbi_Pool */
+    struct DbiDriver *driverPtr;
+    struct Handle    *firstPtr;
+    struct Handle    *lastPtr;
     Ns_Mutex           lock;
     Ns_Cond            waitCond;
     Ns_Cond            getCond;
-    char              *driver;
-    struct DbiDriver  *driverPtr;
     int                waiting;
-    int                nhandles;
-    struct Handle     *firstPtr;
-    struct Handle     *lastPtr;
-    int                fVerbose;
-    int                fVerboseError;
     time_t             maxidle;
     time_t             maxopen;
     int                stale_on_close;
@@ -74,12 +74,7 @@ typedef struct Pool {
  */
 
 typedef struct Handle {
-    char           *driver;
-    char           *datasource;
-    char           *user;
-    char           *password;
-    char           *poolname;
-    int             verbose;
+    Dbi_Pool       *poolPtr;
     int             connected;
     int             fetchingRows;
     int             currentRow;
@@ -92,7 +87,6 @@ typedef struct Handle {
     Ns_DString      dsExceptionMsg;
     /* Members above must match Dbi_Handle */
     struct Handle  *nextPtr;
-    struct Pool    *poolPtr;
     time_t          otime;
     time_t          atime;
     int             stale;
@@ -158,7 +152,7 @@ Dbi_PoolDescription(char *pool)
         return NULL;
     }
 
-    return poolPtr->desc;
+    return poolPtr->description;
 }
 
 
@@ -212,7 +206,7 @@ Dbi_PoolDataSource(char *pool)
         return NULL;
     }
 
-    return poolPtr->source;
+    return poolPtr->datasource;
 }
 
 
@@ -334,7 +328,7 @@ Dbi_PoolPassword(char *pool)
         return NULL;
     }
 
-    return poolPtr->pass;
+    return poolPtr->password;
 }
 
 
@@ -450,7 +444,7 @@ Dbi_PoolPutHandle(Dbi_Handle *handle)
     time_t   now;
 
     handlePtr = (Handle *) handle;
-    poolPtr = handlePtr->poolPtr;
+    poolPtr = (Pool *) handlePtr->poolPtr;
 
     /*
      * Cleanup the handle.
@@ -940,16 +934,13 @@ DbiDisconnect(Dbi_Handle *handle)
 void
 DbiLogSql(Dbi_Handle *handle, char *sql)
 {
-    Handle *handlePtr = (Handle *) handle;
+    Pool *poolPtr = (Pool *) handle->poolPtr;
 
-    if (handle->dsExceptionMsg.length > 0) {
-        if (handlePtr->poolPtr->fVerboseError || handle->verbose) {
-
-            Ns_Log(Error, "dbiinit: error(%s,%s): '%s'",
-                   handle->datasource, handle->dsExceptionMsg.string, sql);
-        }
-    } else if (handle->verbose) {
-        Ns_Log(Notice, "dbiinit: sql(%s): '%s'", handle->datasource, sql);
+    if (handle->dsExceptionMsg.length > 0 && poolPtr->fVerboseError) {
+        Ns_Log(Error, "dbiinit: error(%s,%s): '%s'",
+               poolPtr->datasource, handle->dsExceptionMsg.string, sql);
+    } else if (poolPtr->fVerbose) {
+        Ns_Log(Notice, "dbiinit: sql(%s): '%s'", poolPtr->datasource, sql);
     }
 }
 
@@ -973,10 +964,13 @@ DbiLogSql(Dbi_Handle *handle, char *sql)
 struct DbiDriver *
 DbiGetDriver(Dbi_Handle *handle)
 {
-    Handle *handlePtr = (Handle *) handle;
+    Pool *poolPtr;
 
-    if (handlePtr != NULL && handlePtr->poolPtr != NULL) {
-        return handlePtr->poolPtr->driverPtr;
+    if (handle != NULL) {
+        poolPtr = (Pool *) handle->poolPtr;
+        if (poolPtr != NULL) {
+            return poolPtr->driverPtr;
+        }
     }
 
     return NULL;
@@ -1036,9 +1030,8 @@ GetPool(char *pool)
 static void
 ReturnHandle(Handle *handlePtr)
 {
-    Pool         *poolPtr;
+    Pool *poolPtr = (Pool *) handlePtr->poolPtr;
 
-    poolPtr = handlePtr->poolPtr;
     if (poolPtr->firstPtr == NULL) {
         poolPtr->firstPtr = poolPtr->lastPtr = handlePtr;
         handlePtr->nextPtr = NULL;
@@ -1072,20 +1065,22 @@ ReturnHandle(Handle *handlePtr)
 static int
 IsStale(Handle *handlePtr, time_t now)
 {
-    time_t    minAccess, minOpen;
+    Pool   *poolPtr = (Pool *) handlePtr->poolPtr;
+    time_t  minAccess, minOpen;
+
 
     if (handlePtr->connected) {
-        minAccess = now - handlePtr->poolPtr->maxidle;
-        minOpen = now - handlePtr->poolPtr->maxopen;
-        if ((handlePtr->poolPtr->maxidle && handlePtr->atime < minAccess) || 
-            (handlePtr->poolPtr->maxopen && (handlePtr->otime < minOpen)) ||
+        minAccess = now - poolPtr->maxidle;
+        minOpen = now - poolPtr->maxopen;
+        if ((poolPtr->maxidle && handlePtr->atime < minAccess) || 
+            (poolPtr->maxopen && (handlePtr->otime < minOpen)) ||
             (handlePtr->stale == NS_TRUE) ||
-            (handlePtr->poolPtr->stale_on_close > handlePtr->stale_on_close)) {
+            (poolPtr->stale_on_close > handlePtr->stale_on_close)) {
 
-            if (handlePtr->poolPtr->fVerbose) {
+            if (poolPtr->fVerbose) {
                 Ns_Log(Notice, "dbiinit: closing %s handle in pool '%s'",
                        handlePtr->atime < minAccess ? "idle" : "old",
-                       handlePtr->poolname);
+                       poolPtr->name);
             }
             return NS_TRUE;
         }
@@ -1211,7 +1206,7 @@ CreatePool(char *pool, char *path, char *driver)
     Handle           *handlePtr;
     struct DbiDriver *driverPtr;
     int               i;
-    char             *source;
+    char             *datasource;
 
     if (driver == NULL) {
         Ns_Log(Error, "dbiinit: no driver for pool '%s'", pool);
@@ -1221,8 +1216,8 @@ CreatePool(char *pool, char *path, char *driver)
     if (driverPtr == NULL) {
         return NULL;
     }
-    source = Ns_ConfigGetValue(path, "datasource");
-    if (source == NULL) {
+    datasource = Ns_ConfigGetValue(path, "datasource");
+    if (datasource == NULL) {
         Ns_Log(Error, "dbiinit: missing datasource for pool '%s'", pool);
         return NULL;
     }
@@ -1233,12 +1228,12 @@ CreatePool(char *pool, char *path, char *driver)
     Ns_MutexSetName2(&poolPtr->lock, "nsdbi", pool);
     Ns_CondInit(&poolPtr->waitCond);
     Ns_CondInit(&poolPtr->getCond);
-    poolPtr->source = source;
+    poolPtr->datasource = datasource;
     poolPtr->name = pool;
     poolPtr->waiting = 0;
     poolPtr->user = Ns_ConfigGetValue(path, "user");
-    poolPtr->pass = Ns_ConfigGetValue(path, "password");
-    poolPtr->desc = Ns_ConfigGetValue("ns/dbi/pools", pool);
+    poolPtr->password = Ns_ConfigGetValue(path, "password");
+    poolPtr->description = Ns_ConfigGetValue("ns/dbi/pools", pool);
     poolPtr->stale_on_close = 0;
     poolPtr->fVerbose = Ns_ConfigBool(path, "verbose", NS_FALSE);
     poolPtr->fVerboseError = Ns_ConfigBool(path, "logsqlerrors", NS_FALSE);
@@ -1250,30 +1245,19 @@ CreatePool(char *pool, char *path, char *driver)
     for (i = 0; i < poolPtr->nhandles; ++i) {
         handlePtr = ns_malloc(sizeof(Handle));
         Ns_DStringInit(&handlePtr->dsExceptionMsg);
-        handlePtr->poolPtr = poolPtr;
-        handlePtr->connection = NULL;
+        handlePtr->poolPtr = (Dbi_Pool *) poolPtr;
         handlePtr->connected = NS_FALSE;
         handlePtr->fetchingRows = 0;
+        handlePtr->numRows = 0;
+        handlePtr->connection = NULL;
+        handlePtr->statement = NULL;
+        handlePtr->context = NULL;
         handlePtr->row = Ns_SetCreate(NULL);
         handlePtr->cExceptionCode[0] = '\0';
         handlePtr->otime = handlePtr->atime = 0;
         handlePtr->stale = NS_FALSE;
         handlePtr->stale_on_close = 0;
 
-        /*
-         * The following elements of the Handle structure could
-         * be obtained by dereferencing the poolPtr.  They're
-         * only needed to maintain the original Dbi_Handle
-         * structure definition which was designed to allow
-         * handles outside of pools, a feature no longer supported.
-         */
-
-        handlePtr->driver = driver;
-        handlePtr->datasource = poolPtr->source;
-        handlePtr->user = poolPtr->user;
-        handlePtr->password = poolPtr->pass;
-        handlePtr->verbose = poolPtr->fVerbose;
-        handlePtr->poolname = pool;
         ReturnHandle(handlePtr);
     }
     Ns_ScheduleProc(CheckPool, poolPtr, 0,

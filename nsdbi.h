@@ -56,13 +56,20 @@
  * Database handle structure.
  */
 
+typedef struct Dbi_Pool {
+    char             *name;
+    char             *description;
+    char             *driver;
+    char             *datasource;
+    char             *user;
+    char             *password;
+    int               nhandles;
+    int               fVerbose;
+    int               fVerboseError;
+} Dbi_Pool;
+
 typedef struct Dbi_Handle {
-    char       *driver;
-    char       *datasource;
-    char       *user;
-    char       *password;
-    char       *poolname;
-    int         verbose;
+    Dbi_Pool   *poolPtr;
     int         connected;
     int         fetchingRows;
     int         currentRow;

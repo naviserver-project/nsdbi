@@ -299,7 +299,7 @@ Dbi_Select(Dbi_Handle *handle, char *sql)
 
     if (!handle->fetchingRows) {
         Ns_Log(Error, "%s[%s]: no rows waiting to bind",
-               handle->driver, handle->poolname);
+               handle->poolPtr->driver, handle->poolPtr->name);
         return setPtr;
     }
 
@@ -421,7 +421,7 @@ Dbi_GetRow(Dbi_Handle *handle, Ns_Set *row)
 
     if (!handle->fetchingRows) {
         Ns_Log(Error, "%s[%s]: no waiting rows",
-               handle->driver, handle->poolname);
+               handle->poolPtr->driver, handle->poolPtr->name);
         return status;
     }
     if (handle->currentRow == handle->numRows) {
@@ -660,14 +660,14 @@ DbiOpen(Dbi_Handle *handle)
 {
     DbiDriver *driverPtr = DbiGetDriver(handle);
 
-    Ns_Log(Notice, "dbidrv: opening database %s: '%s'", handle->driver,
-           handle->datasource);
+    Ns_Log(Notice, "dbidrv: opening database %s: '%s'",
+           handle->poolPtr->driver, handle->poolPtr->datasource);
     if (driverPtr == NULL ||
         driverPtr->openProc == NULL ||
         (*driverPtr->openProc) (handle) != NS_OK) {
 
         Ns_Log(Error, "dbidrv: failed to open database  %s: '%s'",
-               handle->driver, handle->datasource);
+               handle->poolPtr->driver, handle->poolPtr->datasource);
         handle->connected = NS_FALSE;
         return NS_ERROR;
     }
