@@ -175,7 +175,7 @@ Dbi_SetException(Dbi_Handle *handle, const char *sqlstate, const char *fmt, ...)
         handlePtr->cExceptionCode[5] = '\0';
     }
     if (fmt != NULL) {
-        Ns_DStringFree(ds);
+        Ns_DStringTrunc(ds, 0);
         va_start(ap, fmt);
         Ns_DStringVPrintf(ds, (char *) fmt, ap);
         va_end(ap);
@@ -184,4 +184,110 @@ Dbi_SetException(Dbi_Handle *handle, const char *sqlstate, const char *fmt, ...)
             Ns_DStringTrunc(ds, len - 1);
         }
     }
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * Dbi_ResetException --
+ *
+ *      Clear any stored SQL exception state and message for the
+ *      given handle.
+ *
+ * Results:
+ *      None.
+ *
+ * Side effects:
+ *      None.
+ *
+ *----------------------------------------------------------------------
+ */
+
+void
+Dbi_ResetException(Dbi_Handle *handle)
+{
+    Handle *handlePtr = (Handle *) handle;
+
+    handlePtr->cExceptionCode[0] = '\0';
+    Ns_DStringTrunc(&handlePtr->dsExceptionMsg, 0);
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * Dbi_ExceptionCode --
+ *
+ *      The current 5 character exception code for the given handle.
+ *
+ * Results:
+ *      cstring.
+ *
+ * Side effects:
+ *      None.
+ *
+ *----------------------------------------------------------------------
+ */
+
+char *
+Dbi_ExceptionCode(Dbi_Handle *handle)
+{
+    Handle *handlePtr = (Handle *) handle;
+
+    return handlePtr->cExceptionCode;
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * Dbi_ExceptionMsg --
+ *
+ *      The current exception message for the given handle.
+ *
+ * Results:
+ *      cstring.
+ *
+ * Side effects:
+ *      None.
+ *
+ *----------------------------------------------------------------------
+ */
+
+char *
+Dbi_ExceptionMsg(Dbi_Handle *handle)
+{
+    Handle *handlePtr = (Handle *) handle;
+
+    return Ns_DStringValue(&handlePtr->dsExceptionMsg);
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * Dbi_ExceptionPending --
+ *
+ *      Is an exception currently set on the given handle?
+ *
+ * Results:
+ *      NS_TRUE or NS_FALSE.
+ *
+ * Side effects:
+ *      None.
+ *
+ *----------------------------------------------------------------------
+ */
+
+int
+Dbi_ExceptionPending(Dbi_Handle *handle)
+{
+    Handle *handlePtr = (Handle *) handle;
+
+    if (handlePtr->cExceptionCode[0] != '\0'
+        || Ns_DStringLength(&handlePtr->dsExceptionMsg)) {
+        return NS_TRUE;
+    }
+    return NS_FALSE;
 }

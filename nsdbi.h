@@ -169,5 +169,9 @@ NS_EXTERN int Dbi_1Row(Dbi_Handle *handle, const char *sql, int *ncols) _nsnonnu
 NS_EXTERN int Dbi_InterpretSqlFile(Dbi_Handle *handle, char *filename);
 NS_EXTERN void Dbi_SetException(Dbi_Handle *handle, const char *sqlstate, const char *fmt, ...)
      _nsprintflike(3, 4) _nsnonnull(1, 2);
+NS_EXTERN void Dbi_ResetException(Dbi_Handle *handle) _nsnonnull();
+NS_EXTERN char *Dbi_ExceptionCode(Dbi_Handle *handle) _nsnonnull();
+NS_EXTERN char *Dbi_ExceptionMsg(Dbi_Handle *handle) _nsnonnull();
+NS_EXTERN int Dbi_ExceptionPending(Dbi_Handle *handle) _nsnonnull();
 
 #endif /* NSDBI_H */

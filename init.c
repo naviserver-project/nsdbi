@@ -274,9 +274,6 @@ Dbi_PoolPutHandle(Dbi_Handle *handle)
     Dbi_Flush(handle);
     Dbi_ResetHandle(handle);
 
-    Ns_DStringFree(&handlePtr->dsExceptionMsg);
-    handlePtr->cExceptionCode[0] = '\0';
-
     /*
      * Close the handle if it's stale, otherwise update
      * the last access time.
@@ -617,11 +614,12 @@ DbiLogSql(Dbi_Handle *handle, const char *sql)
     Handle *handlePtr = (Handle *) handle;
     Pool *poolPtr = (Pool *) handlePtr->poolPtr;
 
-    if (Ns_DStringLength(&handlePtr->dsExceptionMsg) > 0 && poolPtr->fVerboseError) {
-        Ns_Log(Error, "nsdbi: error(%s,%s): '%s'",
-               poolPtr->datasource, Ns_DStringValue(&handlePtr->dsExceptionMsg), sql);
+
+    if (poolPtr->fVerboseError && Dbi_ExceptionPending(handle) == NS_TRUE) {
+        Ns_Log(Error, "nsdbi: pool: '%s' code: '%s' msg: '%s' sql: '%s'",
+               poolPtr->name, Dbi_ExceptionCode(handle), Dbi_ExceptionMsg(handle), sql);
     } else if (poolPtr->fVerbose) {
-        Ns_Log(Notice, "nsdbi: sql(%s): '%s'", poolPtr->datasource, sql);
+        Ns_Log(Notice, "nsdbi: pool: '%s' sql '%s'", poolPtr->name, sql);
     }
 }
 
