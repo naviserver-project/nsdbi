@@ -57,8 +57,7 @@ typedef struct InterpData {
 
 static int ParseOptions(InterpData *idataPtr, int objc, Tcl_Obj *CONST objv[],
                         Dbi_Handle **handlePtrPtr, Dbi_Statement **stmtPtrPtr) _nsnonnull();
-static Dbi_Handle* GetHandle(InterpData *idataPtr, CONST char *pool, int timeout) _nsnonnull();
-static Dbi_Pool* GetPool(InterpData *idataPtr, CONST char *pool) _nsnonnull(1);
+static Dbi_Handle* GetHandle(InterpData *idataPtr, Tcl_Obj *poolObjPtr, int timeout) _nsnonnull(1);
 static Dbi_Statement *BindVars(Tcl_Interp *interp, Dbi_Pool *pool, Tcl_Obj *dictObjPtr, Tcl_Obj *sqlObjPtr) _nsnonnull();
 static char *GetVar(Tcl_Interp *interp, Tcl_Obj *dictObjPtr, char *name, int *len) _nsnonnull();
 static int DictRowResult(Tcl_Interp *interp, Dbi_Handle *handle, Dbi_Statement *stmt) _nsnonnull();
@@ -81,10 +80,6 @@ static Tcl_ObjCmdProc
  */
 
 static char *datakey = "dbi:data";
-
-/*
- * The dbi Tcl commands.
- */
 
 static struct Cmd {
     char           *name;
@@ -388,10 +383,10 @@ TclDmlCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *CONST ob
 static int
 TclPoolCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
 {
-    InterpData *idataPtr = clientData;
-    CONST char *pool     = NULL;
-    Dbi_Handle *handle   = NULL;
-    Dbi_Pool   *poolPtr  = NULL;
+    InterpData *idataPtr   = clientData;
+    Tcl_Obj    *poolObjPtr = NULL;
+    Dbi_Handle *handle     = NULL;
+    Dbi_Pool   *poolPtr    = NULL;
     Ns_DString  ds;
 
     static CONST char *opts[] = {
@@ -413,14 +408,14 @@ TclPoolCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *CONST o
         return TCL_ERROR;
     }
     if (objc == 3) {
-        pool = Tcl_GetString(objv[2]);
+        poolObjPtr = objv[2];
     }
     if (opt == IDbtypeIdx || opt == IDriverIdx) {
-        if ((handle = GetHandle(idataPtr, pool, -1)) == NULL) {
+        if ((handle = GetHandle(idataPtr, poolObjPtr, -1)) == NULL) {
             return TCL_ERROR;
         }
     } else {
-        if ((poolPtr = GetPool(idataPtr, pool)) == NULL) {
+        if ((poolPtr = DbiGetPoolFromObj(interp, idataPtr->sdataPtr, poolObjPtr)) == NULL) {
             return TCL_ERROR;
         }
     }
@@ -605,8 +600,7 @@ ParseOptions(InterpData *idataPtr, int objc, Tcl_Obj *CONST objv[],
     Tcl_Interp    *interp = idataPtr->interp;
     Dbi_Handle    *handle;
     Dbi_Statement *stmt;
-    Tcl_Obj       *dictObjPtr;
-    CONST char    *poolname;
+    Tcl_Obj       *dictObjPtr, *poolObjPtr;
     int            i, timeout;
 
     static CONST char *opts[] = {"-pool", "-timeout", "-bind", NULL};
@@ -618,8 +612,7 @@ ParseOptions(InterpData *idataPtr, int objc, Tcl_Obj *CONST objv[],
     }
 
     timeout    = -1;
-    poolname   = NULL;
-    dictObjPtr = NULL;
+    dictObjPtr = poolObjPtr = NULL;
 
     for (i = 1; i < objc - 1; i += 2) {
         if (Tcl_GetIndexFromObj(interp, objv[i], opts, "option", 0, (int*) &opt) != TCL_OK) {
@@ -627,7 +620,7 @@ ParseOptions(InterpData *idataPtr, int objc, Tcl_Obj *CONST objv[],
         }
         switch (opt) {
         case IPoolIdx:
-            poolname = Tcl_GetString(objv[i+1]);
+            poolObjPtr = objv[i+1];
             break;
         case ITimeoutIdx:
             if (Tcl_GetIntFromObj(interp, objv[i+1], &timeout) != TCL_OK) {
@@ -640,7 +633,7 @@ ParseOptions(InterpData *idataPtr, int objc, Tcl_Obj *CONST objv[],
             break;
         }
     }
-    handle = GetHandle(idataPtr, poolname, timeout);
+    handle = GetHandle(idataPtr, poolObjPtr, timeout);
     if (handle == NULL) {
         return NS_ERROR;
     }
@@ -671,24 +664,22 @@ ParseOptions(InterpData *idataPtr, int objc, Tcl_Obj *CONST objv[],
  */
 
 static Dbi_Handle*
-GetHandle(InterpData *idataPtr, CONST char *pool, int timeout)
+GetHandle(InterpData *idataPtr, Tcl_Obj *poolObjPtr, int timeout)
 {
     Tcl_Interp    *interp = idataPtr->interp;
     Dbi_Handle    *handlePtr;
     Dbi_Pool      *poolPtr;
     Tcl_HashEntry *hPtr;
-    char          *poolName;
 
-    if ((poolPtr = GetPool(idataPtr, pool)) == NULL) {
+    if ((poolPtr = DbiGetPoolFromObj(interp, idataPtr->sdataPtr, poolObjPtr)) == NULL) {
         return NULL;
     }
-    poolName = poolPtr->name;
 
     /*
      * Check for a cached handle from the desired pool for this interp.
      */
 
-    hPtr = Tcl_FindHashEntry(&idataPtr->handles, poolName);
+    hPtr = Tcl_FindHashEntry(&idataPtr->handles, poolPtr->name);
     if (hPtr != NULL) {
         handlePtr = (Dbi_Handle*) Tcl_GetHashValue(hPtr);
         return handlePtr;
@@ -701,7 +692,7 @@ GetHandle(InterpData *idataPtr, CONST char *pool, int timeout)
     handlePtr = NULL;
     switch (Dbi_PoolTimedGetHandle(&handlePtr, poolPtr, timeout)) {
     case NS_OK:
-        /* groovy... */
+        /* ok, nothing to do */
         break;
     case NS_TIMEOUT:
         Exception(interp, "TIMEOUT", "wait for database handle timed out");
@@ -712,46 +703,6 @@ GetHandle(InterpData *idataPtr, CONST char *pool, int timeout)
     }
 
     return handlePtr;
-}
-
-
-/*
- *----------------------------------------------------------------------
- * GetPool --
- *
- *      Grab a Dbi_Pool, handling defaults, permissions and non
- *      existant pools.
- *
- * Results:
- *      Return pointer to Dbi_Pool or NULL on error.
- *
- * Side effects:
- *      Tcl error result may be left in interp.
- *
- *----------------------------------------------------------------------
- */
-
-static Dbi_Pool*
-GetPool(InterpData *idataPtr, CONST char *poolname)
-{
-    ServerData *sdataPtr = idataPtr->sdataPtr;
-    Tcl_Interp *interp   = idataPtr->interp;
-    Dbi_Pool   *poolPtr;
-
-    if (poolname == NULL || *poolname == '\0') {
-        if ((poolPtr = (Dbi_Pool *) sdataPtr->defpoolPtr) == NULL) {
-            Exception(interp, NULL, "no pool specified and no default configured");
-            return NULL;
-        }
-    } else {
-        poolPtr = DbiGetPool(sdataPtr, poolname);
-        if (poolPtr == NULL) {
-            Exception(interp, NULL, "pool '%s' not valid or not available for server '%s'",
-                      poolname, sdataPtr->server);
-            return NULL;
-        }
-    }
-    return poolPtr;
 }
 
 

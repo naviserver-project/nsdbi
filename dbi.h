@@ -175,5 +175,12 @@ extern void DbiClose(Dbi_Handle *) _nsnonnull();
 extern Ns_TclInterpInitProc DbiAddCmds;
 extern Ns_TclInterpInitProc DbiAddTraces;
 
+/*
+ * tcltypes.c
+ */
+
+extern void DbiInitTclObjTypes(void);
+extern Dbi_Pool *DbiGetPoolFromObj(Tcl_Interp *interp, ServerData *sdataPtr, Tcl_Obj *objPtr);
+
 
 #endif

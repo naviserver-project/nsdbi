@@ -64,6 +64,7 @@ Ns_ModuleInit(CONST char *server, CONST char *module _nsunused)
 
     if (!once) {
         DbiInitPools();
+        DbiInitTclObjTypes();
         once = 1;
     }
     DbiInitServer(server);
