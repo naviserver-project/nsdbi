@@ -206,16 +206,16 @@ DbiObjCmd(ClientData data, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
     enum {
         POOLS, BOUNCEPOOL, GETHANDLE, EXCEPTION, POOLNAME,
         PASSWORD, USER, DATASOURCE, DISCONNECT, DBTYPE, DRIVER, CANCEL,
-        BINDROW, FLUSH, RELEASEHANDLE, RESETHANDLE, CONNECTED, SP_EXEC,
-        SP_GETPARAMS, SP_RETURNCODE, GETROW, DML, ONE_ROW, ZERO_OR_ONE_ROW, EXEC,
-        SELECT, SP_START, INTERPRETSQLFILE, VERBOSE, SETEXCEPTION, SP_SETPARAM
+        BINDROW, FLUSH, RELEASEHANDLE, RESETHANDLE, CONNECTED,
+        GETROW, DML, ONE_ROW, ZERO_OR_ONE_ROW, EXEC,
+        SELECT, INTERPRETSQLFILE, VERBOSE, SETEXCEPTION
     };
     static CONST char *subcmd[] = {
         "pools", "bouncepool", "gethandle", "exception", "poolname",
         "password", "user", "datasource", "disconnect", "dbtype", "driver", "cancel",
-        "bindrow", "flush", "releasehandle", "resethandle", "connected", "sp_exec",
-        "sp_getparams", "sp_returncode", "getrow", "dml", "1row", "0or1row", "exec",
-        "select", "sp_start", "interpretsqlfile", "verbose", "setexception", "sp_setparam",
+        "bindrow", "flush", "releasehandle", "resethandle", "connected",
+        "getrow", "dml", "1row", "0or1row", "exec",
+        "select", "interpretsqlfile", "verbose", "setexception",
         NULL
     };
 
@@ -350,9 +350,6 @@ DbiObjCmd(ClientData data, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
     case RELEASEHANDLE:
     case RESETHANDLE:
     case CONNECTED:
-    case SP_EXEC:
-    case SP_GETPARAMS:
-    case SP_RETURNCODE:
 
         if (objc < 3) {
             Tcl_WrongNumArgs(interp, 2, objv, "dbiId");
@@ -432,35 +429,6 @@ DbiObjCmd(ClientData data, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
         case CONNECTED:
             Tcl_SetObjResult(interp, Tcl_NewIntObj(handlePtr->connected));
             break;
-
-        case SP_EXEC:
-            switch (Dbi_SpExec(handlePtr)) {
-            case NS_DML:
-                Tcl_SetResult(interp, "DBI_DML", TCL_STATIC);
-                break;
-            case NS_ROWS:
-                Tcl_SetResult(interp, "DBI_ROWS", TCL_STATIC);
-                break;
-            default:
-                return DbiFail(interp, handlePtr, Tcl_GetString(objv[1]));
-                break;
-            }
-            break;
-
-        case SP_GETPARAMS:
-            rowPtr = Dbi_SpGetParams(handlePtr);
-            if (rowPtr == NULL) {
-                return DbiFail(interp, handlePtr, Tcl_GetString(objv[1]));
-            }
-            Ns_TclEnterSet(interp, rowPtr, NS_TCL_SET_DYNAMIC);
-            break;
-
-        case SP_RETURNCODE:
-            if (Dbi_SpReturnCode(handlePtr, tmpbuf, 32) != NS_OK) {
-                return DbiFail(interp, handlePtr, Tcl_GetString(objv[1]));
-            }
-            Tcl_SetResult(interp, tmpbuf, TCL_VOLATILE);
-            break;
         }
         break;
 
@@ -470,7 +438,6 @@ DbiObjCmd(ClientData data, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
     case ZERO_OR_ONE_ROW:
     case EXEC:
     case SELECT:
-    case SP_START:
     case INTERPRETSQLFILE:
 
         /*
@@ -545,13 +512,6 @@ DbiObjCmd(ClientData data, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
             Ns_TclEnterSet(interp, rowPtr, NS_TCL_SET_STATIC);
             break;
 
-        case SP_START:
-            if (Dbi_SpStart(handlePtr, Tcl_GetString(objv[3])) != NS_OK) {
-                return DbiFail(interp, handlePtr, Tcl_GetString(objv[1]));
-            }
-            Tcl_SetResult(interp, "0", TCL_STATIC);
-            break;
-
         case INTERPRETSQLFILE:
             if (Dbi_InterpretSqlFile(handlePtr, Tcl_GetString(objv[3])) != NS_OK) {
                 return DbiFail(interp, handlePtr, Tcl_GetString(objv[1]));
@@ -602,24 +562,6 @@ DbiObjCmd(ClientData data, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
             return TCL_ERROR;
         }
         Dbi_SetException(handlePtr, Tcl_GetString(objv[3]), Tcl_GetString(objv[4]));
-        break;
-
-    case SP_SETPARAM:
-        if (objc != 7) {
-            Tcl_WrongNumArgs(interp, 2, objv, "dbiId paramname type in|out value");
-        }
-        if (!STREQ(Tcl_GetString(objv[5]), "in") &&
-            !STREQ(Tcl_GetString(objv[5]), "out")) {
-            Tcl_SetResult(interp, "inout parameter of setparam must "
-                          "be \"in\" or \"out\"", TCL_STATIC);
-            return TCL_ERROR;
-        }
-        if (Dbi_SpSetParam(handlePtr, Tcl_GetString(objv[3]), Tcl_GetString(objv[4]),
-                           Tcl_GetString(objv[5]), Tcl_GetString(objv[6])) != NS_OK) {
-            return DbiFail(interp, handlePtr, Tcl_GetString(objv[1]));
-        } else {
-            Tcl_SetResult(interp, "1", TCL_STATIC);
-        }
         break;
     }
 

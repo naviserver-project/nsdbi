@@ -56,12 +56,6 @@ typedef int (GetProc) (Dbi_Handle *, Ns_Set *);
 typedef int (FlushProc) (Dbi_Handle *);
 typedef int (CancelProc) (Dbi_Handle *);
 typedef int (ResetProc) (Dbi_Handle *);
-typedef int (SpStartProc) (Dbi_Handle *handle, char *procname);
-typedef int (SpSetParamProc) (Dbi_Handle *handle, char *args);
-typedef int (SpExecProc) (Dbi_Handle *handle);
-typedef int (SpReturnCodeProc) (Dbi_Handle *dbhandle, char *returnCode,
-                                int bufsize);
-typedef Ns_Set *(SpGetParamsProc) (Dbi_Handle *handle);
 
 /*
  * The following structure specifies the driver-specific functions
@@ -84,11 +78,6 @@ typedef struct DbiDriver {
     FlushProc        *flushProc;
     CancelProc       *cancelProc;
     ResetProc        *resetProc;
-    SpStartProc      *spstartProc;
-    SpSetParamProc   *spsetparamProc;
-    SpExecProc       *spexecProc;
-    SpReturnCodeProc *spreturncodeProc;
-    SpGetParamsProc  *spgetparamsProc;
 } DbiDriver;
 
 /*
@@ -181,26 +170,6 @@ Dbi_RegisterDriver(char *driver, Dbi_Proc *procs)
             break;
         case DbFn_ResetHandle:
             driverPtr->resetProc = (ResetProc *) procs->func;
-            break;
-
-        case DbFn_SpStart:
-            driverPtr->spstartProc = (SpStartProc *) procs->func;
-            break;
-
-        case DbFn_SpSetParam:
-            driverPtr->spsetparamProc = (SpSetParamProc *) procs->func;
-            break;
-
-        case DbFn_SpExec:
-            driverPtr->spexecProc = (SpExecProc *) procs->func;
-            break;
-
-        case DbFn_SpReturnCode:
-            driverPtr->spreturncodeProc = (SpReturnCodeProc *) procs->func;
-            break;
-
-        case DbFn_SpGetParams:
-            driverPtr->spgetparamsProc = (SpGetParamsProc *) procs->func;
             break;
 
         /*
@@ -746,180 +715,4 @@ DbiClose(Dbi_Handle *handle)
 
         (*driverPtr->closeProc)(handle);
     }
-}
-
-
-/*
- *----------------------------------------------------------------------
- *
- * Dbi_SpStart --
- *
- *      Start execution of a stored procedure.
- *
- * Results:
- *      NS_OK/NS_ERROR.
- *
- * Side effects:
- *      Begins an SP; see Dbi_SpExec.
- *
- *----------------------------------------------------------------------
- */
-
-int
-Dbi_SpStart(Dbi_Handle *handle, char *procname)
-{
-    DbiDriver *driverPtr = DbiGetDriver(handle);
-    int        status = NS_ERROR;
-
-    if (handle->connected &&
-        driverPtr != NULL &&
-        driverPtr->spstartProc != NULL) {
-
-        status = (*driverPtr->spstartProc)(handle, procname);
-    }
-
-    return status;
-}
-
-
-/*
- *----------------------------------------------------------------------
- *
- * Dbi_SpSetParam --
- *
- *      Set a parameter in a store procedure; must have executed
- *      Dbi_SpStart first. paramname looks like "@x", paramtype is
- *      like "int" or "varchar", inout is "in" or "out", value is
- *      like "123".
- *
- * Results:
- *      NS_OK/NS_ERROR
- *
- * Side effects:
- *      None.
- *
- *----------------------------------------------------------------------
- */
-
-int
-Dbi_SpSetParam(Dbi_Handle *handle, char *paramname, char *paramtype,
-               char *inout, char *value)
-{
-    DbiDriver   *driverPtr = DbiGetDriver(handle);
-    int         status = NS_ERROR;
-    Ns_DString  args;
-
-    if (handle->connected &&
-        driverPtr != NULL &&
-        driverPtr->spsetparamProc != NULL) {
-
-        Ns_DStringInit(&args);
-        Ns_DStringVarAppend(&args, paramname, " ", paramtype, " ", inout, " ",
-                            value, NULL);
-        status = (*driverPtr->spsetparamProc)(handle, args.string);
-        Ns_DStringFree(&args);
-    }
-
-    return status;
-}
-
-
-/*
- *----------------------------------------------------------------------
- *
- * Dbi_SpExec --
- *
- *      Run an Sp begun with Dbi_SpStart
- *
- * Results:
- *      NS_OK/NS_ERROR
- *
- * Side effects:
- *      None.
- *
- *----------------------------------------------------------------------
- */
-
-int
-Dbi_SpExec(Dbi_Handle *handle)
-{
-    DbiDriver *driverPtr = DbiGetDriver(handle);
-    int       status = NS_ERROR;
-
-    if (handle->connected &&
-        driverPtr != NULL &&
-        driverPtr->spexecProc != NULL) {
-
-        status = (*driverPtr->spexecProc)(handle);
-    }
-
-    return status;
-}
-
-
-/*
- *----------------------------------------------------------------------
- *
- * Dbi_SpReturnCode --
- *
- *      Get the return code from an SP after Dbi_SpExec
- *
- * Results:
- *      NS_OK/NSERROR
- *
- * Side effects:
- *      The return code is put into the passed-in buffer, which must
- *      be at least bufsize in length.
- *
- *----------------------------------------------------------------------
- */
-
-int
-Dbi_SpReturnCode(Dbi_Handle *handle, char *returnCode, int bufsize)
-{
-    DbiDriver *driverPtr = DbiGetDriver(handle);
-    int        status = NS_ERROR;
-
-    if (handle->connected &&
-        driverPtr != NULL &&
-        driverPtr->spreturncodeProc != NULL) {
-
-        status = (*driverPtr->spreturncodeProc)(handle, returnCode, bufsize);
-    }
-
-    return status;
-}
-
-
-/*
- *----------------------------------------------------------------------
- *
- * Dbi_SpGetParams --
- *
- *      Get output parameters after running an SP w/ Dbi_SpExec.
- *
- * Results:
- *      NULL or a newly allocated set with output params in it.
- *
- * Side effects:
- *      Allocs its return value and its members.
- *
- *----------------------------------------------------------------------
- */
-
-Ns_Set *
-Dbi_SpGetParams(Dbi_Handle *handle)
-{
-    DbiDriver *driverPtr = DbiGetDriver(handle);
-    Ns_Set    *aset = NULL;
-
-    Ns_SetTrunc(handle->row, 0);
-    if (handle->connected &&
-        driverPtr != NULL &&
-        driverPtr->spgetparamsProc != NULL) {
-
-        aset = (*driverPtr->spgetparamsProc)(handle);
-    }
-
-    return aset;
 }

@@ -70,11 +70,6 @@ typedef enum {
     DbFn_Exec,
     DbFn_BindRow,
     DbFn_ResetHandle,
-    DbFn_SpStart,
-    DbFn_SpSetParam,
-    DbFn_SpExec,
-    DbFn_SpReturnCode,
-    DbFn_SpGetParams,
     DbFn_End
 } Dbi_ProcId;
 
@@ -137,13 +132,6 @@ NS_EXTERN int Dbi_GetRow(Dbi_Handle *handle, Ns_Set *row);
 NS_EXTERN int Dbi_Flush(Dbi_Handle *handle);
 NS_EXTERN int Dbi_Cancel(Dbi_Handle *handle);
 NS_EXTERN int Dbi_ResetHandle(Dbi_Handle *handle);
-NS_EXTERN int Dbi_SpStart(Dbi_Handle *handle, char *procname);
-NS_EXTERN int Dbi_SpSetParam(Dbi_Handle *handle, char *paramname,
-                             char *paramtype, char *inout, char *value);
-NS_EXTERN int Dbi_SpExec(Dbi_Handle *handle);
-NS_EXTERN int Dbi_SpReturnCode(Dbi_Handle *handle, char *returnCode,
-                               int bufsize);
-NS_EXTERN Ns_Set *Dbi_SpGetParams(Dbi_Handle *handle);
 
 /*
  * init.c:
