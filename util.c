@@ -42,13 +42,13 @@ NS_RCSID("@(#) $Header$");
  * The following constants are defined for this file.
  */
 
-#define NS_SQLERRORCODE "NSINT" /* SQL error code for AOLserver exceptions. */
+#define DBI_SQLERRORCODE "NSINT" /* SQL error code for AOLserver exceptions. */
 
 
 /*
  *----------------------------------------------------------------------
  *
- * Ns_DbQuoteValue --
+ * Dbi_QuoteValue --
  *
  *	Add single quotes around an SQL string value if necessary.
  *
@@ -63,7 +63,7 @@ NS_RCSID("@(#) $Header$");
  */
 
 void
-Ns_DbQuoteValue(Ns_DString *pds, char *string)
+Dbi_QuoteValue(Ns_DString *pds, char *string)
 {
     while (*string != '\0') {
         if (*string == '\'') {
@@ -78,7 +78,7 @@ Ns_DbQuoteValue(Ns_DString *pds, char *string)
 /*
  *----------------------------------------------------------------------
  *
- * Ns_Db0or1Row --
+ * Dbi_0or1Row --
  *
  *	Send an SQL statement which should return either no rows or
  *	exactly one row.
@@ -96,24 +96,24 @@ Ns_DbQuoteValue(Ns_DString *pds, char *string)
  */
 
 Ns_Set *
-Ns_Db0or1Row(Ns_DbHandle *handle, char *sql, int *nrows)
+Dbi_0or1Row(Dbi_Handle *handle, char *sql, int *nrows)
 {
     Ns_Set *row;
 
-    row = Ns_DbSelect(handle, sql);
+    row = Dbi_Select(handle, sql);
     if (row != NULL) {
-        if (Ns_DbGetRow(handle, row) == NS_END_DATA) {
+        if (Dbi_GetRow(handle, row) == DBI_END_DATA) {
             *nrows = 0;
         } else {
-	    switch (Ns_DbGetRow(handle, row)) {
-		case NS_END_DATA:
+	    switch (Dbi_GetRow(handle, row)) {
+		case DBI_END_DATA:
 		    *nrows = 1;
 		    break;
 
 		case NS_OK:
-		    Ns_DbSetException(handle, NS_SQLERRORCODE,
+		    Dbi_SetException(handle, DBI_SQLERRORCODE,
 			"Query returned more than one row.");
-		    Ns_DbFlush(handle);
+		    Dbi_Flush(handle);
 		    /* FALLTHROUGH */
 
 		case NS_ERROR:
@@ -134,7 +134,7 @@ Ns_Db0or1Row(Ns_DbHandle *handle, char *sql, int *nrows)
 /*
  *----------------------------------------------------------------------
  *
- * Ns_Db1Row --
+ * Dbi_1Row --
  *
  *	Send a SQL statement which is expected to return exactly 1 row.
  *
@@ -149,15 +149,15 @@ Ns_Db0or1Row(Ns_DbHandle *handle, char *sql, int *nrows)
  */
 
 Ns_Set *
-Ns_Db1Row(Ns_DbHandle *handle, char *sql)
+Dbi_1Row(Dbi_Handle *handle, char *sql)
 {
     Ns_Set         *row;
     int             nrows;
 
-    row = Ns_Db0or1Row(handle, sql, &nrows);
+    row = Dbi_0or1Row(handle, sql, &nrows);
     if (row != NULL) {
         if (nrows != 1) {
-            Ns_DbSetException(handle, NS_SQLERRORCODE,
+            Dbi_SetException(handle, DBI_SQLERRORCODE,
                 "Query did not return a row.");
             row = NULL;
         }
@@ -170,7 +170,7 @@ Ns_Db1Row(Ns_DbHandle *handle, char *sql)
 /*
  *----------------------------------------------------------------------
  *
- * Ns_DbInterpretSqlFile --
+ * Dbi_InterpretSqlFile --
  *
  *	Parse DML statements from an SQL file and send them to the
  *	database for execution.
@@ -186,7 +186,7 @@ Ns_Db1Row(Ns_DbHandle *handle, char *sql)
  */
 
 int
-Ns_DbInterpretSqlFile(Ns_DbHandle *handle, char *filename)
+Dbi_InterpretSqlFile(Dbi_Handle *handle, char *filename)
 {
     FILE           *fp;
     Ns_DString      dsSql;
@@ -196,7 +196,7 @@ Ns_DbInterpretSqlFile(Ns_DbHandle *handle, char *filename)
 
     fp = fopen(filename, "rt");
     if (fp == NULL) {
-        Ns_DbSetException(handle, NS_SQLERRORCODE,
+        Dbi_SetException(handle, DBI_SQLERRORCODE,
             "Could not read file");
         return NS_ERROR;
     }
@@ -247,7 +247,7 @@ Ns_DbInterpretSqlFile(Ns_DbHandle *handle, char *filename)
                     }
                 }
             } else if (c == ';') {
-                if (Ns_DbExec(handle, dsSql.string) == NS_ERROR) {
+                if (Dbi_Exec(handle, dsSql.string) == NS_ERROR) {
                     status = NS_ERROR;
                     break;
                 }
@@ -268,7 +268,7 @@ Ns_DbInterpretSqlFile(Ns_DbHandle *handle, char *filename)
     if (status != NS_ERROR) {
         for (p = dsSql.string; *p != '\0'; p++) {
             if (isspace(UCHAR(*p)) == 0) {
-                Ns_DbSetException(handle, NS_SQLERRORCODE,
+                Dbi_SetException(handle, DBI_SQLERRORCODE,
                     "File ends with unterminated SQL");
                 status = NS_ERROR;
             }
@@ -283,7 +283,7 @@ Ns_DbInterpretSqlFile(Ns_DbHandle *handle, char *filename)
 /*
  *----------------------------------------------------------------------
  *
- * Ns_DbSetException --
+ * Dbi_SetException --
  *
  *	Set the stored SQL exception code and message in the handle.
  *
@@ -297,7 +297,7 @@ Ns_DbInterpretSqlFile(Ns_DbHandle *handle, char *filename)
  */
 
 void
-Ns_DbSetException(Ns_DbHandle *handle, char *code, char *msg)
+Dbi_SetException(Dbi_Handle *handle, char *code, char *msg)
 {
     strcpy(handle->cExceptionCode, code);
     Ns_DStringFree(&(handle->dsExceptionMsg));

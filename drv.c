@@ -44,31 +44,31 @@ NS_RCSID("@(#) $Header$");
  */
 
 typedef int (InitProc) (char *server, char *module, char *driver);
-typedef char *(NameProc) (Ns_DbHandle *);
-typedef char *(TypeProc) (Ns_DbHandle *);
-typedef int (OpenProc) (Ns_DbHandle *);
-typedef void (CloseProc) (Ns_DbHandle *);
-typedef int (DMLProc) (Ns_DbHandle *, char *sql);
-typedef Ns_Set *(SelectProc) (Ns_DbHandle *, char *sql);
-typedef int (ExecProc) (Ns_DbHandle *, char *sql);
-typedef Ns_Set *(BindProc) (Ns_DbHandle *);
-typedef int (GetProc) (Ns_DbHandle *, Ns_Set *);
-typedef int (FlushProc) (Ns_DbHandle *);
-typedef int (CancelProc) (Ns_DbHandle *);
-typedef int (ResetProc) (Ns_DbHandle *);
-typedef int (SpStartProc) (Ns_DbHandle *handle, char *procname);
-typedef int (SpSetParamProc) (Ns_DbHandle *handle, char *args);
-typedef int (SpExecProc) (Ns_DbHandle *handle);
-typedef int (SpReturnCodeProc) (Ns_DbHandle *dbhandle, char *returnCode,
+typedef char *(NameProc) (Dbi_Handle *);
+typedef char *(TypeProc) (Dbi_Handle *);
+typedef int (OpenProc) (Dbi_Handle *);
+typedef void (CloseProc) (Dbi_Handle *);
+typedef int (DMLProc) (Dbi_Handle *, char *sql);
+typedef Ns_Set *(SelectProc) (Dbi_Handle *, char *sql);
+typedef int (ExecProc) (Dbi_Handle *, char *sql);
+typedef Ns_Set *(BindProc) (Dbi_Handle *);
+typedef int (GetProc) (Dbi_Handle *, Ns_Set *);
+typedef int (FlushProc) (Dbi_Handle *);
+typedef int (CancelProc) (Dbi_Handle *);
+typedef int (ResetProc) (Dbi_Handle *);
+typedef int (SpStartProc) (Dbi_Handle *handle, char *procname);
+typedef int (SpSetParamProc) (Dbi_Handle *handle, char *args);
+typedef int (SpExecProc) (Dbi_Handle *handle);
+typedef int (SpReturnCodeProc) (Dbi_Handle *dbhandle, char *returnCode,
 				int bufsize);
-typedef Ns_Set *(SpGetParamsProc) (Ns_DbHandle *handle);
+typedef Ns_Set *(SpGetParamsProc) (Dbi_Handle *handle);
 
 /*
  * The following structure specifies the driver-specific functions
- * to call for each Ns_Db routine.
+ * to call for each Dbi_ routine.
  */
 
-typedef struct DbDriver {
+typedef struct DbiDriver {
     char	*name;
     int		 registered;
     InitProc	*initProc;
@@ -89,7 +89,7 @@ typedef struct DbDriver {
     SpExecProc       *spexecProc;
     SpReturnCodeProc *spreturncodeProc;
     SpGetParamsProc  *spgetparamsProc;
-} DbDriver;
+} DbiDriver;
     
 /*
  * Static variables defined in this file
@@ -101,9 +101,9 @@ static Tcl_HashTable driversTable;
 /*
  *----------------------------------------------------------------------
  *
- * Ns_DbRegisterDriver --
+ * Dbi_RegisterDriver --
  *
- *	Register db procs for a driver.  This routine is called by
+ *	Register dbi procs for a driver.  This routine is called by
  *	driver modules when loaded.
  *
  * Results:
@@ -119,23 +119,23 @@ static Tcl_HashTable driversTable;
 static void
 UnsupProcId(char *name)
 {
-    Ns_Log(Warning, "dbdrv: unsupported function id '%s'", name);
+    Ns_Log(Warning, "dbidrv: unsupported function id '%s'", name);
 }
 
 int
-Ns_DbRegisterDriver(char *driver, Ns_DbProc *procs)
+Dbi_RegisterDriver(char *driver, Dbi_Proc *procs)
 {
     Tcl_HashEntry *hPtr;
-    DbDriver *driverPtr = NULL;
+    DbiDriver *driverPtr = NULL;
 
     hPtr = Tcl_FindHashEntry(&driversTable, driver);
     if (hPtr == NULL) {
-        Ns_Log(Error, "dbdrv: no such driver '%s'", driver);
+        Ns_Log(Error, "dbidrv: no such driver '%s'", driver);
 	return NS_ERROR;
     }
-    driverPtr = (DbDriver *) Tcl_GetHashValue(hPtr);
+    driverPtr = (DbiDriver *) Tcl_GetHashValue(hPtr);
     if (driverPtr->registered) {
-        Ns_Log(Error, "dbdrv: a driver is already registered as '%s'",
+        Ns_Log(Error, "dbidrv: a driver is already registered as '%s'",
 	       driver);
         return NS_ERROR;
     }
@@ -224,7 +224,7 @@ Ns_DbRegisterDriver(char *driver, Ns_DbProc *procs)
 		break;
 		
 	    default:
-		Ns_Log(Error, "dbdrv: unknown driver id '%d'", procs->id);
+		Ns_Log(Error, "dbidrv: unknown driver id '%d'", procs->id);
 		return NS_ERROR;
 		break;
 	}
@@ -238,7 +238,7 @@ Ns_DbRegisterDriver(char *driver, Ns_DbProc *procs)
 /*
  *----------------------------------------------------------------------
  *
- * Ns_DbDriverName --
+ * Dbi_DriverName --
  *
  *	Return the string name of the driver.
  *
@@ -252,9 +252,9 @@ Ns_DbRegisterDriver(char *driver, Ns_DbProc *procs)
  */
 
 char *
-Ns_DbDriverName(Ns_DbHandle *handle)
+Dbi_DriverName(Dbi_Handle *handle)
 {
-    DbDriver *driverPtr = NsDbGetDriver(handle);
+    DbiDriver *driverPtr = DbiGetDriver(handle);
     char *name = NULL;
 
     if (driverPtr != NULL && driverPtr->nameProc != NULL) {
@@ -269,7 +269,7 @@ Ns_DbDriverName(Ns_DbHandle *handle)
 /*
  *----------------------------------------------------------------------
  *
- * Ns_DbDriverType --
+ * Dbi_DriverType --
  *
  *	Return the string name of the database type (e.g., "sybase").
  *
@@ -283,9 +283,9 @@ Ns_DbDriverName(Ns_DbHandle *handle)
  */
 
 char *
-Ns_DbDriverDbType(Ns_DbHandle *handle)
+Dbi_DriverDbType(Dbi_Handle *handle)
 {
-    DbDriver *driverPtr = NsDbGetDriver(handle);
+    DbiDriver *driverPtr = DbiGetDriver(handle);
     
     if (driverPtr == NULL ||
 	driverPtr->typeProc == NULL ||
@@ -301,7 +301,7 @@ Ns_DbDriverDbType(Ns_DbHandle *handle)
 /*
  *----------------------------------------------------------------------
  *
- * Ns_DbDML --
+ * Dbi_DML --
  *
  *	Execute an SQL statement which is expected to be DML.
  *
@@ -315,28 +315,28 @@ Ns_DbDriverDbType(Ns_DbHandle *handle)
  */
 
 int
-Ns_DbDML(Ns_DbHandle *handle, char *sql)
+Dbi_DML(Dbi_Handle *handle, char *sql)
 {
-    DbDriver *driverPtr = NsDbGetDriver(handle);
+    DbiDriver *driverPtr = DbiGetDriver(handle);
     int status = NS_ERROR;
 
     if (driverPtr != NULL && handle->connected) {
 
 	if (driverPtr->execProc != NULL) {
-    	    status = Ns_DbExec(handle, sql);
-	    if (status == NS_DML) {
+    	    status = Dbi_Exec(handle, sql);
+	    if (status == DBI_DML) {
 		status = NS_OK;
 	    } else {
-		if (status == NS_ROWS) {
-        	    Ns_DbSetException(handle, "NSDB",
+		if (status == DBI_ROWS) {
+        	    Dbi_SetException(handle, "DBI",
 		    	    "Query was not a DML or DDL command.");
-        	    Ns_DbFlush(handle);
+        	    Dbi_Flush(handle);
 		}
 		status = NS_ERROR;
 	    }
 	} else if (driverPtr->dmlProc != NULL) {
     	    status = (*driverPtr->dmlProc)(handle, sql);
-	    NsDbLogSql(handle, sql);
+	    DbiLogSql(handle, sql);
 	}
     }
     
@@ -347,7 +347,7 @@ Ns_DbDML(Ns_DbHandle *handle, char *sql)
 /*
  *----------------------------------------------------------------------
  *
- * Ns_DbSelect --
+ * Dbi_Select --
  *
  *	Execute an SQL statement which is expected to return rows.
  *
@@ -361,25 +361,25 @@ Ns_DbDML(Ns_DbHandle *handle, char *sql)
  */
 
 Ns_Set *
-Ns_DbSelect(Ns_DbHandle *handle, char *sql)
+Dbi_Select(Dbi_Handle *handle, char *sql)
 {
-    DbDriver *driverPtr = NsDbGetDriver(handle);
+    DbiDriver *driverPtr = DbiGetDriver(handle);
     Ns_Set *setPtr = NULL;
 
     if (driverPtr != NULL && handle->connected) {
 
 	if (driverPtr->execProc != NULL) {
-    	    if (Ns_DbExec(handle, sql) == NS_ROWS) {
-    		setPtr = Ns_DbBindRow(handle);
+    	    if (Dbi_Exec(handle, sql) == NS_ROWS) {
+    		setPtr = Dbi_BindRow(handle);
 	    } else {
 		if(!handle->dsExceptionMsg.length)
-        	   Ns_DbSetException(handle, "NSDB",
+        	   Dbi_SetException(handle, "NSDB",
 		    	"Query was not a statement returning rows.");
 	    }
 	} else if (driverPtr->selectProc != NULL) {
     	    Ns_SetTrunc(handle->row, 0);
     	    setPtr = (*driverPtr->selectProc)(handle, sql);	
-	    NsDbLogSql(handle, sql);
+	    Dbi_LogSql(handle, sql);
 	}
     }
     
@@ -390,12 +390,12 @@ Ns_DbSelect(Ns_DbHandle *handle, char *sql)
 /*
  *----------------------------------------------------------------------
  *
- * Ns_DbExec --
+ * Dbi_Exec --
  *
  *	Execute an SQL statement.
  *
  * Results:
- *	NS_DML, NS_ROWS, or NS_ERROR.
+ *	DBI_DML, DBI_ROWS, or NS_ERROR.
  *
  * Side effects:
  *	SQL is sent to database for evaluation.
@@ -404,9 +404,9 @@ Ns_DbSelect(Ns_DbHandle *handle, char *sql)
  */
 
 int
-Ns_DbExec(Ns_DbHandle *handle, char *sql)
+Dbi_Exec(Dbi_Handle *handle, char *sql)
 {
-    DbDriver *driverPtr = NsDbGetDriver(handle);
+    DbiDriver *driverPtr = DbiGetDriver(handle);
     int status = NS_ERROR;
     
     if (handle->connected &&
@@ -414,7 +414,7 @@ Ns_DbExec(Ns_DbHandle *handle, char *sql)
 	driverPtr->execProc != NULL) {
 
     	status = (*driverPtr->execProc)(handle, sql);
-	NsDbLogSql(handle, sql);
+	DbiLogSql(handle, sql);
     }
 
     return status;
@@ -424,11 +424,11 @@ Ns_DbExec(Ns_DbHandle *handle, char *sql)
 /*
  *----------------------------------------------------------------------
  *
- * Ns_DbBindRow --
+ * Dbi_BindRow --
  *
  *	Bind the column names from a pending result set.  This routine
- *	is normally called right after an Ns_DbExec if the result
- *	was NS_ROWS.
+ *	is normally called right after an Dbi_Exec if the result
+ *	was DBI_ROWS.
  *
  * Results:
  *	Pointer to Ns_Set.
@@ -440,9 +440,9 @@ Ns_DbExec(Ns_DbHandle *handle, char *sql)
  */
 
 Ns_Set *
-Ns_DbBindRow(Ns_DbHandle *handle)
+Dbi_BindRow(Dbi_Handle *handle)
 {
-    DbDriver *driverPtr = NsDbGetDriver(handle);
+    DbiDriver *driverPtr = DbiGetDriver(handle);
     Ns_Set *setPtr = NULL;
 
     if (handle->connected &&
@@ -460,14 +460,14 @@ Ns_DbBindRow(Ns_DbHandle *handle)
 /*
  *----------------------------------------------------------------------
  *
- * Ns_DbGetRow --
+ * Dbi_GetRow --
  *
  *	Fetch the next row waiting in a result set.  This routine
- *	is normally called repeatedly after an Ns_DbSelect or
- *	an Ns_DbExec and Ns_DbBindRow.
+ *	is normally called repeatedly after an Dbi_Select or
+ *	an Dbi_Exec and Dbi_BindRow.
  *
  * Results:
- *	NS_END_DATA if there are no more rows, NS_OK or NS_ERROR
+ *	DBI_END_DATA if there are no more rows, NS_OK or NS_ERROR
  *	otherwise.
  *
  * Side effects:
@@ -477,9 +477,9 @@ Ns_DbBindRow(Ns_DbHandle *handle)
  *----------------------------------------------------------------------
  */
 int
-Ns_DbGetRow(Ns_DbHandle *handle, Ns_Set *row)
+Dbi_GetRow(Dbi_Handle *handle, Ns_Set *row)
 {
-    DbDriver *driverPtr = NsDbGetDriver(handle);
+    DbiDriver *driverPtr = DbiGetDriver(handle);
     int status = NS_ERROR;
 
     if (handle->connected &&
@@ -496,7 +496,7 @@ Ns_DbGetRow(Ns_DbHandle *handle, Ns_Set *row)
 /*
  *----------------------------------------------------------------------
  *
- * Ns_DbFlush --
+ * Dbi_Flush --
  *
  *	Flush rows pending in a result set.
  *
@@ -511,9 +511,9 @@ Ns_DbGetRow(Ns_DbHandle *handle, Ns_Set *row)
  */
 
 int
-Ns_DbFlush(Ns_DbHandle *handle)
+Dbi_Flush(Dbi_Handle *handle)
 {
-    DbDriver *driverPtr = NsDbGetDriver(handle);
+    DbiDriver *driverPtr = DbiGetDriver(handle);
     int status = NS_ERROR;
 
     if (handle->connected &&
@@ -530,7 +530,7 @@ Ns_DbFlush(Ns_DbHandle *handle)
 /*
  *----------------------------------------------------------------------
  *
- * Ns_DbCancel --
+ * Dbi_Cancel --
  *
  *	Cancel the execution of a select and dump pending rows.
  *
@@ -545,9 +545,9 @@ Ns_DbFlush(Ns_DbHandle *handle)
  */
 
 int
-Ns_DbCancel(Ns_DbHandle *handle)
+Dbi_Cancel(Dbi_Handle *handle)
 {
-    DbDriver *driverPtr = NsDbGetDriver(handle);
+    DbiDriver *driverPtr = DbiGetDriver(handle);
     int status = NS_ERROR;
 
     if (handle->connected &&
@@ -564,7 +564,7 @@ Ns_DbCancel(Ns_DbHandle *handle)
 /*
  *----------------------------------------------------------------------
  *
- * Ns_DbResetHandle --
+ * Dbi_ResetHandle --
  *
  *	Reset a handle after a cancel operation.
  *
@@ -578,9 +578,9 @@ Ns_DbCancel(Ns_DbHandle *handle)
  */
 
 int
-Ns_DbResetHandle (Ns_DbHandle *handle)
+Dbi_ResetHandle (Dbi_Handle *handle)
 {
-    DbDriver *driverPtr = NsDbGetDriver(handle);
+    DbiDriver *driverPtr = DbiGetDriver(handle);
     int status = NS_ERROR;
 
     if (handle->connected &&
@@ -597,7 +597,7 @@ Ns_DbResetHandle (Ns_DbHandle *handle)
 /*
  *----------------------------------------------------------------------
  *
- * NsDbLoadDriver --
+ * DbiLoadDriver --
  *
  *	Load a database driver for one or more pools.
  *
@@ -610,13 +610,13 @@ Ns_DbResetHandle (Ns_DbHandle *handle)
  *----------------------------------------------------------------------
  */
 
-struct DbDriver *
-NsDbLoadDriver(char *driver)
+struct DbiDriver *
+DbiLoadDriver(char *driver)
 {
     Tcl_HashEntry  *hPtr;
     char           *module, *path;
     int             new;
-    DbDriver	   *driverPtr;
+    DbiDriver	   *driverPtr;
     static int 	    initialized = NS_FALSE;
 
     if (initialized == NS_FALSE) {
@@ -626,20 +626,20 @@ NsDbLoadDriver(char *driver)
 
     hPtr = Tcl_CreateHashEntry(&driversTable, driver, &new);
     if (new == 0) {
-	driverPtr = (DbDriver *) Tcl_GetHashValue(hPtr);
+	driverPtr = (DbiDriver *) Tcl_GetHashValue(hPtr);
     } else {
-	driverPtr = ns_malloc(sizeof(DbDriver));
-	memset(driverPtr, 0, sizeof(DbDriver));
+	driverPtr = ns_malloc(sizeof(DbiDriver));
+	memset(driverPtr, 0, sizeof(DbiDriver));
 	driverPtr->name = Tcl_GetHashKey(&driversTable, hPtr);
         Tcl_SetHashValue(hPtr, driverPtr);
-        module = Ns_ConfigGetValue("ns/db/drivers", driver);
+        module = Ns_ConfigGetValue("ns/dbi/drivers", driver);
         if (module == NULL) {
-	    Ns_Log(Error, "dbdrv: no such driver '%s'", driver);
+	    Ns_Log(Error, "dbidrv: no such driver '%s'", driver);
 	} else {
-	    path = Ns_ConfigGetPath(NULL, NULL, "db", "driver", driver, NULL);
-            if (Ns_ModuleLoad(driver, path, module, "Ns_DbDriverInit")
+	    path = Ns_ConfigGetPath(NULL, NULL, "dbi", "driver", driver, NULL);
+            if (Ns_ModuleLoad(driver, path, module, "Dbi_DriverInit")
 		    != NS_OK) {
-		Ns_Log(Error, "dbdrv: failed to load driver '%s'",
+		Ns_Log(Error, "dbidrv: failed to load driver '%s'",
 		       driver);
             }
         }
@@ -655,7 +655,7 @@ NsDbLoadDriver(char *driver)
 /*
  *----------------------------------------------------------------------
  *
- * NsDbServerInit --
+ * DbiServerInit --
  *
  *	Invoke driver provided server init proc (e.g., to add driver
  *	specific Tcl commands).
@@ -670,12 +670,12 @@ NsDbLoadDriver(char *driver)
  */
 
 void
-NsDbDriverInit(char *server, DbDriver *driverPtr)
+DbiDriverInit(char *server, DbiDriver *driverPtr)
 {
     if (driverPtr->initProc != NULL &&
-	((*driverPtr->initProc) (server, "db", driverPtr->name)) != NS_OK) {
+	((*driverPtr->initProc) (server, "dbi", driverPtr->name)) != NS_OK) {
 
-	Ns_Log(Warning, "dbdrv: init proc failed for driver '%s'",
+	Ns_Log(Warning, "dbidrv: init proc failed for driver '%s'",
 	       driverPtr->name);
     }
 }
@@ -684,10 +684,10 @@ NsDbDriverInit(char *server, DbDriver *driverPtr)
 /*
  *----------------------------------------------------------------------
  *
- * NsDbOpen --
+ * DbiOpen --
  *
  *	Open a connection to the database.  This routine is called
- *	from the pool routines in dbinit.c.
+ *	from the pool routines in dbiinit.c.
  *
  * Results:
  *	NS_OK or NS_ERROR.
@@ -699,17 +699,17 @@ NsDbDriverInit(char *server, DbDriver *driverPtr)
  */
 
 int
-NsDbOpen(Ns_DbHandle *handle)
+DbiOpen(Dbi_Handle *handle)
 {
-    DbDriver *driverPtr = NsDbGetDriver(handle);
+    DbiDriver *driverPtr = DbiGetDriver(handle);
 
-    Ns_Log(Notice, "dbdrv: opening database '%s:%s'", handle->driver,
+    Ns_Log(Notice, "dbidrv: opening database '%s:%s'", handle->driver,
 	   handle->datasource);
     if (driverPtr == NULL ||
 	driverPtr->openProc == NULL ||
 	(*driverPtr->openProc) (handle) != NS_OK) {
 
-	Ns_Log(Error, "dbdrv: failed to open database '%s:%s'",
+	Ns_Log(Error, "dbidrv: failed to open database '%s:%s'",
 	       handle->driver, handle->datasource);
 	handle->connected = NS_FALSE;
         return NS_ERROR;
@@ -722,10 +722,10 @@ NsDbOpen(Ns_DbHandle *handle)
 /*
  *----------------------------------------------------------------------
  *
- * NsDbClose --
+ * DbiClose --
  *
  *	Close a connection to the database.  This routine is called
- *	from the pool routines in dbinit.c
+ *	from the pool routines in dbiinit.c
  *
  * Results:
  *	None.
@@ -737,9 +737,9 @@ NsDbOpen(Ns_DbHandle *handle)
  */
 
 void
-NsDbClose(Ns_DbHandle *handle)
+DbiClose(Dbi_Handle *handle)
 {
-    DbDriver *driverPtr = NsDbGetDriver(handle);
+    DbiDriver *driverPtr = DbiGetDriver(handle);
     
     if (handle->connected &&
 	driverPtr != NULL &&
@@ -753,7 +753,7 @@ NsDbClose(Ns_DbHandle *handle)
 /*
  *----------------------------------------------------------------------
  *
- * Ns_DbSpStart --
+ * Dbi_SpStart --
  *
  *	Start execution of a stored procedure. 
  *
@@ -761,15 +761,15 @@ NsDbClose(Ns_DbHandle *handle)
  *	NS_OK/NS_ERROR. 
  *
  * Side effects:
- *	Begins an SP; see Ns_DbSpExec. 
+ *	Begins an SP; see Dbi_SpExec. 
  *
  *----------------------------------------------------------------------
  */
 
 int
-Ns_DbSpStart(Ns_DbHandle *handle, char *procname)
+Dbi_SpStart(Dbi_Handle *handle, char *procname)
 {
-    DbDriver *driverPtr = NsDbGetDriver(handle);
+    DbiDriver *driverPtr = DbiGetDriver(handle);
     int status = NS_ERROR;
 
     if (handle->connected &&
@@ -786,10 +786,10 @@ Ns_DbSpStart(Ns_DbHandle *handle, char *procname)
 /*
  *----------------------------------------------------------------------
  *
- * Ns_DbSpSetParam --
+ * Dbi_SpSetParam --
  *
  *	Set a parameter in a store procedure; must have executed 
- *	Ns_DbSpStart first. paramname looks like "@x", paramtype is 
+ *	Dbi_SpStart first. paramname looks like "@x", paramtype is 
  *	like "int" or "varchar", inout is "in" or "out", value is 
  *	like "123". 
  *
@@ -803,10 +803,10 @@ Ns_DbSpStart(Ns_DbHandle *handle, char *procname)
  */
 
 int
-Ns_DbSpSetParam(Ns_DbHandle *handle, char *paramname, char *paramtype,
+Dbi_SpSetParam(Dbi_Handle *handle, char *paramname, char *paramtype,
                 char *inout, char *value)
 {
-    DbDriver   *driverPtr = NsDbGetDriver(handle);
+    DbiDriver   *driverPtr = DbiGetDriver(handle);
     int         status = NS_ERROR;
     Ns_DString  args;
 
@@ -828,9 +828,9 @@ Ns_DbSpSetParam(Ns_DbHandle *handle, char *paramname, char *paramtype,
 /*
  *----------------------------------------------------------------------
  *
- * Ns_DbSpExec --
+ * Dbi_SpExec --
  *
- *	Run an Sp begun with Ns_DbSpStart 
+ *	Run an Sp begun with Dbi_SpStart 
  *
  * Results:
  *	NS_OK/NS_ERROR 
@@ -842,9 +842,9 @@ Ns_DbSpSetParam(Ns_DbHandle *handle, char *paramname, char *paramtype,
  */
 
 int
-Ns_DbSpExec(Ns_DbHandle *handle)
+Dbi_SpExec(Dbi_Handle *handle)
 {
-    DbDriver *driverPtr = NsDbGetDriver(handle);
+    DbiDriver *driverPtr = DbiGetDriver(handle);
     int       status = NS_ERROR;
 
     if (handle->connected &&
@@ -861,9 +861,9 @@ Ns_DbSpExec(Ns_DbHandle *handle)
 /*
  *----------------------------------------------------------------------
  *
- * Ns_DbSpReturnCode --
+ * Dbi_SpReturnCode --
  *
- *	Get the return code from an SP after Ns_DbSpExec 
+ *	Get the return code from an SP after Dbi_SpExec 
  *
  * Results:
  *	NS_OK/NSERROR 
@@ -876,9 +876,9 @@ Ns_DbSpExec(Ns_DbHandle *handle)
  */
 
 int
-Ns_DbSpReturnCode(Ns_DbHandle *handle, char *returnCode, int bufsize)
+Dbi_SpReturnCode(Dbi_Handle *handle, char *returnCode, int bufsize)
 {
-    DbDriver *driverPtr = NsDbGetDriver(handle);
+    DbiDriver *driverPtr = DbiGetDriver(handle);
     int       status = NS_ERROR;
 
     if (handle->connected &&
@@ -895,9 +895,9 @@ Ns_DbSpReturnCode(Ns_DbHandle *handle, char *returnCode, int bufsize)
 /*
  *----------------------------------------------------------------------
  *
- * Ns_DbSpGetParams --
+ * Dbi_SpGetParams --
  *
- *	Get output parameters after running an SP w/ Ns_DbSpExec. 
+ *	Get output parameters after running an SP w/ Dbi_SpExec. 
  *
  * Results:
  *	NULL or a newly allocated set with output params in it. 
@@ -909,9 +909,9 @@ Ns_DbSpReturnCode(Ns_DbHandle *handle, char *returnCode, int bufsize)
  */
 
 Ns_Set *
-Ns_DbSpGetParams(Ns_DbHandle *handle)
+Dbi_SpGetParams(Dbi_Handle *handle)
 {
-    DbDriver *driverPtr = NsDbGetDriver(handle);
+    DbiDriver *driverPtr = DbiGetDriver(handle);
     Ns_Set   *aset = NULL;
 
     Ns_SetTrunc(handle->row, 0);

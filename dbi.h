@@ -32,15 +32,15 @@
 
 #include "nsdbi.h"
 
-extern void NsDbInitPools(void);
-extern void NsDbInitServer(char *server);
-extern Ns_TclTraceProc NsDbAddCmds, NsDbReleaseHandles;
-extern void 		NsDbClose(Ns_DbHandle *);
-extern void 		NsDbDisconnect(Ns_DbHandle *);
-extern struct DbDriver *NsDbGetDriver(Ns_DbHandle *);
-extern struct DbDriver *NsDbLoadDriver(char *driver);
-extern void 		NsDbLogSql(Ns_DbHandle *, char *sql);
-extern int 		NsDbOpen(Ns_DbHandle *);
-extern void 		NsDbDriverInit(char *server, struct DbDriver *);
+extern void DbiInitPools(void);
+extern void DbiInitServer(char *server);
+extern Ns_TclTraceProc DbiAddCmds, DbiReleaseHandles;
+extern void 		DbiClose(Dbi_Handle *);
+extern void 		DbiDisconnect(Dbi_Handle *);
+extern struct DbiDriver *DbiGetDriver(Dbi_Handle *);
+extern struct DbiDriver *DbiLoadDriver(char *driver);
+extern void 		DbiLogSql(Dbi_Handle *, char *sql);
+extern int 		DbiOpen(Dbi_Handle *);
+extern void 		DbiDriverInit(char *server, struct DbiDriver *);
 
 #endif

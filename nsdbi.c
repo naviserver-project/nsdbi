@@ -62,18 +62,18 @@ Ns_ModuleInit(char *server, char *module)
     static int once;
 
     if (!once) {
-	NsDbInitPools();
+	DbiInitPools();
 	once = 1;
     }
-    NsDbInitServer(server);
-    if (Ns_TclRegisterTrace(server, NsDbAddCmds, server,
+    DbiInitServer(server);
+    if (Ns_TclRegisterTrace(server, DbiAddCmds, server,
                             NS_TCL_TRACE_CREATE) != NS_OK
-        || Ns_TclRegisterTrace(server, NsDbReleaseHandles, NULL,
+        || Ns_TclRegisterTrace(server, DbiReleaseHandles, NULL,
                                NS_TCL_TRACE_DEALLOCATE) != NS_OK) {
         return NS_ERROR;
     }
-    Ns_RegisterProcInfo(NsDbAddCmds, "nsdb:initinterp", NULL);
-    Ns_RegisterProcInfo(NsDbReleaseHandles, "nsdb:releasehandles", NULL);
+    Ns_RegisterProcInfo(DbiAddCmds, "nsdb:initinterp", NULL);
+    Ns_RegisterProcInfo(DbiReleaseHandles, "nsdb:releasehandles", NULL);
 
     return NS_OK;
 }

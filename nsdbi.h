@@ -41,16 +41,16 @@
 #include "ns.h"
 
 /*
- * The following are nsdbi return codes.
+ * The following are dbi return codes.
  */
 
-#define NS_DML  		  1
-#define NS_ROWS 		  2
-#define NS_END_DATA 		  4
-#define NS_NO_DATA 		  8
+#define DBI_DML  		  1
+#define DBI_ROWS 		  2
+#define DBI_END_DATA 		  4
+#define DBI_NO_DATA 		  8
 
 /* 
- * The following enum defines known nsdb driver function ids.
+ * The following enum defines known dbi driver function ids.
  */
 
 typedef enum {
@@ -76,23 +76,23 @@ typedef enum {
     DbFn_SpReturnCode,
     DbFn_SpGetParams,
     DbFn_End
-} Ns_DbProcId;
+} Dbi_ProcId;
 
 /*
  * Database procedure structure used when registering
  * a driver. 
  */
 
-typedef struct Ns_DbProc {
-    Ns_DbProcId id;
+typedef struct Dbi_Proc {
+    Dbi_ProcId id;
     void       *func;
-} Ns_DbProc;
+} Dbi_Proc;
 
 /*
  * Database handle structure.
  */
 
-typedef struct Ns_DbHandle {
+typedef struct Dbi_Handle {
     char       *driver;
     char       *datasource;
     char       *user;
@@ -107,7 +107,7 @@ typedef struct Ns_DbHandle {
     void       *context;
     void       *statement;
     int         fetchingRows;
-} Ns_DbHandle;
+} Dbi_Handle;
 
 /*
  * The following structure is no longer supported and only provided to
@@ -120,63 +120,63 @@ typedef struct {
     int      size;
     int      ncolumns;
     Ns_Set **columns;
-} Ns_DbTableInfo;
+} Dbi_TableInfo;
 
 /*
- * dbdrv.c:
+ * drv.c:
  */
 
-NS_EXTERN int Ns_DbRegisterDriver(char *driver, Ns_DbProc *procs);
-NS_EXTERN char *Ns_DbDriverName(Ns_DbHandle *handle);
-NS_EXTERN char *Ns_DbDriverDbType(Ns_DbHandle *handle);
-NS_EXTERN int Ns_DbDML(Ns_DbHandle *handle, char *sql);
-NS_EXTERN Ns_Set *Ns_DbSelect(Ns_DbHandle *handle, char *sql);
-NS_EXTERN int Ns_DbExec(Ns_DbHandle *handle, char *sql);
-NS_EXTERN Ns_Set *Ns_DbBindRow(Ns_DbHandle *handle);
-NS_EXTERN int Ns_DbGetRow(Ns_DbHandle *handle, Ns_Set *row);
-NS_EXTERN int Ns_DbFlush(Ns_DbHandle *handle);
-NS_EXTERN int Ns_DbCancel(Ns_DbHandle *handle);
-NS_EXTERN int Ns_DbResetHandle(Ns_DbHandle *handle);
-NS_EXTERN int Ns_DbSpStart(Ns_DbHandle *handle, char *procname);
-NS_EXTERN int Ns_DbSpSetParam(Ns_DbHandle *handle, char *paramname,
+NS_EXTERN int Dbi_RegisterDriver(char *driver, Dbi_Proc *procs);
+NS_EXTERN char *Dbi_DriverName(Dbi_Handle *handle);
+NS_EXTERN char *Dbi_DriverDbType(Dbi_Handle *handle);
+NS_EXTERN int Dbi_DML(Dbi_Handle *handle, char *sql);
+NS_EXTERN Ns_Set *Dbi_Select(Dbi_Handle *handle, char *sql);
+NS_EXTERN int Dbi_Exec(Dbi_Handle *handle, char *sql);
+NS_EXTERN Ns_Set *Dbi_BindRow(Dbi_Handle *handle);
+NS_EXTERN int Dbi_GetRow(Dbi_Handle *handle, Ns_Set *row);
+NS_EXTERN int Dbi_Flush(Dbi_Handle *handle);
+NS_EXTERN int Dbi_Cancel(Dbi_Handle *handle);
+NS_EXTERN int Dbi_ResetHandle(Dbi_Handle *handle);
+NS_EXTERN int Dbi_SpStart(Dbi_Handle *handle, char *procname);
+NS_EXTERN int Dbi_SpSetParam(Dbi_Handle *handle, char *paramname,
 			   char *paramtype, char *inout, char *value);
-NS_EXTERN int Ns_DbSpExec(Ns_DbHandle *handle);
-NS_EXTERN int Ns_DbSpReturnCode(Ns_DbHandle *handle, char *returnCode,
+NS_EXTERN int Dbi_SpExec(Dbi_Handle *handle);
+NS_EXTERN int Dbi_SpReturnCode(Dbi_Handle *handle, char *returnCode,
 			     int bufsize);
-NS_EXTERN Ns_Set *Ns_DbSpGetParams(Ns_DbHandle *handle);
+NS_EXTERN Ns_Set *Dbi_SpGetParams(Dbi_Handle *handle);
 
 /*
- * dbinit.c:
+ * init.c:
  */
 
-NS_EXTERN char *Ns_DbPoolDescription(char *pool);
-NS_EXTERN char *Ns_DbPoolDefault(char *server);
-NS_EXTERN char *Ns_DbPoolList(char *server);
-NS_EXTERN int Ns_DbPoolAllowable(char *server, char *pool);
-NS_EXTERN void Ns_DbPoolPutHandle(Ns_DbHandle *handle);
-NS_EXTERN Ns_DbHandle *Ns_DbPoolTimedGetHandle(char *pool, int wait);
-NS_EXTERN Ns_DbHandle *Ns_DbPoolGetHandle(char *pool);
-NS_EXTERN int Ns_DbPoolGetMultipleHandles(Ns_DbHandle **handles, char *pool,
+NS_EXTERN char *Dbi_PoolDescription(char *pool);
+NS_EXTERN char *Dbi_PoolDefault(char *server);
+NS_EXTERN char *Dbi_PoolList(char *server);
+NS_EXTERN int Dbi_PoolAllowable(char *server, char *pool);
+NS_EXTERN void Dbi_PoolPutHandle(Dbi_Handle *handle);
+NS_EXTERN Dbi_Handle *Dbi_PoolTimedGetHandle(char *pool, int wait);
+NS_EXTERN Dbi_Handle *Dbi_PoolGetHandle(char *pool);
+NS_EXTERN int Dbi_PoolGetMultipleHandles(Dbi_Handle **handles, char *pool,
 				       int nwant);
-NS_EXTERN int Ns_DbPoolTimedGetMultipleHandles(Ns_DbHandle **handles, char *pool,
+NS_EXTERN int Dbi_PoolTimedGetMultipleHandles(Dbi_Handle **handles, char *pool,
 					    int nwant, int wait);
-NS_EXTERN int Ns_DbBouncePool(char *pool);
+NS_EXTERN int Dbi_BouncePool(char *pool);
 
 /*
- * dbtcl.c:
+ * tclcmds.c:
  */
 
-NS_EXTERN int Ns_TclDbGetHandle(Tcl_Interp *interp, char *handleId,
-			     Ns_DbHandle **handle);
+NS_EXTERN int Dbi_TclGetHandle(Tcl_Interp *interp, char *handleId,
+			     Dbi_Handle **handle);
 
 /*
- * dbutil.c:
+ * util.c:
  */
     
-NS_EXTERN void Ns_DbQuoteValue(Ns_DString *pds, char *string);
-NS_EXTERN Ns_Set *Ns_Db0or1Row(Ns_DbHandle *handle, char *sql, int *nrows);
-NS_EXTERN Ns_Set *Ns_Db1Row(Ns_DbHandle *handle, char *sql);
-NS_EXTERN int Ns_DbInterpretSqlFile(Ns_DbHandle *handle, char *filename);
-NS_EXTERN void Ns_DbSetException(Ns_DbHandle *handle, char *code, char *msg);
+NS_EXTERN void Dbi_QuoteValue(Ns_DString *pds, char *string);
+NS_EXTERN Ns_Set *Dbi_0or1Row(Dbi_Handle *handle, char *sql, int *nrows);
+NS_EXTERN Ns_Set *Dbi_1Row(Dbi_Handle *handle, char *sql);
+NS_EXTERN int Dbi_InterpretSqlFile(Dbi_Handle *handle, char *filename);
+NS_EXTERN void Dbi_SetException(Dbi_Handle *handle, char *code, char *msg);
 
 #endif /* NSDBI_H */

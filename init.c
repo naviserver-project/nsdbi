@@ -56,7 +56,7 @@ typedef struct Pool {
     Ns_Cond	    waitCond;
     Ns_Cond	    getCond;
     char	   *driver;
-    struct DbDriver  *driverPtr;
+    struct DbiDriver  *driverPtr;
     int		    waiting;
     int             nhandles;
     struct Handle  *firstPtr;
@@ -88,7 +88,7 @@ typedef struct Handle {
     void           *context;
     void           *statement;
     int             fetchingRows;
-    /* Members above must match Ns_DbHandle */
+    /* Members above must match Dbi_Handle */
     struct Handle  *nextPtr;
     struct Pool	   *poolPtr;
     time_t          otime;
@@ -133,7 +133,7 @@ static Ns_Tls tls;
 /*
  *----------------------------------------------------------------------
  *
- * Ns_DbPoolDescription --
+ * Dbi_PoolDescription --
  *
  *	Return the pool's description string.
  *
@@ -147,7 +147,7 @@ static Ns_Tls tls;
  */
 
 char *
-Ns_DbPoolDescription(char *pool)
+Dbi_PoolDescription(char *pool)
 {
     Pool         *poolPtr;
 
@@ -162,7 +162,7 @@ Ns_DbPoolDescription(char *pool)
 /*
  *----------------------------------------------------------------------
  *
- * Ns_DbPoolDefault --
+ * Dbi_PoolDefault --
  *
  *	Return the default pool.
  *
@@ -176,7 +176,7 @@ Ns_DbPoolDescription(char *pool)
  */
 
 char *
-Ns_DbPoolDefault(char *server)
+Dbi_PoolDefault(char *server)
 {
     ServData *sdataPtr = GetServer(server);
 
@@ -187,7 +187,7 @@ Ns_DbPoolDefault(char *server)
 /*
  *----------------------------------------------------------------------
  *
- * Ns_DbPoolList --
+ * Dbi_PoolList --
  *
  *	Return the list of all pools.
  *
@@ -201,7 +201,7 @@ Ns_DbPoolDefault(char *server)
  */
 
 char *
-Ns_DbPoolList(char *server)
+Dbi_PoolList(char *server)
 {
     ServData *sdataPtr = GetServer(server);
 
@@ -212,7 +212,7 @@ Ns_DbPoolList(char *server)
 /*
  *----------------------------------------------------------------------
  *
- * Ns_DbPoolAllowable --
+ * Dbi_PoolAllowable --
  *
  *	Check that access is allowed to a pool.
  *
@@ -226,11 +226,11 @@ Ns_DbPoolList(char *server)
  */
 
 int
-Ns_DbPoolAllowable(char *server, char *pool)
+Dbi_PoolAllowable(char *server, char *pool)
 {
     register char *p;
 
-    p = Ns_DbPoolList(server);
+    p = Dbi_PoolList(server);
     if (p != NULL) {
         while (*p != '\0') {
             if (STREQ(pool, p)) {
@@ -246,7 +246,7 @@ Ns_DbPoolAllowable(char *server, char *pool)
 /*
  *----------------------------------------------------------------------
  *
- * Ns_DbPoolPutHandle --
+ * Dbi_PoolPutHandle --
  *
  *	Cleanup and then return a handle to its pool.
  *
@@ -260,7 +260,7 @@ Ns_DbPoolAllowable(char *server, char *pool)
  */
 
 void
-Ns_DbPoolPutHandle(Ns_DbHandle *handle)
+Dbi_PoolPutHandle(Dbi_Handle *handle)
 {
     Handle	*handlePtr;
     Pool	*poolPtr;
@@ -273,8 +273,8 @@ Ns_DbPoolPutHandle(Ns_DbHandle *handle)
      * Cleanup the handle.
      */
 
-    Ns_DbFlush(handle);
-    Ns_DbResetHandle(handle);
+    Dbi_Flush(handle);
+    Dbi_ResetHandle(handle);
 
     Ns_DStringFree(&handle->dsExceptionMsg);
     handle->cExceptionCode[0] = '\0';
@@ -286,7 +286,7 @@ Ns_DbPoolPutHandle(Ns_DbHandle *handle)
 
     time(&now);
     if (IsStale(handlePtr, now)) {
-        NsDbDisconnect(handle);
+        DbiDisconnect(handle);
     } else {
         handlePtr->atime = now;
     }
@@ -303,13 +303,13 @@ Ns_DbPoolPutHandle(Ns_DbHandle *handle)
 /*
  *----------------------------------------------------------------------
  *
- * Ns_DbPoolTimedGetHandle --
+ * Dbi_PoolTimedGetHandle --
  *
  *	Return a single handle from a pool within the given number of
  *	seconds.
  *
  * Results:
- *	Pointer to Ns_DbHandle or NULL on error or timeout.
+ *	Pointer to Dbi_Handle or NULL on error or timeout.
  *
  * Side effects:
  *	Database may be opened if needed.
@@ -317,12 +317,12 @@ Ns_DbPoolPutHandle(Ns_DbHandle *handle)
  *----------------------------------------------------------------------
  */
 
-Ns_DbHandle *
-Ns_DbPoolTimedGetHandle(char *pool, int wait)
+Dbi_Handle *
+Dbi_PoolTimedGetHandle(char *pool, int wait)
 {
-    Ns_DbHandle       *handle;
+    Dbi_Handle       *handle;
 
-    if (Ns_DbPoolTimedGetMultipleHandles(&handle, pool, 1, wait) != NS_OK) {
+    if (Dbi_PoolTimedGetMultipleHandles(&handle, pool, 1, wait) != NS_OK) {
         return NULL;
     }
     return handle;
@@ -332,12 +332,12 @@ Ns_DbPoolTimedGetHandle(char *pool, int wait)
 /*
  *----------------------------------------------------------------------
  *
- * Ns_DbPoolGetHandle --
+ * Dbi_PoolGetHandle --
  *
  *	Return a single handle from a pool.
  *
  * Results:
- *	Pointer to Ns_DbHandle or NULL on error.
+ *	Pointer to Dbi_Handle or NULL on error.
  *
  * Side effects:
  *	Database may be opened if needed.
@@ -345,17 +345,17 @@ Ns_DbPoolTimedGetHandle(char *pool, int wait)
  *----------------------------------------------------------------------
  */
 
-Ns_DbHandle *
-Ns_DbPoolGetHandle(char *pool)
+Dbi_Handle *
+Dbi_PoolGetHandle(char *pool)
 {
-    return Ns_DbPoolTimedGetHandle(pool, 0);
+    return Dbi_PoolTimedGetHandle(pool, 0);
 }
 
 
 /*
  *----------------------------------------------------------------------
  *
- * Ns_DbPoolGetMultipleHandles --
+ * Dbi_PoolGetMultipleHandles --
  *
  *	Return 1 or more handles from a pool.
  *
@@ -370,16 +370,16 @@ Ns_DbPoolGetHandle(char *pool)
  */
 
 int
-Ns_DbPoolGetMultipleHandles(Ns_DbHandle **handles, char *pool, int nwant)
+Dbi_PoolGetMultipleHandles(Dbi_Handle **handles, char *pool, int nwant)
 {
-    return Ns_DbPoolTimedGetMultipleHandles(handles, pool, nwant, 0);
+    return Dbi_PoolTimedGetMultipleHandles(handles, pool, nwant, 0);
 }
 
 
 /*
  *----------------------------------------------------------------------
  *
- * Ns_DbPoolTimedGetMultipleHandles --
+ * Dbi_PoolTimedGetMultipleHandles --
  *
  *	Return 1 or more handles from a pool within the given number
  *	of seconds.
@@ -397,7 +397,7 @@ Ns_DbPoolGetMultipleHandles(Ns_DbHandle **handles, char *pool, int nwant)
  */
 
 int
-Ns_DbPoolTimedGetMultipleHandles(Ns_DbHandle **handles, char *pool, 
+Dbi_PoolTimedGetMultipleHandles(Dbi_Handle **handles, char *pool, 
     				 int nwant, int wait)
 {
     Handle    *handlePtr;
@@ -414,18 +414,18 @@ Ns_DbPoolTimedGetMultipleHandles(Ns_DbHandle **handles, char *pool,
      
     poolPtr = GetPool(pool);
     if (poolPtr == NULL) {
-	Ns_Log(Error, "dbinit: no such pool '%s'", pool);
+	Ns_Log(Error, "dbiinit: no such pool '%s'", pool);
 	return NS_ERROR;
     }
     if (poolPtr->nhandles < nwant) {
-	Ns_Log(Error, "dbinit: "
-	       "failed to get %d handles from a db pool of only %d handles: '%s'",
+	Ns_Log(Error, "dbiinit: "
+	       "failed to get %d handles from a dbi pool of only %d handles: '%s'",
 	       nwant, poolPtr->nhandles, pool);
 	return NS_ERROR;
     }
     ngot = IncrCount(poolPtr, nwant);
     if (ngot > 0) {
-	Ns_Log(Error, "dbinit: db handle limit exceeded: "
+	Ns_Log(Error, "dbiinit: dbi handle limit exceeded: "
 	       "thread already owns %d handle%s from pool '%s'",
 	       ngot, ngot == 1 ? "" : "s", pool);
 	IncrCount(poolPtr, -nwant);
@@ -511,7 +511,7 @@ Ns_DbPoolTimedGetMultipleHandles(Ns_DbHandle **handles, char *pool,
 /*
  *----------------------------------------------------------------------
  *
- * Ns_DbBouncePool --
+ * Dbi_BouncePool --
  *
  *	Close all handles in the pool.
  *
@@ -525,7 +525,7 @@ Ns_DbPoolTimedGetMultipleHandles(Ns_DbHandle **handles, char *pool,
  */
 
 int
-Ns_DbBouncePool(char *pool)
+Dbi_BouncePool(char *pool)
 {
     Pool	*poolPtr;
     Handle	*handlePtr;
@@ -554,7 +554,7 @@ Ns_DbBouncePool(char *pool)
 /*
  *----------------------------------------------------------------------
  *
- * NsDbInitPools --
+ * DbiInitPools --
  *
  *	Initialize the database pools at startup.
  *
@@ -568,7 +568,7 @@ Ns_DbBouncePool(char *pool)
  */
 
 void
-NsDbInitPools(void)
+DbiInitPools(void)
 {
     Tcl_HashEntry  *hPtr;
     Pool           *poolPtr;
@@ -584,15 +584,15 @@ NsDbInitPools(void)
 
     Tcl_InitHashTable(&serversTable, TCL_STRING_KEYS);
     Tcl_InitHashTable(&poolsTable, TCL_STRING_KEYS);
-    pools = Ns_ConfigGetSection("ns/db/pools");
+    pools = Ns_ConfigGetSection("ns/dbi/pools");
     for (i = 0; pools != NULL && i < Ns_SetSize(pools); ++i) {
 	pool = Ns_SetKey(pools, i);
 	hPtr = Tcl_CreateHashEntry(&poolsTable, pool, &new);
 	if (!new) {
-	    Ns_Log(Error, "dbinit: duplicate pool: %s", pool);
+	    Ns_Log(Error, "dbiinit: duplicate pool: %s", pool);
 	    continue;	
 	}
-	path = Ns_ConfigGetPath(NULL, NULL, "db", "pool", pool, NULL);
+	path = Ns_ConfigGetPath(NULL, NULL, "dbi", "pool", pool, NULL);
 	driver = Ns_ConfigGetValue(path, "driver");
 	poolPtr = CreatePool(pool, path, driver);
 	if (poolPtr == NULL) {
@@ -601,14 +601,14 @@ NsDbInitPools(void)
 	    Tcl_SetHashValue(hPtr, poolPtr);
 	}
     }
-    Ns_RegisterProcInfo(CheckPool, "nsdb:check", CheckArgProc);
+    Ns_RegisterProcInfo(CheckPool, "nsdbi:check", CheckArgProc);
 }
 
 
 /*
  *----------------------------------------------------------------------
  *
- * NsDbInitServer --
+ * DbiInitServer --
  *
  *	Initialize a virtual server allowed and default options.
  *
@@ -622,7 +622,7 @@ NsDbInitPools(void)
  */
 
 void
-NsDbInitServer(char *server)
+DbiInitServer(char *server)
 {
     Pool	   *poolPtr;
     ServData	   *sdataPtr;
@@ -632,7 +632,7 @@ NsDbInitServer(char *server)
     Ns_DString	    ds;
     int		    new;
 
-    path = Ns_ConfigGetPath(server, NULL, "db", NULL);
+    path = Ns_ConfigGetPath(server, NULL, "dbi", NULL);
 
     /*
      * Verify the default pool exists, if any.
@@ -644,7 +644,7 @@ NsDbInitServer(char *server)
     sdataPtr->defpool = Ns_ConfigGetValue(path, "defaultpool");
     if (sdataPtr->defpool != NULL &&
 	(Tcl_FindHashEntry(&poolsTable, sdataPtr->defpool) == NULL)) {
-	Ns_Log(Error, "dbinit: no such default pool '%s'", sdataPtr->defpool);
+	Ns_Log(Error, "dbiinit: no such default pool '%s'", sdataPtr->defpool);
 	sdataPtr->defpool = NULL;
     }
 
@@ -660,7 +660,7 @@ NsDbInitServer(char *server)
 	    hPtr = Tcl_FirstHashEntry(&poolsTable, &search);
 	    while (hPtr != NULL) {
 	    	poolPtr = Tcl_GetHashValue(hPtr);
-	    	NsDbDriverInit(server, poolPtr->driverPtr);
+	    	DbiDriverInit(server, poolPtr->driverPtr);
 	    	Ns_DStringAppendArg(&ds, poolPtr->name);
 		hPtr = Tcl_NextHashEntry(&search);
 	    }
@@ -674,7 +674,7 @@ NsDbInitServer(char *server)
 		hPtr = Tcl_FindHashEntry(&poolsTable, pool);
 		if (hPtr != NULL) {
 		    poolPtr = Tcl_GetHashValue(hPtr);
-	    	    NsDbDriverInit(server, poolPtr->driverPtr);
+	    	    DbiDriverInit(server, poolPtr->driverPtr);
 	    	    Ns_DStringAppendArg(&ds, poolPtr->name);
 		}
 		if (p != NULL) {
@@ -693,7 +693,7 @@ NsDbInitServer(char *server)
 /*
  *----------------------------------------------------------------------
  *
- * NsDbDisconnect --
+ * DbiDisconnect --
  *
  *	Disconnect a handle by closing the database if needed.
  *
@@ -707,11 +707,11 @@ NsDbInitServer(char *server)
  */
 
 void
-NsDbDisconnect(Ns_DbHandle *handle)
+DbiDisconnect(Dbi_Handle *handle)
 {
     Handle *handlePtr = (Handle *) handle;
 
-    NsDbClose(handle);
+    DbiClose(handle);
     handlePtr->connected = NS_FALSE;
     handlePtr->atime = handlePtr->otime = 0;
     handlePtr->stale = NS_FALSE;
@@ -721,7 +721,7 @@ NsDbDisconnect(Ns_DbHandle *handle)
 /*
  *----------------------------------------------------------------------
  *
- * NsDbLogSql --
+ * DbiLogSql --
  *
  *	Log a SQL statement depending on the verbose state of the
  *	handle.
@@ -736,18 +736,18 @@ NsDbDisconnect(Ns_DbHandle *handle)
  */
 
 void
-NsDbLogSql(Ns_DbHandle *handle, char *sql)
+DbiLogSql(Dbi_Handle *handle, char *sql)
 {
     Handle *handlePtr = (Handle *) handle;
 
     if (handle->dsExceptionMsg.length > 0) {
         if (handlePtr->poolPtr->fVerboseError || handle->verbose) {
 	    
-            Ns_Log(Error, "dbinit: error(%s,%s): '%s'",
+            Ns_Log(Error, "dbiinit: error(%s,%s): '%s'",
 		   handle->datasource, handle->dsExceptionMsg.string, sql);
         }
     } else if (handle->verbose) {
-        Ns_Log(Notice, "dbinit: sql(%s): '%s'", handle->datasource, sql);
+        Ns_Log(Notice, "dbiinit: sql(%s): '%s'", handle->datasource, sql);
     }
 }
 
@@ -755,7 +755,7 @@ NsDbLogSql(Ns_DbHandle *handle, char *sql)
 /*
  *----------------------------------------------------------------------
  *
- * NsDbGetDriver --
+ * DbiGetDriver --
  *
  *	Return a pointer to the driver structure for a handle.
  *
@@ -768,8 +768,8 @@ NsDbLogSql(Ns_DbHandle *handle, char *sql)
  *----------------------------------------------------------------------
  */
 
-struct DbDriver *
-NsDbGetDriver(Ns_DbHandle *handle)
+struct DbiDriver *
+DbiGetDriver(Dbi_Handle *handle)
 {
     Handle *handlePtr = (Handle *) handle;
 
@@ -881,7 +881,7 @@ IsStale(Handle *handlePtr, time_t now)
 	    (handlePtr->poolPtr->stale_on_close > handlePtr->stale_on_close)) {
 
 	    if (handlePtr->poolPtr->fVerbose) {
-		Ns_Log(Notice, "dbinit: closing %s handle in pool '%s'",
+		Ns_Log(Notice, "dbiinit: closing %s handle in pool '%s'",
 		       handlePtr->atime < minAccess ? "idle" : "old",
 		       handlePtr->poolname);
 	    }
@@ -964,7 +964,7 @@ CheckPool(void *arg)
     	while (handlePtr != NULL) {
 	    nextPtr = handlePtr->nextPtr;
 	    if (IsStale(handlePtr, now)) {
-                NsDbDisconnect((Ns_DbHandle *) handlePtr);
+                DbiDisconnect((Dbi_Handle *) handlePtr);
 	    }
 	    handlePtr->nextPtr = checkedPtr;
 	    checkedPtr = handlePtr;
@@ -1007,28 +1007,28 @@ CreatePool(char *pool, char *path, char *driver)
 {
     Pool            *poolPtr;
     Handle          *handlePtr;
-    struct DbDriver *driverPtr;
+    struct DbiDriver *driverPtr;
     int              i;
     char	    *source;
 
     if (driver == NULL) {
-	Ns_Log(Error, "dbinit: no driver for pool '%s'", pool);
+	Ns_Log(Error, "dbiinit: no driver for pool '%s'", pool);
 	return NULL;
     }
-    driverPtr = NsDbLoadDriver(driver);
+    driverPtr = DbiLoadDriver(driver);
     if (driverPtr == NULL) {
 	return NULL;
     }
     source = Ns_ConfigGetValue(path, "datasource");
     if (source == NULL) {
-	Ns_Log(Error, "dbinit: missing datasource for pool '%s'", pool);
+	Ns_Log(Error, "dbiinit: missing datasource for pool '%s'", pool);
 	return NULL;
     }
     poolPtr = ns_malloc(sizeof(Pool));
     poolPtr->driver = driver;
     poolPtr->driverPtr = driverPtr;
     Ns_MutexInit(&poolPtr->lock);
-    Ns_MutexSetName2(&poolPtr->lock, "nsdb", pool);
+    Ns_MutexSetName2(&poolPtr->lock, "nsdbi", pool);
     Ns_CondInit(&poolPtr->waitCond);
     Ns_CondInit(&poolPtr->getCond);
     poolPtr->source = source;
@@ -1036,7 +1036,7 @@ CreatePool(char *pool, char *path, char *driver)
     poolPtr->waiting = 0;
     poolPtr->user = Ns_ConfigGetValue(path, "user");
     poolPtr->pass = Ns_ConfigGetValue(path, "password");
-    poolPtr->desc = Ns_ConfigGetValue("ns/db/pools", pool);
+    poolPtr->desc = Ns_ConfigGetValue("ns/dbi/pools", pool);
     poolPtr->stale_on_close = 0;
     poolPtr->fVerbose = Ns_ConfigBool(path, "verbose", NS_FALSE);
     poolPtr->fVerboseError = Ns_ConfigBool(path, "logsqlerrors", NS_FALSE);
@@ -1061,7 +1061,7 @@ CreatePool(char *pool, char *path, char *driver)
 	/*
 	 * The following elements of the Handle structure could
 	 * be obtained by dereferencing the poolPtr.  They're
-	 * only needed to maintain the original Ns_DbHandle
+	 * only needed to maintain the original Dbi_Handle
 	 * structure definition which was designed to allow
 	 * handles outside of pools, a feature no longer supported.
 	 */
@@ -1101,7 +1101,7 @@ Connect(Handle *handlePtr)
 {
     int status;
 
-    status = NsDbOpen((Ns_DbHandle *) handlePtr);
+    status = DbiOpen((Dbi_Handle *) handlePtr);
     if (status != NS_OK) {
     	handlePtr->connected = NS_FALSE;
     	handlePtr->atime = handlePtr->otime = 0;
