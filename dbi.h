@@ -38,12 +38,12 @@
  */
 
 struct Handle;
-struct Dbi_Driver;
 
 typedef struct Pool {
 
     /* Publicly visible in a Dbi_Pool struct */
 
+    Dbi_Driver        *driver;
     char              *name;
     char              *description;
     char              *datasource;
@@ -57,7 +57,6 @@ typedef struct Pool {
 
     struct Handle     *firstPtr;
     struct Handle     *lastPtr;
-    struct Dbi_Driver *driverPtr;
     Ns_Mutex           lock;
     Ns_Cond            getCond;
     int                cache_handles;
@@ -77,18 +76,14 @@ typedef struct Handle {
 
     /* Publicly visible in a Dbi_Handle struct */
 
-    Dbi_Pool         *poolPtr;
+    Pool             *poolPtr;
     int               connected;
-    int               fetchingRows;
-    void             *arg;
+    void             *arg;  /* Driver private connection context. */
 
     /* Private to a Handle struct */
 
     struct Handle    *nextPtr;
-    int               numCols;
-    int               currentCol;
-    int               numRows;
-    int               currentRow;
+    struct Statement *stmtPtr;
     char              cExceptionCode[6];
     Ns_DString        dsExceptionMsg;
     time_t            otime;
@@ -99,13 +94,37 @@ typedef struct Handle {
 
 
 /*
+ * The following structure defines an SQL statement.
+ */
+
+typedef struct Statement {
+
+    /* Publicly visible in a Dbi_Statement struct */
+
+    Pool             *poolPtr;
+    Ns_DString        dsSql;
+    int               fetchingRows;
+    Tcl_HashTable     bindVars;
+    void             *arg;  /* Driver private statement context. */
+
+    /* Private to a Statement struct */
+
+    Handle           *handlePtr;
+    int               numCols;
+    int               currentCol;
+    int               numRows;
+    int               currentRow;
+} Statement;
+
+
+
+/*
  * init.c
  */
 
-
 extern void DbiInitPools(void);
 extern void DbiInitServer(char *server) _nsnonnull();
-extern void DbiLogSql(Dbi_Handle *, const char *sql) _nsnonnull();
+extern void DbiLogSql(Dbi_Statement *) _nsnonnull();
 extern void DbiDisconnect(Dbi_Handle *) _nsnonnull();
 
 /*
@@ -113,12 +132,9 @@ extern void DbiDisconnect(Dbi_Handle *) _nsnonnull();
  */
 
 extern Dbi_Driver *DbiLoadDriver(char *drivername) _nsnonnull();
-extern void DbiDriverInit(char *server, Dbi_Driver *driverPtr) _nsnonnull();
-extern inline Dbi_Driver *DbiGetDriver(Dbi_Handle *) _nsnonnull();
+extern void DbiDriverInit(char *server, Dbi_Driver *driver) _nsnonnull();
 extern int DbiOpen(Dbi_Handle *);
 extern void DbiClose(Dbi_Handle *) _nsnonnull();
-extern int DbiColumn(Dbi_Handle *, const char **column, int *len) _nsnonnull();
-extern int DbiValue(Dbi_Handle *, const char **value, int *len) _nsnonnull();
 
 /*
  * tclcmds.c

@@ -95,15 +95,15 @@ Dbi_QuoteValue(Ns_DString *pds, const char *string)
  */
 
 int
-Dbi_0or1Row(Dbi_Handle *handle, const char *sql, int *nrows, int *ncols)
+Dbi_0or1Row(Dbi_Handle *handle, Dbi_Statement *stmt, int *nrows, int *ncols)
 {
-    if (Dbi_Select(handle, sql, nrows, ncols) != NS_OK) {
+    if (Dbi_Select(handle, stmt, nrows, ncols) != NS_OK) {
         return NS_ERROR;
     }
     if (*nrows > 1) {
         Dbi_SetException(handle, DBI_SQLERRORCODE,
             "Query returned more than one row.");
-        Dbi_Flush(handle);
+        Dbi_Flush(stmt);
         return NS_ERROR;
     }
  
@@ -128,11 +128,11 @@ Dbi_0or1Row(Dbi_Handle *handle, const char *sql, int *nrows, int *ncols)
  */
 
 int
-Dbi_1Row(Dbi_Handle *handle, const char *sql, int *ncols)
+Dbi_1Row(Dbi_Handle *handle, Dbi_Statement *stmt, int *ncols)
 {
     int nrows;
 
-    if (Dbi_0or1Row(handle, sql, &nrows, ncols) != NS_OK) {
+    if (Dbi_0or1Row(handle, stmt, &nrows, ncols) != NS_OK) {
         return NS_ERROR;
     }
     if (nrows == 0) {
@@ -180,7 +180,7 @@ Dbi_SetException(Dbi_Handle *handle, const char *sqlstate, const char *fmt, ...)
         Ns_DStringVPrintf(ds, (char *) fmt, ap);
         va_end(ap);
         len = Ns_DStringLength(ds);
-        if (ds->string[len - 1] == '\n') {
+        while (ds->string[len - 1] == '\n') {
             Ns_DStringTrunc(ds, len - 1);
         }
     }
