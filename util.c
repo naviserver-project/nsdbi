@@ -286,23 +286,33 @@ Dbi_InterpretSqlFile(Dbi_Handle *handle, char *filename)
  *
  * Dbi_SetException --
  *
- *      Set the stored SQL exception code and message in the handle.
+ *      Set the stored SQL exception state and message in the handle.
  *
  * Results:
  *      None.
  *
  * Side effects:
- *      Code and message are updated.
+ *      State code and message are updated.
  *
  *----------------------------------------------------------------------
  */
 
 void
-Dbi_SetException(Dbi_Handle *handle, char *code, char *msg)
+Dbi_SetException(Dbi_Handle *handle, char *sqlstate, char *fmt, ...)
 {
-    strcpy(handle->cExceptionCode, code);
-    Ns_DStringFree(&(handle->dsExceptionMsg));
-    Ns_DStringAppend(&(handle->dsExceptionMsg), msg);
+    Ns_DString *ds = &handle->dsExceptionMsg;
+    va_list ap;
+    int len;
+
+    strcpy(handle->cExceptionCode, sqlstate);
+    Ns_DStringFree(ds);
+    va_start(ap, fmt);
+    Ns_DStringVPrintf(ds, fmt, ap);
+    va_end(ap);
+    len = Ns_DStringLength(ds);
+    if (ds->string[len - 1] == '\n') {
+        Ns_DStringTrunc(ds, len - 1);
+    }
 }
 
 

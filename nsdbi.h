@@ -188,7 +188,7 @@ NS_EXTERN void Dbi_QuoteValue(Ns_DString *pds, char *string);
 NS_EXTERN Ns_Set *Dbi_0or1Row(Dbi_Handle *handle, char *sql, int *nrows);
 NS_EXTERN Ns_Set *Dbi_1Row(Dbi_Handle *handle, char *sql);
 NS_EXTERN int Dbi_InterpretSqlFile(Dbi_Handle *handle, char *filename);
-NS_EXTERN void Dbi_SetException(Dbi_Handle *handle, char *code, char *msg);
+NS_EXTERN void Dbi_SetException(Dbi_Handle *handle, char *sqlstate, char *fmt, ...);
 NS_EXTERN Dbi_TableInfo *Dbi_NewTableInfo(char *table);
 NS_EXTERN void Dbi_FreeTableInfo(Dbi_TableInfo *tinfo);
 NS_EXTERN void Dbi_AddColumnInfo(Dbi_TableInfo *tinfo, Ns_Set *cinfo);

@@ -656,16 +656,15 @@ DbiOpen(Dbi_Handle *handle)
 {
     DbiDriver *driverPtr = DbiGetDriver(handle);
 
-    Ns_Log(Notice, "dbidrv: opening database %s: '%s'",
-           handle->poolPtr->driver, handle->poolPtr->datasource);
-    if (driverPtr == NULL ||
-        driverPtr->openProc == NULL ||
+    if (driverPtr->openProc == NULL ||
         (*driverPtr->openProc) (handle) != NS_OK) {
 
-        Ns_Log(Error, "dbidrv: failed to open database  %s: '%s'",
-               handle->poolPtr->driver, handle->poolPtr->datasource);
+        Ns_Log(Error, "nsdbi: failed to open handle in pool '%s': %s",
+               handle->poolPtr->name, handle->dsExceptionMsg);
         handle->connected = NS_FALSE;
         return NS_ERROR;
+    } else {
+        Ns_Log(Notice, "nsdbi: opened handle in pool '%s'", handle->poolPtr->name);
     }
 
     return NS_OK;
@@ -694,10 +693,8 @@ DbiClose(Dbi_Handle *handle)
 {
     DbiDriver *driverPtr = DbiGetDriver(handle);
 
-    if (handle->connected &&
-        driverPtr != NULL &&
-        driverPtr->closeProc != NULL) {
-
+    Ns_Log(Notice, "nsdbi: closing handle in pool '%s'", handle->poolPtr->name);
+    if (handle->connected && driverPtr->closeProc != NULL) {
         (*driverPtr->closeProc)(handle);
     }
 }
