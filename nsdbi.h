@@ -178,13 +178,6 @@ NS_EXTERN int Dbi_PoolTimedGetMultipleHandles(Dbi_Handle **handles, char *server
 NS_EXTERN int Dbi_BouncePool(char *pool);
 
 /*
- * tclcmds.c:
- */
-
-NS_EXTERN int Dbi_TclGetHandle(Tcl_Interp *interp, char *handleId,
-                               Dbi_Handle **handle);
-
-/*
  * util.c:
  */
 
