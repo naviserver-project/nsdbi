@@ -516,7 +516,7 @@ TclRowsCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *CONST o
 
 /*
  *----------------------------------------------------------------------
- * GetHandle --
+ * BGetHandle --
  *
  *      Common function to get a database handle for commands which need
  *      one.  Use server default pool if none specified.
@@ -611,13 +611,17 @@ GetHandle(InterpData *idataPtr, int objc, Tcl_Obj *CONST objv[])
      * Cache the handle for future use by this interp
      */
 
-    Ns_Log(Warning, "GetHandle: caching handle for pool %s", pool);
+    if (((Pool *)poolPtr)->cache_handles) {
+        Ns_Log(Warning, "GetHandle: caching handle for pool %s", pool);
 
-    hPtr = Tcl_CreateHashEntry(&idataPtr->handles, pool, &new);
-    Tcl_SetHashValue(hPtr, handlePtr);
-    if (!idataPtr->cleanup) {
-        Ns_TclRegisterDeferred(interp, ReleaseAllHandles, idataPtr);
-        idataPtr->cleanup = 1;
+        hPtr = Tcl_CreateHashEntry(&idataPtr->handles, pool, &new);
+        Tcl_SetHashValue(hPtr, handlePtr);
+        if (!idataPtr->cleanup) {
+            Ns_TclRegisterDeferred(interp, ReleaseAllHandles, idataPtr);
+            idataPtr->cleanup = 1;
+        }
+    } else {
+        Ns_Log(Warning, "GetHandle: caching turned off for pool %s", pool);
     }
 
     return handlePtr;
@@ -643,18 +647,13 @@ GetHandle(InterpData *idataPtr, int objc, Tcl_Obj *CONST objv[])
 static void
 ReleaseHandle(InterpData *idataPtr, Dbi_Handle *handle)
 {
-    Tcl_HashEntry *hPtr;
-    int release = 0;
+    Pool *poolPtr = (Pool *) handle->poolPtr;
 
-    if (release) {
-        hPtr = Tcl_FindHashEntry(&idataPtr->handles, handle->poolPtr->name);
-        if (hPtr != NULL) {
-            Tcl_DeleteHashEntry(hPtr);
-        }
-        Dbi_PoolPutHandle(handle);
-    } else {
+    if (poolPtr->cache_handles) {
         Dbi_Flush(handle);
         Dbi_ResetHandle(handle);
+    } else {
+        Dbi_PoolPutHandle(handle);
     }
 }
 

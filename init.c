@@ -856,6 +856,9 @@ CreatePool(char *pool, char *path, char *driver)
     Ns_MutexSetName2(&poolPtr->lock, "nsdbi", pool);
     Ns_CondInit(&poolPtr->getCond);
 
+    if (!Ns_ConfigGetBool(path, "cachehandles", &poolPtr->cache_handles)) {
+        poolPtr->cache_handles = 1;
+    }
     Ns_ConfigGetBool(path, "verbose", &poolPtr->fVerbose);
     Ns_ConfigGetBool(path, "logsqlerrors", &poolPtr->fVerboseError);
     if (!Ns_ConfigGetInt(path, "connections", &poolPtr->nhandles)

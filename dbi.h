@@ -60,6 +60,7 @@ typedef struct Pool {
     struct Dbi_Driver *driverPtr;
     Ns_Mutex           lock;
     Ns_Cond            getCond;
+    int                cache_handles;
     int                waiting;
     time_t             maxidle;
     time_t             maxopen;
