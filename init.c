@@ -302,7 +302,7 @@ Dbi_PoolPutHandle(Dbi_Handle *handle)
  *      seconds.
  *
  * Results:
- *      Pointer to Dbi_Handle or NULL on error or timeout.
+ *      NS_OK/NS_TIMEOUT/NS_ERROR.
  *
  * Side effects:
  *      Database may be opened if needed.
@@ -322,14 +322,11 @@ Dbi_PoolTimedGetHandle(Dbi_Handle **handlePtrPtr, Dbi_Pool *pool, int wait)
      * Wait until this thread can be the exclusive thread aquiring
      * handles, watching for timeout.
      */
-     
-    if (wait < 0) {
-        timePtr = NULL;
-    } else {
-        Ns_GetTime(&timeout);
-        Ns_IncrTime(&timeout, wait, 0);
-        timePtr = &timeout;
-    }
+
+    Ns_GetTime(&timeout);
+    Ns_IncrTime(&timeout, wait >= 0 ? wait : poolPtr->maxwait, 0);
+    timePtr = &timeout;
+
     status = NS_OK;
     Ns_MutexLock(&poolPtr->lock);
     while (status == NS_OK && poolPtr->firstPtr == NULL) {
@@ -350,14 +347,14 @@ Dbi_PoolTimedGetHandle(Dbi_Handle **handlePtrPtr, Dbi_Pool *pool, int wait)
      */
 
     if (handlePtr != NULL && handlePtr->connected == NS_FALSE) {
-        status = Connect(handlePtr);
+        if (Connect(handlePtr) != NS_OK) {
+            Ns_MutexLock(&poolPtr->lock);
+            ReturnHandle(handlePtr);
+            Ns_CondSignal(&poolPtr->getCond);
+            Ns_MutexUnlock(&poolPtr->lock);
+        }
     }
-    if (handlePtr != NULL && status != NS_OK) {
-        Ns_MutexLock(&poolPtr->lock);
-        ReturnHandle(handlePtr);
-        Ns_CondSignal(&poolPtr->getCond);
-        Ns_MutexUnlock(&poolPtr->lock);
-    } else {
+    if (handlePtr != NULL) {
         *handlePtrPtr = (Dbi_Handle *) handlePtr;
     }
 
@@ -370,13 +367,14 @@ Dbi_PoolTimedGetHandle(Dbi_Handle **handlePtrPtr, Dbi_Pool *pool, int wait)
  *
  * Dbi_PoolGetHandle --
  *
- *      Return a single handle from a pool.
+ *      Return a single handle from a pool, waiting at most maxwait
+ *      seconds specified by pool.
  *
  * Results:
- *      Pointer to Dbi_Handle or NULL on error.
+ *      NS_OK/NS_TIMEOUT/NS_ERROR.
  *
  * Side effects:
- *      Database may be opened if needed.
+ *      See Dbi_TimedGetHandle.
  *
  *----------------------------------------------------------------------
  */
@@ -384,7 +382,7 @@ Dbi_PoolTimedGetHandle(Dbi_Handle **handlePtrPtr, Dbi_Pool *pool, int wait)
 int
 Dbi_PoolGetHandle(Dbi_Handle **handlePtrPtr, Dbi_Pool *poolPtr)
 {
-    return Dbi_PoolTimedGetHandle(handlePtrPtr, poolPtr, 0);
+    return Dbi_PoolTimedGetHandle(handlePtrPtr, poolPtr, -1);
 }
 
 
@@ -393,7 +391,7 @@ Dbi_PoolGetHandle(Dbi_Handle **handlePtrPtr, Dbi_Pool *poolPtr)
  *
  * Dbi_BouncePool --
  *
- *      Close all handles in the pool.
+ *      Close all handles in the pool not currently being used.
  *
  * Results:
  *      NS_OK if pool was bounce, NS_ERROR otherwise.
@@ -410,9 +408,6 @@ Dbi_BouncePool(Dbi_Pool *pool)
     Pool    *poolPtr = (Pool *) pool;
     Handle  *handlePtr;
 
-    if (poolPtr == NULL) {
-        return NS_ERROR;
-    }
     Ns_MutexLock(&poolPtr->lock);
     poolPtr->stale_on_close++;
     handlePtr = poolPtr->firstPtr;
@@ -861,6 +856,10 @@ CreatePool(char *pool, char *path, char *driver)
         || poolPtr->nhandles <= 0) {
         Ns_Log(Notice, "nsdbi: setting connections for '%s' to %d", pool, 2);
         poolPtr->nhandles = 2;
+    }
+    if (!Ns_ConfigGetInt(path, "maxwait", (int *) &poolPtr->maxwait)
+        || poolPtr->maxwait < 0) {
+        poolPtr->maxwait = 10;
     }
     if (!Ns_ConfigGetInt(path, "maxidle", (int *) &poolPtr->maxidle)
         || poolPtr->maxidle < 0) {

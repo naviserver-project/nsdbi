@@ -61,6 +61,7 @@ typedef struct Pool {
     Ns_Mutex           lock;
     Ns_Cond            getCond;
     int                cache_handles;
+    int                maxwait;
     time_t             maxidle;
     time_t             maxopen;
     int                stale_on_close;
