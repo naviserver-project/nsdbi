@@ -64,7 +64,7 @@ static Ns_TclDeferProc ReleaseHandles;
 static Tcl_ObjCmdProc Tcl0or1rowCmd, Tcl1rowCmd, TclBindrowCmd, TclBouncepoolCmd,
     TclCancelCmd, TclDisconnectCmd, TclDmlCmd, TclErrorcodeCmd, TclErrormsgCmd,
     TclExceptionCmd, TclExecCmd, TclFlushCmd, TclGethandleCmd, TclGetrowCmd,
-    TclPoolCmd, TclPoolsCmd, TclReleasehandleCmd, TclResethandleCmd,
+    TclPoolCmd, TclPoolsCmd, TclReleasehandleCmd, TclResethandleCmd, TclRowsCmd,
     TclSelectCmd, TclSetexceptionCmd, TclVerboseCmd;
 
 /*
@@ -95,6 +95,7 @@ static struct Cmd {
     {"dbi_pools",         TclPoolsCmd},
     {"dbi_releasehandle", TclReleasehandleCmd},
     {"dbi_resethandle",   TclResethandleCmd},
+    {"dbi_rows",          TclRowsCmd},
     {"dbi_select",        TclSelectCmd},
     {"dbi_setexception",  TclSetexceptionCmd},
     {"dbi_verbose",       TclVerboseCmd},
@@ -1183,6 +1184,65 @@ TclResethandleCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *
         return DbiFail(interp, handle, Tcl_GetString(objv[0]));
     }
     Tcl_SetObjResult(interp, Tcl_NewIntObj(NS_OK));
+
+    return TCL_OK;
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * TclRowsCmd --
+ *
+ *      ???
+ *
+ * Results:
+ *      TCL_OK/TCL_ERROR.
+ *
+ * Side effects:
+ *      ???
+ *
+ *----------------------------------------------------------------------
+ */
+
+static int
+TclRowsCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
+{
+    InterpData  *idata = clientData;
+    Dbi_Handle  *handle;
+    Ns_Set      *columns;
+    Ns_Set       row;
+    int          status;
+    Tcl_Obj     *value, *result;
+
+    if (objc != 2) {
+        Tcl_WrongNumArgs(interp, 1, objv, "sql");
+        return TCL_ERROR;
+    }
+    if ((handle = Dbi_PoolGetHandle(Dbi_PoolDefault(idata->server))) == NULL) {
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("handle allocation failed", -1));
+        return TCL_ERROR;
+    }
+    columns = Dbi_Select(handle, Tcl_GetString(objv[1]));
+    if (columns == NULL) {
+        DbiFail(interp, handle, Tcl_GetString(objv[0]));
+        Dbi_PoolPutHandle(handle);
+        return TCL_ERROR;
+    }
+    result = Tcl_GetObjResult(interp);
+    while ((status = Dbi_GetRow(handle, &row)) == NS_OK) {
+        int i;
+        for (i = 0; i < Ns_SetSize(&row); ++i) {
+            value = Tcl_NewStringObj(Ns_SetValue(&row, i), -1);
+            Tcl_ListObjAppendElement(interp, result, value);
+        }
+    }
+    if (status != DBI_END_DATA) {
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("failed retrieving rows", -1));
+        Dbi_PoolPutHandle(handle);
+        return TCL_ERROR;
+    }
+    Dbi_PoolPutHandle(handle);
 
     return TCL_OK;
 }
