@@ -56,8 +56,8 @@ static void EnterDbHandle(InterpData *idataPtr, Tcl_Interp *interp, Dbi_Handle *
 static int  DbiGetHandle(InterpData *idataPtr, Tcl_Interp *interp, char *handleId,
                          Dbi_Handle **handle, Tcl_HashEntry **phe);
 static Tcl_InterpDeleteProc FreeData;
-static Tcl_ObjCmdProc DbiObjCmd, QuoteListToListObjCmd, GetCsvObjCmd, DbiErrorCodeObjCmd,
-    DbiErrorMsgObjCmd, GetCsvObjCmd, DbiConfigPathObjCmd, PoolDescriptionObjCmd;
+static Tcl_ObjCmdProc DbiObjCmd, DbiErrorCodeObjCmd,
+    DbiErrorMsgObjCmd, DbiConfigPathObjCmd, PoolDescriptionObjCmd;
 
 /*
  * Local variables defined in this file.
@@ -127,8 +127,6 @@ DbiAddCmds(Tcl_Interp *interp, void *arg)
     Tcl_SetAssocData(interp, datakey, FreeData, idataPtr);
 
     Tcl_CreateObjCommand(interp, "dbi", DbiObjCmd, idataPtr, NULL);
-    Tcl_CreateObjCommand(interp, "ns_quotelisttolist", QuoteListToListObjCmd, idataPtr, NULL);
-    Tcl_CreateObjCommand(interp, "ns_getcsv", GetCsvObjCmd, idataPtr, NULL);
     Tcl_CreateObjCommand(interp, "dbi_errorcode", DbiErrorCodeObjCmd, idataPtr, NULL);
     Tcl_CreateObjCommand(interp, "dbi_errormsg", DbiErrorMsgObjCmd, idataPtr, NULL);
     Tcl_CreateObjCommand(interp, "dbi_configpath", DbiConfigPathObjCmd, idataPtr, NULL);
@@ -737,204 +735,6 @@ PoolDescriptionObjCmd(ClientData data, Tcl_Interp *interp, int objc, Tcl_Obj *CO
         return TCL_ERROR;
     }
     Tcl_SetResult(interp, Dbi_PoolDescription(Tcl_GetString(objv[1])),TCL_STATIC);
-    return TCL_OK;
-}
-
-
-/*
- *----------------------------------------------------------------------
- *
- * QuoteListToListObjCmd --
- *
- *      Remove space, \ and ' characters in a string.
- *
- * Results:
- *      TCL_OK and set the stripped string as the Tcl result or TCL_ERROR
- *  if failure.
- *
- * Side effects:
- *      None.
- *
- *----------------------------------------------------------------------
- */
-
-static int
-QuoteListToListObjCmd(ClientData data, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
-{
-    char       *quotelist;
-    int         inquotes;
-    Ns_DString  ds;
-
-    if (objc != 2) {
-        Tcl_WrongNumArgs(interp, 1, objv, "quotelist");
-        return TCL_ERROR;
-    }
-    quotelist = Tcl_GetString(objv[1]);
-    inquotes = NS_FALSE;
-    Ns_DStringInit(&ds);
-    while (*quotelist != '\0') {
-        if (isspace(UCHAR(*quotelist)) && inquotes == NS_FALSE) {
-            if (ds.length != 0) {
-                Tcl_AppendElement(interp, ds.string);
-                Ns_DStringTrunc(&ds, 0);
-            }
-            while (isspace(UCHAR(*quotelist))) {
-                quotelist++;
-            }
-        } else if (*quotelist == '\\' && (*(quotelist + 1) != '\0')) {
-            Ns_DStringNAppend(&ds, quotelist + 1, 1);
-            quotelist += 2;
-        } else if (*quotelist == '\'') {
-            if (inquotes) {
-                /* Finish element */
-                Tcl_AppendElement(interp, ds.string);
-                Ns_DStringTrunc(&ds, 0);
-                inquotes = NS_FALSE;
-            } else {
-                /* Start element */
-                inquotes = NS_TRUE;
-            }
-            quotelist++;
-        } else {
-            Ns_DStringNAppend(&ds, quotelist, 1);
-            quotelist++;
-        }
-    }
-    if (ds.length != 0) {
-        Tcl_AppendElement(interp, ds.string);
-    }
-    Ns_DStringFree(&ds);
-    return TCL_OK;
-}
-
-
-/*
- *----------------------------------------------------------------------
- *
- * GetCsvObjCmd --
- *
- *      Implement the ns_getcvs command to read a line from a CSV file
- *      and parse the results into a Tcl list variable.
- *
- * Results:
- *      A standard Tcl result.
- *
- * Side effects:
- *      One line is read for given open channel.
- *
- *----------------------------------------------------------------------
- */
-
-static int
-GetCsvObjCmd(ClientData data, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
-{
-    int             ncols, inquote, quoted, blank;
-    char            c, *p, *delimiter = ",", *fileId, *varName;
-    const char     *result;
-    Tcl_DString     line, cols, elem;
-    Tcl_Channel         chan;
-
-    Ns_ObjvSpec opts[] = {
-        {"-delimiter", Ns_ObjvString,   &delimiter, NULL},
-        {"--",         Ns_ObjvBreak,    NULL,       NULL},
-        {NULL, NULL, NULL, NULL}
-    };
-    Ns_ObjvSpec args[] = {
-        {"fileId",     Ns_ObjvString, &fileId,   NULL},
-        {"varName",    Ns_ObjvString, &varName,  NULL},
-        {NULL, NULL, NULL, NULL}
-    };
-
-    if (Ns_ParseObjv(opts, args, interp, 1, objc, objv) != NS_OK) {
-        return TCL_ERROR;
-    }
-
-    if (Ns_TclGetOpenChannel(interp, fileId, 0, 0, &chan) == TCL_ERROR) {
-        return TCL_ERROR;
-    }
-
-    Tcl_DStringInit(&line);
-    if (Tcl_Gets(chan, &line) < 0) {
-        Tcl_DStringFree(&line);
-        if (!Tcl_Eof(chan)) {
-            Tcl_AppendResult(interp, "could not read from ", fileId, ": ", Tcl_PosixError(interp), NULL);
-            return TCL_ERROR;
-        }
-        Tcl_SetResult(interp, "-1", TCL_STATIC);
-        return TCL_OK;
-    }
-
-    Tcl_DStringInit(&cols);
-    Tcl_DStringInit(&elem);
-    ncols = 0;
-    inquote = 0;
-    quoted = 0;
-    blank = 1;
-    p = line.string;
-    while (*p != '\0') {
-        c = *p++;
-    loopstart:
-        if (inquote) {
-            if (c == '"') {
-                c = *p++;
-                if (c == '\0') {
-                    break;
-                }
-                if (c == '"') {
-                    Tcl_DStringAppend(&elem, &c, 1);
-                } else {
-                    inquote = 0;
-                    goto loopstart;
-                }
-            } else {
-                Tcl_DStringAppend(&elem, &c, 1);
-            }
-        } else {
-            if ((c == '\n') || (c == '\r')) {
-                while ((c = *p++) != '\0') {
-                    if ((c != '\n') && (c != '\r')) {
-                        --p;
-                        break;
-                    }
-                }
-                break;
-            }
-            if (c == '"') {
-                inquote = 1;
-                quoted = 1;
-                blank = 0;
-            } else if ((c == '\r') || (elem.length == 0 && isspace(UCHAR(c)))) {
-                continue;
-            } else if (strchr(delimiter,c) != NULL) {
-                if (!quoted) {
-                    Ns_StrTrimRight(elem.string);
-                }
-                Tcl_DStringAppendElement(&cols, elem.string);
-                Tcl_DStringTrunc(&elem, 0);
-                ncols++;
-                quoted = 0;
-            } else {
-                blank = 0;
-                Tcl_DStringAppend(&elem, &c, 1);
-            }
-        }
-    }
-    if (!quoted) {
-        Ns_StrTrimRight(elem.string);
-    }
-    if (!blank) {
-        Tcl_DStringAppendElement(&cols, elem.string);
-        ncols++;
-    }
-    result = Tcl_SetVar(interp, varName, cols.string, TCL_LEAVE_ERR_MSG);
-    Tcl_DStringFree(&line);
-    Tcl_DStringFree(&cols);
-    Tcl_DStringFree(&elem);
-    if (result == NULL) {
-        return TCL_ERROR;
-    }
-    Tcl_SetObjResult(interp, Tcl_NewIntObj(ncols));
-
     return TCL_OK;
 }
 
