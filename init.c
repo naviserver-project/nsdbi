@@ -78,16 +78,18 @@ typedef struct Handle {
     char           *datasource;
     char           *user;
     char           *password;
-    void           *connection;
     char           *poolname;
-    int             connected;
     int             verbose;
+    int             connected;
+    int             fetchingRows;
+    int             currentRow;
+    int             numRows;
+    void           *connection;
+    void           *statement;
+    void           *context;
     Ns_Set         *row;
     char            cExceptionCode[6];
     Ns_DString      dsExceptionMsg;
-    void           *context;
-    void           *statement;
-    int             fetchingRows;
     /* Members above must match Dbi_Handle */
     struct Handle  *nextPtr;
     struct Pool    *poolPtr;
