@@ -264,7 +264,7 @@ Dbi_DML(Dbi_Handle *handle, char *sql)
             status = NS_ERROR;
         }
     }
-    
+
     return status;
 }
 
@@ -304,8 +304,10 @@ Dbi_Select(Dbi_Handle *handle, char *sql)
         if (Dbi_Exec(handle, sql) == DBI_ROWS) {
             setPtr = Dbi_BindRow(handle);
         } else {
-            Dbi_SetException(handle, "DBI",
-                "Query was not a statement returning rows.");
+            if (handle->dsExceptionMsg.length == 0) {
+                Dbi_SetException(handle, "DBI",
+                    "Query was not a statement returning rows.");
+            }
         }
     }
 
@@ -433,7 +435,7 @@ Dbi_GetRow(Dbi_Handle *handle, Ns_Set *row)
             handle->fetchingRows = NS_FALSE;
         }
     }
-    
+
     return status;
 }
 
