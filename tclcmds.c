@@ -62,7 +62,7 @@ static Dbi_Pool* GetPool(InterpData *idataPtr, const char *pool) _nsnonnull(1);
 static Dbi_Statement *BindVars(Tcl_Interp *interp, Dbi_Pool *pool, Tcl_Obj *dictObjPtr, Tcl_Obj *sqlObjPtr) _nsnonnull();
 static char *GetVar(Tcl_Interp *interp, Tcl_Obj *dictObjPtr, char *name, int *len) _nsnonnull();
 static int DictRowResult(Tcl_Interp *interp, Dbi_Handle *handle, Dbi_Statement *stmt) _nsnonnull();
-static void ReleaseHandle(Dbi_Handle *handle) _nsnonnull();
+static void ReleaseHandle(InterpData *idataPtr, Dbi_Handle *handle) _nsnonnull();
 static int ReleaseAllHandles(InterpData *idataPtr) _nsnonnull();
 static int Exception(Tcl_Interp *interp, const char *code, const char *msg, ...)
      _nsprintflike(3, 4) _nsnonnull(1);
@@ -229,7 +229,7 @@ Tcl1rowCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *CONST o
     status = TCL_OK;
  done:
     Dbi_StatementFree(stmt);
-    ReleaseHandle(handle);
+    ReleaseHandle(idataPtr, handle);
     return status;
 }
 
@@ -259,7 +259,7 @@ Tcl0or1rowCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *CONS
     status = TCL_OK;
  done:
     Dbi_StatementFree(stmt);
-    ReleaseHandle(handle);
+    ReleaseHandle(idataPtr, handle);
     return status;
 }
 
@@ -319,7 +319,7 @@ TclRowsCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *CONST o
     result = TCL_OK;
  done:
     Dbi_StatementFree(stmt);
-    ReleaseHandle(handle);
+    ReleaseHandle(idataPtr, handle);
 
     return result;
 }
@@ -361,7 +361,7 @@ TclDmlCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *CONST ob
     result = TCL_OK;
  done:
     Dbi_StatementFree(stmt);
-    ReleaseHandle(handle);
+    ReleaseHandle(idataPtr, handle);
     return result;
 }
 
@@ -430,12 +430,12 @@ TclPoolCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *CONST o
 
     case IDriverIdx:
         Tcl_SetObjResult(interp, Tcl_NewStringObj((char *) Dbi_DriverName(handle), -1));
-        ReleaseHandle(handle);
+        ReleaseHandle(idataPtr, handle);
         break;
 
     case IDbtypeIdx:
         Tcl_SetObjResult(interp, Tcl_NewStringObj((char *) Dbi_DriverDbType(handle), -1));
-        ReleaseHandle(handle);
+        ReleaseHandle(idataPtr, handle);
         break;
 
     case IDatasourceIdx:
@@ -643,7 +643,7 @@ ParseOptions(InterpData *idataPtr, int objc, Tcl_Obj *CONST objv[],
     }
     stmt = BindVars(interp, handle->pool, dictObjPtr, objv[objc-1]);
     if (stmt == NULL) {
-        ReleaseHandle(handle);
+        ReleaseHandle(idataPtr, handle);
         return NS_ERROR;
     }
     *handlePtrPtr = handle;
@@ -675,7 +675,6 @@ GetHandle(InterpData *idataPtr, const char *pool, int timeout)
     Dbi_Pool      *poolPtr;
     Tcl_HashEntry *hPtr;
     char          *poolName;
-    int            new;
 
     if ((poolPtr = GetPool(idataPtr, pool)) == NULL) {
         return NULL;
@@ -707,19 +706,6 @@ GetHandle(InterpData *idataPtr, const char *pool, int timeout)
     default:
         Exception(interp, NULL, "database handle allocation failed");
         break;
-    }
-
-    /*
-     * Cache the handle for future use by this interp
-     */
-
-    if (handlePtr != NULL && ((Pool *)poolPtr)->cache_handles) {
-        hPtr = Tcl_CreateHashEntry(&idataPtr->handles, poolName, &new);
-        Tcl_SetHashValue(hPtr, handlePtr);
-        if (!idataPtr->cleanup) {
-            idataPtr->cleanup = 1;
-            Ns_TclRegisterDeferred(interp, CleanupInterp, idataPtr);
-        }
     }
 
     return handlePtr;
@@ -916,8 +902,8 @@ DictRowResult(Tcl_Interp *interp, Dbi_Handle *handle, Dbi_Statement *stmt)
  *----------------------------------------------------------------------
  * ReleaseHandle --
  *
- *      Release handle back to it's pool, unless handle caching is
- *      enabled, in which case just reset the handle.
+ *      Reset the handle and cache for this interp if caching is
+ *      enabled and this is a conn thread, otherwise return to pool.
  *
  * Results:
  *      None.
@@ -929,11 +915,20 @@ DictRowResult(Tcl_Interp *interp, Dbi_Handle *handle, Dbi_Statement *stmt)
  */
 
 static void
-ReleaseHandle(Dbi_Handle *handle)
+ReleaseHandle(InterpData *idataPtr, Dbi_Handle *handle)
 {
-    Pool *poolPtr = (Pool *) handle->pool;
+    Pool          *poolPtr = (Pool *) handle->pool;
+    Ns_Conn       *conn = Ns_GetConn();
+    Tcl_HashEntry *hPtr;
+    int            new;
 
-    if (poolPtr->cache_handles) {
+    if (poolPtr->cache_handles && conn) {
+        hPtr = Tcl_CreateHashEntry(&idataPtr->handles, poolPtr->name, &new);
+        Tcl_SetHashValue(hPtr, handle);
+        if (!idataPtr->cleanup) {
+            idataPtr->cleanup = 1;
+            Ns_TclRegisterDeferred(idataPtr->interp, CleanupInterp, idataPtr);
+        }
         Dbi_ResetHandle(handle);
     } else {
         Dbi_PoolPutHandle(handle);
