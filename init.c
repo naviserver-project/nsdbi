@@ -60,7 +60,6 @@ typedef struct Pool {
     struct Handle    *firstPtr;
     struct Handle    *lastPtr;
     Ns_Mutex           lock;
-    Ns_Cond            waitCond;
     Ns_Cond            getCond;
     int                waiting;
     time_t             maxidle;
@@ -110,9 +109,7 @@ static void      ReturnHandle(Handle * handle);
 static int       IsStale(Handle *, time_t now);
 static int       Connect(Handle *);
 static Pool     *CreatePool(char *pool, char *path, char *driver);
-static int       IncrCount(Pool *poolPtr, int incr);
 static ServData *GetServer(char *server);
-static Ns_TlsCleanup FreeTable;
 static Ns_Callback CheckPool;
 static Ns_ArgProc CheckArgProc;
 
@@ -120,9 +117,8 @@ static Ns_ArgProc CheckArgProc;
  * Static variables defined in this file
  */
 
-static Tcl_HashTable poolsTable;
 static Tcl_HashTable serversTable;
-static Ns_Tls tls;
+static Tcl_HashTable poolsTable;
 
 
 /*
@@ -218,7 +214,7 @@ Dbi_PoolDbType(Dbi_Pool *poolPtr)
     Dbi_Handle *handle;
     char       *dbtype;
 
-    if ((Dbi_PoolGetHandle(&handle, NULL, poolPtr)) != NS_OK) {
+    if ((Dbi_PoolGetHandle(&handle, poolPtr)) != NS_OK) {
         return NULL;
     }
     dbtype = Dbi_DriverDbType(handle);
@@ -250,7 +246,7 @@ Dbi_PoolDriverName(Dbi_Pool *poolPtr)
     Dbi_Handle *handle;
     char       *name;
 
-    if ((Dbi_PoolGetHandle(&handle, NULL, poolPtr)) != NS_OK) {
+    if ((Dbi_PoolGetHandle(&handle, poolPtr)) != NS_OK) {
         return NULL;
     }
     name = Dbi_DriverName(handle);
@@ -344,7 +340,6 @@ Dbi_PoolPutHandle(Dbi_Handle *handle)
     } else {
         handlePtr->atime = now;
     }
-    IncrCount(poolPtr, -1);
     Ns_MutexLock(&poolPtr->lock);
     ReturnHandle(handlePtr);
     if (poolPtr->waiting) {
@@ -372,11 +367,57 @@ Dbi_PoolPutHandle(Dbi_Handle *handle)
  */
 
 int
-Dbi_PoolTimedGetHandle(Dbi_Handle **handlePtrPtr, char *server,
-                       Dbi_Pool *poolPtr, int wait)
+Dbi_PoolTimedGetHandle(Dbi_Handle **handlePtrPtr, Dbi_Pool *pool, int wait)
 {
-    return Dbi_PoolTimedGetMultipleHandles(handlePtrPtr, server,
-                                           poolPtr, 1, wait);
+    Pool    *poolPtr = (Pool *) pool;
+    Handle  *handlePtr = NULL;
+    Ns_Time  timeout, *timePtr;
+    int      status;
+
+    /*
+     * Wait until this thread can be the exclusive thread aquiring
+     * handles, watching for timeout.
+     */
+     
+    if (wait < 0) {
+        timePtr = NULL;
+    } else {
+        Ns_GetTime(&timeout);
+        Ns_IncrTime(&timeout, wait, 0);
+        timePtr = &timeout;
+    }
+    status = NS_OK;
+    Ns_MutexLock(&poolPtr->lock);
+    while (status == NS_OK && poolPtr->firstPtr == NULL) {
+        status = Ns_CondTimedWait(&poolPtr->getCond, &poolPtr->lock, timePtr);
+    }
+    if (poolPtr->firstPtr != NULL) {
+        handlePtr = poolPtr->firstPtr;
+        poolPtr->firstPtr = handlePtr->nextPtr;
+        handlePtr->nextPtr = NULL;
+        if (poolPtr->lastPtr == handlePtr) {
+            poolPtr->lastPtr = NULL;
+        }
+    }
+    Ns_MutexUnlock(&poolPtr->lock);
+
+    /*
+     * If we got a handle, make sure its connected, otherwise return it.
+     */
+
+    if (handlePtr != NULL && handlePtr->connected == NS_FALSE) {
+        status = Connect(handlePtr);
+    }
+    if (status != NS_OK) {
+        Ns_MutexLock(&poolPtr->lock);
+        ReturnHandle(handlePtr);
+        Ns_CondSignal(&poolPtr->getCond);
+        Ns_MutexUnlock(&poolPtr->lock);
+    } else {
+        *handlePtrPtr = (Dbi_Handle *) handlePtr;
+    }
+
+    return status;
 }
 
 
@@ -397,175 +438,9 @@ Dbi_PoolTimedGetHandle(Dbi_Handle **handlePtrPtr, char *server,
  */
 
 int
-Dbi_PoolGetHandle(Dbi_Handle **handlePtrPtr, char *server,
-                  Dbi_Pool *poolPtr)
+Dbi_PoolGetHandle(Dbi_Handle **handlePtrPtr, Dbi_Pool *poolPtr)
 {
-    return Dbi_PoolTimedGetHandle(handlePtrPtr, server, poolPtr, 0);
-}
-
-
-/*
- *----------------------------------------------------------------------
- *
- * Dbi_PoolGetMultipleHandles --
- *
- *      Return 1 or more handles from a pool.
- *
- * Results:
- *      NS_OK if handles were allocated, NS_ERROR otherwise.
- *
- * Side effects:
- *      Given array of handles is updated with pointers to allocated
- *      handles.  Also, database may be opened if needed.
- *
- *----------------------------------------------------------------------
- */
-
-int
-Dbi_PoolGetMultipleHandles(Dbi_Handle **handles, char *server,
-                           Dbi_Pool *poolPtr, int nwant)
-{
-    return Dbi_PoolTimedGetMultipleHandles(handles, server,
-                                           poolPtr, nwant, 0);
-}
-
-
-/*
- *----------------------------------------------------------------------
- *
- * Dbi_PoolTimedGetMultipleHandles --
- *
- *      Return 1 or more handles from a pool within the given number
- *      of seconds.
- *
- * Results:
- *      NS_OK if the handlers where allocated, NS_TIMEOUT if the
- *      thread could not wait long enough for the handles, NS_ERROR
- *      otherwise.
- *
- * Side effects:
- *      Given array of handles is updated with pointers to allocated
- *      handles.  Also, database may be opened if needed.
- *
- *----------------------------------------------------------------------
- */
-
-int
-Dbi_PoolTimedGetMultipleHandles(Dbi_Handle **handles, char *server,
-                                Dbi_Pool *pool, int nwant, int wait)
-{
-    Handle    *handlePtr;
-    Handle   **handlesPtrPtr = (Handle **) handles;
-    Pool      *poolPtr = (Pool *) pool;
-    Ns_Time    timeout, *timePtr;
-    int        i, ngot, status;
-
-    /*
-     * Verify the pool exists and as available to this server.
-     * If a pool isn't specified, pick the default pool.
-     */
-
-    if (poolPtr == NULL) {
-        poolPtr = (Pool *) Dbi_PoolDefault(server);
-        if (poolPtr == NULL) {
-            Ns_Log(Error, "dbiinit: pool not specified and no default available");
-            return NS_ERROR;
-        }
-    }
-
-    /*
-     * Verify the number of available handles in the pool, and that
-     * the calling thread does not already own handles from this pool.
-     */
-
-    if (poolPtr->nhandles < nwant) {
-        Ns_Log(Error, "dbiinit: "
-               "failed to get %d handles from a dbi pool of only %d handles: '%s'",
-               nwant, poolPtr->nhandles, poolPtr->name);
-        return NS_ERROR;
-    }
-    ngot = IncrCount(poolPtr, nwant);
-    if (ngot > 0) {
-        Ns_Log(Error, "dbiinit: dbi handle limit exceeded: "
-               "thread already owns %d handle%s from pool '%s'",
-               ngot, ngot == 1 ? "" : "s", poolPtr->name);
-        IncrCount(poolPtr, -nwant);
-        return NS_ERROR;
-    }
-
-    /*
-     * Wait until this thread can be the exclusive thread aquireing
-     * handles and then wait until all requested handles are available,
-     * watching for timeout in either of these waits.
-     */
-
-    if (wait < 0) {
-        timePtr = NULL;
-    } else {
-        Ns_GetTime(&timeout);
-        Ns_IncrTime(&timeout, wait, 0);
-        timePtr = &timeout;
-    }
-    status = NS_OK;
-    Ns_MutexLock(&poolPtr->lock);
-    while (status == NS_OK && poolPtr->waiting) {
-        status = Ns_CondTimedWait(&poolPtr->waitCond, &poolPtr->lock, timePtr);
-    }
-    if (status == NS_OK) {
-        poolPtr->waiting = 1;
-        while (status == NS_OK && ngot < nwant) {
-            while (status == NS_OK && poolPtr->firstPtr == NULL) {
-                status = Ns_CondTimedWait(&poolPtr->getCond, &poolPtr->lock,
-                                          timePtr);
-            }
-            if (poolPtr->firstPtr != NULL) {
-                handlePtr = poolPtr->firstPtr;
-                poolPtr->firstPtr = handlePtr->nextPtr;
-                handlePtr->nextPtr = NULL;
-                if (poolPtr->lastPtr == handlePtr) {
-                    poolPtr->lastPtr = NULL;
-                }
-                handlesPtrPtr[ngot++] = handlePtr;
-            }
-        }
-        poolPtr->waiting = 0;
-        Ns_CondSignal(&poolPtr->waitCond);
-    }
-    Ns_MutexUnlock(&poolPtr->lock);
-
-    /*
-     * Handle special race condition where the final requested handle
-     * arrived just as the condition wait was timing out.
-     */
-
-    if (status == NS_TIMEOUT && ngot == nwant) {
-        status = NS_OK;
-    }
-
-    /*
-     * If status is still ok, connect any handles not already connected,
-     * otherwise return any allocated handles back to the pool, then
-     * update the final number of handles owned by this thread.
-     */
-
-    for (i = 0; status == NS_OK && i < ngot; ++i) {
-        handlePtr = handlesPtrPtr[i];
-        if (handlePtr->connected == NS_FALSE) {
-            status = Connect(handlePtr);
-        }
-    }
-    if (status != NS_OK) {
-        Ns_MutexLock(&poolPtr->lock);
-        while (ngot > 0) {
-            ReturnHandle(handlesPtrPtr[--ngot]);
-        }
-        if (poolPtr->waiting) {
-            Ns_CondSignal(&poolPtr->getCond);
-        }
-        Ns_MutexUnlock(&poolPtr->lock);
-        IncrCount(poolPtr, -nwant);
-    }
-    return status;
+    return Dbi_PoolTimedGetHandle(handlePtrPtr, poolPtr, 0);
 }
 
 
@@ -635,8 +510,6 @@ DbiInitPools(void)
     Ns_Set         *pools;
     char           *path, *pool, *driver;
     int             new, i;
-
-    Ns_TlsAlloc(&tls, FreeTable);
 
     /*
      * Attempt to create each database pool.
@@ -1061,7 +934,6 @@ CreatePool(char *pool, char *path, char *driver)
     poolPtr->driverPtr = driverPtr;
     Ns_MutexInit(&poolPtr->lock);
     Ns_MutexSetName2(&poolPtr->lock, "nsdbi", pool);
-    Ns_CondInit(&poolPtr->waitCond);
     Ns_CondInit(&poolPtr->getCond);
     poolPtr->datasource = datasource;
     poolPtr->name = pool;
@@ -1142,51 +1014,6 @@ Connect(Handle *handlePtr)
 /*
  *----------------------------------------------------------------------
  *
- * IncrCount --
- *
- *      Update per-thread count of allocated handles.
- *
- * Results:
- *      Previous count of allocated handles.
- *
- * Side effects:
- *      None.
- *
- *----------------------------------------------------------------------
- */
-
-static int
-IncrCount(Pool *poolPtr, int incr)
-{
-    Tcl_HashTable *tablePtr;
-    Tcl_HashEntry *hPtr;
-    int            prev, count, new;
-
-    tablePtr = Ns_TlsGet(&tls);
-    if (tablePtr == NULL) {
-        tablePtr = ns_malloc(sizeof(Tcl_HashTable));
-        Tcl_InitHashTable(tablePtr, TCL_ONE_WORD_KEYS);
-        Ns_TlsSet(&tls, tablePtr);
-    }
-    hPtr = Tcl_CreateHashEntry(tablePtr, (char *) poolPtr, &new);
-    if (new) {
-        prev = 0;
-    } else {
-        prev = (int)(intptr_t) Tcl_GetHashValue(hPtr);
-    }
-    count = prev + incr;
-    if (count == 0) {
-        Tcl_DeleteHashEntry(hPtr);
-    } else {
-        Tcl_SetHashValue(hPtr, (ClientData)(intptr_t) count);
-    }
-    return prev;
-}
-
-
-/*
- *----------------------------------------------------------------------
- *
  * GetServer --
  *
  *      Get per-server data.
@@ -1210,30 +1037,4 @@ GetServer(char *server)
         return Tcl_GetHashValue(hPtr);
     }
     return NULL;
-}
-
-
-/*
- *----------------------------------------------------------------------
- *
- * FreeTable --
- *
- *      Free the per-thread count of allocated handles table.
- *
- * Results:
- *      None.
- *
- * Side effects:
- *      None.
- *
- *----------------------------------------------------------------------
- */
-
-static void
-FreeTable(void *arg)
-{
-    Tcl_HashTable  *tablePtr = arg;
-
-    Tcl_DeleteHashTable(tablePtr);
-    ns_free(tablePtr);
 }

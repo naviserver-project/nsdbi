@@ -156,7 +156,7 @@ GetHandle(char *server, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
     }
 
     handlePtr = NULL;
-    switch (Dbi_PoolTimedGetHandle(&handlePtr, server, poolPtr, timeout)) {
+    switch (Dbi_PoolTimedGetHandle(&handlePtr, poolPtr, timeout)) {
     case NS_TIMEOUT:
         Exception(interp, "TIMEOUT", "wait for database handle timed out");
         break;
