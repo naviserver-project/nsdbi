@@ -288,9 +288,7 @@ Dbi_PoolPutHandle(Dbi_Handle *handle)
     }
     Ns_MutexLock(&poolPtr->lock);
     ReturnHandle(handlePtr);
-    if (poolPtr->waiting) {
-        Ns_CondSignal(&poolPtr->getCond);
-    }
+    Ns_CondSignal(&poolPtr->getCond);
     Ns_MutexUnlock(&poolPtr->lock);
 }
 
@@ -354,7 +352,7 @@ Dbi_PoolTimedGetHandle(Dbi_Handle **handlePtrPtr, Dbi_Pool *pool, int wait)
     if (handlePtr != NULL && handlePtr->connected == NS_FALSE) {
         status = Connect(handlePtr);
     }
-    if (status != NS_OK && handlePtr != NULL) {
+    if (handlePtr != NULL && status != NS_OK) {
         Ns_MutexLock(&poolPtr->lock);
         ReturnHandle(handlePtr);
         Ns_CondSignal(&poolPtr->getCond);
@@ -799,9 +797,7 @@ CheckPool(void *arg)
             ReturnHandle(handlePtr);
             handlePtr = nextPtr;
         }
-        if (poolPtr->waiting) {
-            Ns_CondSignal(&poolPtr->getCond);
-        }
+        Ns_CondSignal(&poolPtr->getCond);
         Ns_MutexUnlock(&poolPtr->lock);
     }
 }
