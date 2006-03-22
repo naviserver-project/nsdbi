@@ -137,7 +137,7 @@ Dbi_1Row(Dbi_Handle *handle, Dbi_Statement *stmt, int *ncols)
     }
     if (nrows == 0) {
         Dbi_SetException(handle, DBI_SQLERRORCODE,
-            "Query did not return a row.");
+            "Query was not a statement returning rows.");
         return NS_ERROR;
     }
 

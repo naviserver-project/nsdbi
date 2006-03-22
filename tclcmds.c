@@ -81,11 +81,11 @@ static int
 ReleaseHandles(InterpData *idataPtr) NS_GNUC_NONNULL(1);
 
 static int
-BindVars(Tcl_Interp *interp, Dbi_Statement *stmt, Tcl_Obj *dictObjPtr)
-     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2) NS_GNUC_NONNULL(3);
+BindVars(Tcl_Interp *interp, Dbi_Statement *stmt, char *array, char *set)
+     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
 
 static int
-SingleRowDictResult(Tcl_Interp *interp, Dbi_Handle *handle, Dbi_Statement *stmt)
+SingleRowResult(Tcl_Interp *interp, Dbi_Handle *handle, Dbi_Statement *stmt)
      NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2) NS_GNUC_NONNULL(3);
 
 static int
@@ -300,7 +300,7 @@ Tcl1rowCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *CONST o
         status = SqlException(interp, handle);
         goto done;
     }
-    status = SingleRowDictResult(interp, handle, stmt);
+    status = SingleRowResult(interp, handle, stmt);
  done:
     PutHandle(idataPtr, handle);
     return status;
@@ -322,7 +322,7 @@ Tcl0or1rowCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *CONS
         goto done;
     }
     if (nrows == 1) {
-        status = SingleRowDictResult(interp, handle, stmt);
+        status = SingleRowResult(interp, handle, stmt);
     }
  done:
     PutHandle(idataPtr, handle);
@@ -367,20 +367,23 @@ TclRowsCmd(ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *CONST o
     }
     if (nrows > 0) {
         listObjPtr = Tcl_GetObjResult(interp);
-        for (;;) {
-            switch (Dbi_NextValue(stmt, &value, &vLen, NULL, NULL)) {
-            case DBI_END_DATA:
-                goto done;
-            case NS_ERROR:
+        while (1) {
+            status = Dbi_NextValue(stmt, &value, &vLen, NULL, NULL);
+            if (status == NS_ERROR) {
                 status = SqlException(interp, handle);
-                goto done;
-            default:
-                Tcl_ListObjAppendElement(interp, listObjPtr, Tcl_NewStringObj(value, vLen));
+                break;
+            }
+            Tcl_ListObjAppendElement(interp, listObjPtr,
+                                     Tcl_NewStringObj(value, vLen));
+            if (status == DBI_END_DATA) {
+                status = TCL_OK;
+                break;
             }
         }
     }
  done:
     PutHandle(idataPtr, handle);
+
     return status;
 }
 
@@ -664,13 +667,16 @@ GetHandleForStmt(InterpData *idataPtr, int objc, Tcl_Obj *CONST objv[],
     Tcl_Interp    *interp = idataPtr->interp;
     Dbi_Handle    *handle;
     Dbi_Statement *stmt;
-    Tcl_Obj       *stmtObjPtr, *poolObjPtr = NULL, *dictObjPtr = NULL;
+    Tcl_Obj       *stmtObjPtr, *poolObjPtr = NULL;
+    char          *array = NULL, *set = NULL;
     int            timeout = -1;
+
     Ns_ObjvSpec opts[] = {
-        {"-pool",      Ns_ObjvObj,   &poolObjPtr, NULL},
-        {"-timeout",   Ns_ObjvInt,   &timeout,    NULL},
-        {"-bind",      Ns_ObjvObj,   &dictObjPtr, NULL},
-        {"--",         Ns_ObjvBreak, NULL,        NULL},
+        {"-pool",      Ns_ObjvObj,    &poolObjPtr, NULL},
+        {"-timeout",   Ns_ObjvInt,    &timeout,    NULL},
+        {"-bindarray", Ns_ObjvString, &array,      NULL},
+        {"-bindset",   Ns_ObjvString, &set,        NULL},
+        {"--",         Ns_ObjvBreak,  NULL,        NULL},
         {NULL, NULL, NULL, NULL}
     };
     Ns_ObjvSpec args[] = {
@@ -682,7 +688,7 @@ GetHandleForStmt(InterpData *idataPtr, int objc, Tcl_Obj *CONST objv[],
         return TCL_ERROR;
     }
     stmt = GetStmt(stmtObjPtr);
-    if (BindVars(interp, stmt, dictObjPtr) != TCL_OK) {
+    if (BindVars(interp, stmt, array, set) != TCL_OK) {
         return TCL_ERROR;
     }
     handle = GetHandle(idataPtr, poolObjPtr, timeout);
@@ -839,49 +845,57 @@ GetStmt(Tcl_Obj *objPtr)
  */
 
 static int
-BindVars(Tcl_Interp *interp, Dbi_Statement *stmt, Tcl_Obj *dictObjPtr)
+BindVars(Tcl_Interp *interp, Dbi_Statement *stmt,
+         char *array, char *set)
 {
     Tcl_HashSearch  search;
     Tcl_HashEntry  *hPtr;
-    Tcl_Obj        *nameObjPtr, *valueObjPtr;
-    char           *name, *value;
-    int             len, status = TCL_OK;
+    Ns_Set         *bindSet;
+    Tcl_Obj        *valObjPtr;
+    char           *key, *value;
+    int             len;
 
-    nameObjPtr = Tcl_NewObj();
+    if (set != NULL) {
+        if (Ns_TclGetSet2(interp, set, &bindSet) != TCL_OK) {
+            return TCL_ERROR;
+        }
+    }
+
     hPtr = Tcl_FirstHashEntry(&stmt->bindVars, &search);
     while (hPtr != NULL) {
-        name = Tcl_GetHashKey(&stmt->bindVars, hPtr);
-        Tcl_SetStringObj(nameObjPtr, name, -1);
+        key = Tcl_GetHashKey(&stmt->bindVars, hPtr);
+        value = NULL;
 
-        if (dictObjPtr != NULL) {
-            status = Tcl_DictObjGet(interp, dictObjPtr, nameObjPtr, &valueObjPtr);
+        if (bindSet != NULL) {
+            if ((value = Ns_SetGet(bindSet, key)) != NULL) {
+                len = strlen(value);
+            }
         } else {
-            valueObjPtr = Tcl_ObjGetVar2(interp, nameObjPtr, NULL, TCL_LEAVE_ERR_MSG);
-            if (valueObjPtr == NULL) {
-                status = TCL_ERROR;
+            valObjPtr = Tcl_GetVar2Ex(interp, array ? array : key,
+                                      array ? key : NULL, TCL_LEAVE_ERR_MSG);
+            if (valObjPtr != NULL) {
+                value = Tcl_GetStringFromObj(valObjPtr, &len);
             }
         }
-        if (status != TCL_OK) {
+        if (value == NULL) {
             Tcl_AddObjErrorInfo(interp, "\nnsdbi: bind variable not found: ", -1);
-            Tcl_AddObjErrorInfo(interp, name, -1);
-            goto done;
+            Tcl_AddObjErrorInfo(interp, key, -1);
+            return TCL_ERROR;
         }
-        value = Tcl_GetStringFromObj(valueObjPtr, &len);
-        Dbi_StatementBindValue(stmt, name, value, len);
+        
+        Dbi_StatementBindValue(stmt, key, value, len);
 
         hPtr = Tcl_NextHashEntry(&search);
     }
 
- done:
-    Tcl_DecrRefCount(nameObjPtr);
-    return status;
+    return TCL_OK;
 }
 
 
 /*
  *----------------------------------------------------------------------
  *
- * SingleRowDictResult --
+ * SingleRowResult --
  *
  *      Set the result of the given Tcl interp to a dict representing
  *      a single row result.
@@ -897,31 +911,26 @@ BindVars(Tcl_Interp *interp, Dbi_Statement *stmt, Tcl_Obj *dictObjPtr)
  */
 
 static int
-SingleRowDictResult(Tcl_Interp *interp, Dbi_Handle *handle, Dbi_Statement *stmt)
+SingleRowResult(Tcl_Interp *interp, Dbi_Handle *handle, Dbi_Statement *stmt)
 {
-    CONST char *column, *value;
-    int         cLen, vLen, status;
-    Tcl_Obj    *dictObjPtr, *colObjPtr, *valObjPtr;
+    Tcl_Obj    *resObjPtr, *valObjPtr;
+    CONST char *value;
+    int         vLen, status;
 
-    dictObjPtr = Tcl_NewDictObj();
+    resObjPtr = Tcl_GetObjResult(interp);
     do {
-        status = Dbi_NextValue(stmt, &value, &vLen, &column, &cLen);
-        if (status == NS_ERROR) {
-            break;
-        }
-        colObjPtr = Tcl_NewStringObj((char *) column, cLen);
-        valObjPtr = Tcl_NewStringObj((char *) value, vLen);
-        if (Tcl_DictObjPut(interp, dictObjPtr, colObjPtr, valObjPtr) != TCL_OK) {
-            status = NS_ERROR;
-            break;
+        status = Dbi_NextValue(stmt, &value, &vLen, NULL, NULL);
+        if (status != NS_ERROR) {
+            valObjPtr = Tcl_NewStringObj((char *) value, vLen);
+            if (Tcl_ListObjAppendElement(interp, resObjPtr, valObjPtr) != TCL_OK) {
+                status = NS_ERROR;
+            }
         }
     } while (status == NS_OK);
 
     if (status != DBI_END_DATA) {
-        Tcl_DecrRefCount(dictObjPtr);
         return SqlException(interp, handle);
     }
-    Tcl_SetObjResult(interp, dictObjPtr);
 
     return TCL_OK;
 }
