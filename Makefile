@@ -44,5 +44,21 @@ MODOBJS     = nsdbi.o
 
 TCL         = util.tcl
 
+BUILD       += nsdbitest.so
 
 include $(NAVISERVER)/include/Makefile.module
+
+
+
+nsdbitest.o: nsdbitest.c libnsdbi.so
+
+nsdbitest.so: nsdbitest.o
+	$(RM) nsdbitest.so
+	$(LDSO) $(LDFLAGS) -L./ -o nsdbitest.so nsdbitest.o -lnsdbi $(NSLIBS) $(LDRFLAG)$(INSTLIB) $(LDRFLAG)$(TCL_EXEC_PREFIX)/lib
+
+clean-mod:
+	$(RM) $(MOD) $(MODOBJS) nsdbitest.o nsdbitest.so
+
+
+test: all
+	LD_LIBRARY_PATH="./:$LD_LIBRARY_PATH" $(NSD) -c -d -t tests/config.tcl tests/all.tcl $(TESTFLAGS) $(TCLTESTARGS)

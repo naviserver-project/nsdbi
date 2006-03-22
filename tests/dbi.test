@@ -1,0 +1,118 @@
+#
+# Test Suite
+#
+
+
+package require tcltest 2.2
+namespace import -force ::tcltest::*
+
+eval ::tcltest::configure $argv
+
+
+
+test pools {two pools for testing} -body {
+    lsort [dbi_listpools]
+} -result {pool1 pool2}
+
+test defaultpool {default pool is a for testing} -body {
+    dbi_defaultpool
+} -result pool1
+
+test dbtype {dbtype of default pool} -body {
+    dbi_pool dbtype
+} -result dbname
+
+test driver {driver of default pool} -body {
+    dbi_pool driver
+} -result drivername
+
+test user {user of default pool} -body {
+    dbi_pool user
+} -match regexp -result {[A-z0-9]+}
+
+test password {password of default pool} -body {
+    dbi_pool password
+} -match regexp -result {[A-z0-9]+}
+
+test nhandles {nhandles of default pool} -body {
+    dbi_pool nhandles
+} -result 5
+
+test datasource {datasource of default pool} -body {
+    dbi_pool datasource
+} -match regexp -result {[A-z0-9]+}
+
+test description {description of default pool} -body {
+    dbi_pool description
+} -match regexp -result {[A-z0-9]+}
+
+
+
+test 0or1row-1 {found single column} -body {
+    dbi_0or1row {1 1}
+} -result v
+
+test 0or1row-2 {found multiple columns} -body {
+    dbi_0or1row {1 3}
+} -result {v v v}
+
+test 0or1row-3 {not found} -body {
+    dbi_0or1row {0 1}
+} -result {}
+
+test 0or1row-4 {query error} -body {
+    dbi_0or1row {ERROR}
+} -returnCodes error -result {nsdbitest error}
+
+
+
+test 1row-1 {found single column} -body {
+    dbi_1row {1 1}
+} -result v
+
+test 1row-2 {found multiple columns} -body {
+    dbi_1row {1 3}
+} -result {v v v}
+
+test 1row-3 {1row not found} -body {
+    dbi_1row {0 0}
+} -returnCodes error -result "Query was not a statement returning rows."
+
+test 1row-4 {query error} -body {
+    dbi_1row {ERROR}
+} -returnCodes error -result {nsdbitest error}
+
+
+#dbi_releasehandles
+
+
+test rows-1 {found 1 row, 1 column} -body {
+    dbi_rows {1 1}
+} -result v
+
+test rows-2 {found 1 row, 3 columns} -body {
+    dbi_rows {1 3}
+} -result {v v v}
+
+test rows-3 {found 2 rows, 1 column} -body {
+    dbi_rows {2 1}
+} -result {v v}
+
+test rows-4 {no rows} -body {
+    dbi_rows {0 0}
+} -result {}
+
+test rows-5 {query error} -body {
+    dbi_rows {select * from noexist}
+} -returnCodes error -result {nsdbitest error}
+
+
+
+test poolb {query from pool b} -body {
+    dbi_rows -pool pool2 {1 1}
+} -result v
+
+
+
+
+cleanupTests
