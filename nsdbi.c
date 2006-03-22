@@ -58,7 +58,7 @@ int Ns_ModuleVersion = 1;
  */
 
 int
-Ns_ModuleInit(CONST char *server, CONST char *module _nsunused)
+Ns_ModuleInit(CONST char *server, CONST char *module)
 {
     static int once;
 
@@ -68,8 +68,7 @@ Ns_ModuleInit(CONST char *server, CONST char *module _nsunused)
         once = 1;
     }
     DbiInitServer(server);
-    Ns_TclInitInterps(server, DbiAddCmds, server);
-    Ns_TclInitServerInterps(server, DbiAddTraces, server);
+    return Ns_TclRegisterTrace(server, DbiAddCmds, (char *) server, NS_TCL_TRACE_CREATE);
 
     return NS_OK;
 }

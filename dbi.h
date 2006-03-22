@@ -122,14 +122,15 @@ typedef struct Statement {
     /* Publicly visible in a Dbi_Statement struct */
 
     Pool             *poolPtr;
-    Ns_DString        dsSql;
+    Ns_DString        dsBoundSql; /* SQL with driver specific bind variable notation */
     int               fetchingRows;
     Tcl_HashTable     bindVars;
-    void             *arg;  /* Driver private statement context. */
+    void             *arg;        /* Driver statement context */
 
     /* Private to a Statement struct */
 
     Handle           *handlePtr;
+    Ns_DString        dsSql;      /* Original SQL statement */
     int               numCols;
     int               currentCol;
     int               numRows;
@@ -138,11 +139,12 @@ typedef struct Statement {
 
 
 /*
- * The following structure maintains per-server data.
+ * The following struct tracks which pools are
+ * available to a virtual server.
  */
 
 typedef struct ServerData {
-    char          *server;
+    CONST char    *server;
     Pool          *defpoolPtr;
     Tcl_HashTable  poolsTable;
 } ServerData;
@@ -153,34 +155,60 @@ typedef struct ServerData {
  * init.c
  */
 
-extern void DbiInitPools(void);
-extern Dbi_Pool *DbiGetPool(ServerData *sdataPtr, CONST char *poolname) _nsnonnull();
-extern void DbiInitServer(CONST char *server) _nsnonnull();
-extern ServerData *DbiGetServer(CONST char *server) _nsnonnull();
-extern void DbiLogSql(Dbi_Statement *) _nsnonnull();
+extern void
+DbiInitPools(void);
+
+extern Dbi_Pool *
+DbiGetPool(ServerData *sdataPtr, CONST char *poolname)
+     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
+
+extern void
+DbiInitServer(CONST char *server)
+     NS_GNUC_NONNULL(1);
+
+extern ServerData *
+DbiGetServer(CONST char *server)
+     NS_GNUC_NONNULL(1);
+
+extern void
+DbiLogSql(Dbi_Statement *)
+     NS_GNUC_NONNULL(1);
 
 /*
  * drv.c
  */
 
-extern Dbi_Driver *DbiLoadDriver(char *drivername) _nsnonnull();
-extern void DbiDriverInit(char *server, Dbi_Driver *driver) _nsnonnull();
-extern int DbiOpen(Dbi_Handle *);
-extern void DbiClose(Dbi_Handle *) _nsnonnull();
+extern Dbi_Driver *
+DbiLoadDriver(CONST char *drivername)
+     NS_GNUC_NONNULL(1);
+
+extern void
+DbiDriverInit(CONST char *server, Dbi_Driver *driver)
+     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
+
+extern int
+DbiOpen(Dbi_Handle *)
+     NS_GNUC_NONNULL(1);
+
+extern void
+DbiClose(Dbi_Handle *)
+     NS_GNUC_NONNULL(1);
+
+/*
+ * stmt.c
+ */
+
+extern int
+DbiStatementPrepare(Dbi_Statement *, Dbi_Handle *)
+     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
 
 /*
  * tclcmds.c
  */
 
+extern void DbiInitTclObjTypes(void);
 extern Ns_TclInterpInitProc DbiAddCmds;
 extern Ns_TclInterpInitProc DbiAddTraces;
-
-/*
- * tcltypes.c
- */
-
-extern void DbiInitTclObjTypes(void);
-extern Dbi_Pool *DbiGetPoolFromObj(Tcl_Interp *interp, ServerData *sdataPtr, Tcl_Obj *objPtr);
 
 
 #endif

@@ -14,8 +14,8 @@ NS_RCSID("@(#) $Header$");
  * Static functions defined in this file
  */
 
-static void ParseBindVars(Statement *stmtPtr, CONST char *sql, int len);
-static void DefineBindVar(Statement *stmtPtr, CONST char *name);
+static void ParseBindVars(Statement *stmtPtr) NS_GNUC_NONNULL(1);
+static void DefineBindVar(Statement *stmtPtr, CONST char *name) NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
 
 
 
@@ -24,28 +24,29 @@ static void DefineBindVar(Statement *stmtPtr, CONST char *name);
  *
  * Dbi_StatementAlloc --
  *
- *      Initialise a Dbi_Statement structure with the given SQL.
+ *      Create a Dbi_Statement structure from the given SQL string.
  *
  * Results:
- *      None.
+ *      Pointer to new Dbi_Statement.
  *
  * Side effects:
  *      Statement is parsed by driver and any bind variables
- *      are replaced.
+ *      are converted to driver specific notation.
  *
  *----------------------------------------------------------------------
  */
 
 Dbi_Statement *
-Dbi_StatementAlloc(Dbi_Pool *pool, CONST char *sql, int len)
+Dbi_StatementAlloc(CONST char *sql, int len)
 {
     Statement *stmtPtr;
 
     stmtPtr = ns_calloc(1, sizeof(Statement));
-    stmtPtr->poolPtr = (Pool *) pool;
     Ns_DStringInit(&stmtPtr->dsSql);
+    Ns_DStringInit(&stmtPtr->dsBoundSql);
     Tcl_InitHashTable(&stmtPtr->bindVars, TCL_STRING_KEYS);
-    ParseBindVars(stmtPtr, sql, len);
+    Ns_DStringNAppend(&stmtPtr->dsSql, sql, len);
+    ParseBindVars(stmtPtr);
 
     return (Dbi_Statement *) stmtPtr;
 }
@@ -76,12 +77,15 @@ Dbi_StatementFree(Dbi_Statement *stmt)
     Tcl_HashEntry  *hPtr;
 
     Dbi_Flush(stmt);
-    for_each_hash_entry(hPtr, &stmtPtr->bindVars, &search) {
+    hPtr = Tcl_FirstHashEntry(&stmtPtr->bindVars, &search);
+    while (hPtr != NULL) {
         valuePtr = Tcl_GetHashValue(hPtr);
         ns_free(valuePtr);
+        Tcl_NextHashEntry(&search);
     }
     Tcl_DeleteHashTable(&stmtPtr->bindVars);
     Ns_DStringFree(&stmtPtr->dsSql);
+    Ns_DStringFree(&stmtPtr->dsBoundSql);
     ns_free(stmtPtr);
 }
 
@@ -125,11 +129,43 @@ Dbi_StatementBindValue(Dbi_Statement *stmt, char *name, char *value, int len)
 /*
  *----------------------------------------------------------------------
  *
+ * DbiStatementPrepare --
+ *
+ *      Prepare a statement for execution with the given handle.
+ *
+ * Results:
+ *      NS_OK or NS_ERROR.
+ *
+ * Side effects:
+ *      Statement may be reparsed if statement was previously prepared
+ *      for a handle from a different pool.
+ *
+ *----------------------------------------------------------------------
+ */
+
+int
+DbiStatementPrepare(Dbi_Statement *stmt, Dbi_Handle *handle)
+{
+    Statement *stmtPtr = (Statement *) stmt;
+
+    if (stmtPtr->poolPtr == NULL
+        || stmtPtr->poolPtr != (Pool *) handle->pool) {
+
+        stmtPtr->poolPtr = (Pool *) handle->pool;
+        ParseBindVars(stmtPtr);
+    }
+    return NS_OK;
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
  * ParseBindVars --
  *
  *      Parse the given SQL string for bind variables of the form :name
  *      and call the driver for a replacement string.  Store the
- *      identified bind 
+ *      identified bind variables as hash table keys.
  *
  * Results:
  *      NS_OK or NS_ERROR.
@@ -141,34 +177,35 @@ Dbi_StatementBindValue(Dbi_Statement *stmt, char *name, char *value, int len)
  */
 
 static void
-ParseBindVars(Statement *stmtPtr, CONST char *sql, int len)
+ParseBindVars(Statement *stmtPtr)
 {
-    Dbi_Driver *driver = stmtPtr->poolPtr->driver;
-    Ns_DString  ds;
-    char       *p, *chunk, *bind, save;
-    int         quote = 0;
+    char       *sql, *p, *chunk, *bind, save;
+    int         len, quote;
 
-#define preveq(c) (p != ds.string && *(p-1) == (c))
-#define nexteq(c) (*(p+1) == (c))
-
-    if (driver->bindVarProc == NULL) {
-        Ns_DStringNAppend(&stmtPtr->dsSql, sql, len);
+    if (stmtPtr->poolPtr == NULL
+        || stmtPtr->poolPtr->driver->bindVarProc == NULL) {
         return;
     }
-    Ns_DStringInit(&ds);
-    Ns_DStringNAppend(&ds, sql, len);
-    for (p = chunk = ds.string, bind = NULL; len > 0; ++p, --len) {
+
+#define preveq(c) (p != sql && *(p-1) == (c))
+#define nexteq(c) (*(p+1) == (c))
+
+    Ns_DStringTrunc(&stmtPtr->dsBoundSql, 0);
+    sql = Ns_DStringValue(&stmtPtr->dsSql);
+    len = Ns_DStringLength(&stmtPtr->dsSql);
+    quote = 0;
+    for (p = chunk = sql, bind = NULL; len > 0; ++p, --len) {
         if (*p == ':' && !quote && !nexteq(':') && !preveq(':') && !preveq('\\')) {
             bind = p;
         } else if (*p == '\'') {
-            if (p == ds.string || !preveq('\\')) {
+            if (p == sql || !preveq('\\')) {
                 quote = !quote;
             }
         } else if (bind != NULL) {
             if (!(isalnum((int)*p) || *p == '_') && p > bind) {
                 /* append everything up to the beginning of the bind variable */
                 save = *bind, *bind = '\0';
-                Ns_DStringNAppend(&stmtPtr->dsSql, chunk, bind - chunk);
+                Ns_DStringNAppend(&stmtPtr->dsBoundSql, chunk, bind - chunk);
                 *bind = save;
                 chunk = p;
                 /* save the bind variable */
@@ -180,22 +217,22 @@ ParseBindVars(Statement *stmtPtr, CONST char *sql, int len)
         }
     }
     /* append remaining chunk */
-    Ns_DStringNAppend(&stmtPtr->dsSql, chunk, bind ? bind - chunk : p - chunk);
+    Ns_DStringNAppend(&stmtPtr->dsBoundSql, chunk, bind ? bind - chunk : p - chunk);
     /* check for trailing bindvar */
     if (bind != NULL && p > bind) {
         DefineBindVar(stmtPtr, ++bind);
     }
-    Ns_DStringFree(&ds);
 }
 
 static void
 DefineBindVar(Statement *stmtPtr, CONST char *name)
 {
-    Dbi_Driver    *driver = stmtPtr->poolPtr->driver;
+    Dbi_Driver    *driver;
     Tcl_HashEntry *hPtr;
     int new;
 
     hPtr = Tcl_CreateHashEntry(&stmtPtr->bindVars, name, &new);
     Tcl_SetHashValue(hPtr, NULL);
-    (*driver->bindVarProc)(&stmtPtr->dsSql, stmtPtr->bindVars.numEntries);
+    driver = stmtPtr->poolPtr->driver;
+    driver->bindVarProc(&stmtPtr->dsBoundSql, stmtPtr->bindVars.numEntries);
 }

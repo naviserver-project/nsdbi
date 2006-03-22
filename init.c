@@ -45,12 +45,29 @@ NS_RCSID("@(#) $Header$");
  * Local functions defined in this file
  */
 
-static void         ReturnHandle(Handle * handle) _nsnonnull();
-static int          IsStale(Handle *, time_t now) _nsnonnull();
-static int          Connect(Handle *) _nsnonnull();
-static void         Disconnect(Handle *) _nsnonnull();
-static Pool        *CreatePool(char *poolname, char *path, char *drivername) _nsnonnull();
-static void         CheckPool(Pool *poolPtr, int stale);
+static void
+ReturnHandle(Handle * handle)
+     NS_GNUC_NONNULL(1);
+
+static int
+IsStale(Handle *, time_t now)
+     NS_GNUC_NONNULL(1);
+
+static int
+Connect(Handle *)
+     NS_GNUC_NONNULL(1);
+
+static void
+Disconnect(Handle *)
+     NS_GNUC_NONNULL(1);
+
+static Pool *
+CreatePool(char *poolname, char *path, char *drivername)
+     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2) NS_GNUC_NONNULL(3);
+
+static void
+CheckPool(Pool *poolPtr, int stale);
+
 static Ns_Callback  ScheduledPoolCheck;
 static Ns_Callback  LogStats;
 static Ns_ArgProc   PoolCheckArgProc;
@@ -59,9 +76,9 @@ static Ns_ArgProc   PoolCheckArgProc;
  * Static variables defined in this file
  */
 
-static Tcl_HashTable serversTable;
-static Tcl_HashTable poolsTable;
-static CONST char *reasons[] = {"?", "bounced", "aged", "idle", "used"};
+static Tcl_HashTable  serversTable;
+static Tcl_HashTable  poolsTable;
+static CONST char    *reasons[] = {"?", "bounced", "aged", "idle", "used"};
 
 /*
  * Handle disconnection reasons.
@@ -218,7 +235,7 @@ Dbi_PoolDriverName(Dbi_Pool *poolPtr)
  *      to the supplied DString.
  *
  * Results:
- *      NS_ERROR if server doesn't exist.
+ *      NS_ERROR if server doesn't exist, NS_OK otherwise.
  *
  * Side effects:
  *      None.
@@ -237,10 +254,13 @@ Dbi_PoolList(Ns_DString *ds, CONST char *server)
     if ((sdataPtr = DbiGetServer(server)) == NULL) {
         return NS_ERROR;
     }
-    for_each_hash_entry(hPtr, &sdataPtr->poolsTable, &search) {
+    hPtr = Tcl_FirstHashEntry(&sdataPtr->poolsTable, &search);
+    while (hPtr != NULL) {
         poolPtr = Tcl_GetHashValue(hPtr);
         Ns_DStringAppendElement(ds, poolPtr->name);
+        hPtr = Tcl_NextHashEntry(&search);
     }
+
     return NS_OK;
 }
 
@@ -523,7 +543,7 @@ DbiInitPools(void)
  */
 
 void
-DbiInitServer(char *server)
+DbiInitServer(CONST char *server)
 {
     Pool           *poolPtr;
     ServerData     *sdataPtr;
@@ -563,11 +583,13 @@ DbiInitServer(char *server)
 
     if (pools != NULL && poolsTable.numEntries > 0) {
         if (STREQ(pools, "*")) {
-            for_each_hash_entry(hPtr, &poolsTable, &search) {
+            hPtr = Tcl_FirstHashEntry(&poolsTable, &search);
+            while (hPtr != NULL) {
                 poolPtr = Tcl_GetHashValue(hPtr);
                 DbiDriverInit(server, poolPtr->driver);
                 hPtr = Tcl_CreateHashEntry(&sdataPtr->poolsTable, poolPtr->name, &new);
                 Tcl_SetHashValue(hPtr, poolPtr);
+                hPtr = Tcl_NextHashEntry(&search);
             }
         } else {
             p = pools;
@@ -613,9 +635,11 @@ DbiInitServer(char *server)
 void
 DbiLogSql(Dbi_Statement *stmt)
 {
+    Statement *stmtPtr = (Statement *) stmt;
+
     if (stmt->pool->fVerbose) {
         Ns_Log(Notice, "nsdbi: pool: '%s' sql '%s'",
-               stmt->pool->name, Ns_DStringValue(&stmt->dsSql));
+               stmt->pool->name, Ns_DStringValue(&stmtPtr->dsSql));
     }
 }
 
@@ -1030,12 +1054,15 @@ LogStats(void *arg)
     Ns_DString      ds;
 
     Ns_DStringInit(&ds);
-    for_each_hash_entry(hPtr, &poolsTable, &search) {
+
+    hPtr = Tcl_FirstHashEntry(&poolsTable, &search);
+    while (hPtr != NULL) {
         poolPtr = Tcl_GetHashValue(hPtr);
         Dbi_PoolStats(&ds, (Dbi_Pool *) poolPtr);
         Ns_Log(Notice, "nsdbi: stats for pool '%s': %s",
                poolPtr->name, Ns_DStringValue(&ds));
         Ns_DStringTrunc(&ds, 0);
+        hPtr = Tcl_NextHashEntry(&search);
     }
     Ns_DStringFree(&ds);
 }

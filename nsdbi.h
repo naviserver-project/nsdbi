@@ -39,19 +39,19 @@
 #define NSDBI_H
 
 #include "ns.h"
-#include "nsattributes.h"
+
 
 /*
  * The following are dbi return codes.
  */
 
-#define DBI_DML                   1
-#define DBI_ROWS                  2
-#define DBI_LAST_COL              4
-#define DBI_END_DATA              8
-#define DBI_NO_DATA              16
+#define DBI_DML           0x01
+#define DBI_ROWS          0x02
+#define DBI_LAST_COL      0x04
+#define DBI_END_DATA      0x08
+#define DBI_NO_DATA       0x10
 
-#define DBI_READONLY             -3
+#define DBI_READONLY      -3
 
 
 /*
@@ -88,7 +88,7 @@ typedef struct Dbi_Handle {
 
 typedef struct Dbi_Statement {
     Dbi_Pool          *pool;
-    Ns_DString         dsSql;
+    Ns_DString         dsBoundSql;
     int                fetchingRows;
     Tcl_HashTable      bindVars;
     void               *arg;   /* Driver private statement context. */
@@ -109,17 +109,17 @@ typedef struct Dbi_BindValue {
  * drivers implement.
  */
 
-typedef int (Dbi_InitProc)            (CONST char *server, CONST char *module, CONST char *driver);
+typedef int         (Dbi_InitProc)    (CONST char *server, CONST char *module, CONST char *driver);
 typedef CONST char *(Dbi_NameProc)    (Dbi_Handle *);
 typedef CONST char *(Dbi_DbTypeProc)  (Dbi_Handle *);
-typedef int (Dbi_OpenProc)            (Dbi_Handle *);
-typedef void (Dbi_CloseProc)          (Dbi_Handle *);
-typedef int (Dbi_BindVarProc)         (Ns_DString *, int bindIdx);
-typedef int (Dbi_ExecProc)            (Dbi_Handle *, Dbi_Statement *, int *nrows, int *ncols);
-typedef int (Dbi_ValueProc)           (Dbi_Handle *, Dbi_Statement *, int rowIdx, int colIdx, CONST char **value, int *len);
-typedef int (Dbi_ColumnProc)          (Dbi_Handle *, Dbi_Statement *, int colIdx, CONST char **column, int *len);
-typedef void (Dbi_FlushProc)          (Dbi_Statement *);
-typedef int (Dbi_ResetProc)           (Dbi_Handle *);
+typedef int         (Dbi_OpenProc)    (Dbi_Handle *);
+typedef void        (Dbi_CloseProc)   (Dbi_Handle *);
+typedef int         (Dbi_BindVarProc) (Ns_DString *, int bindIdx);
+typedef int         (Dbi_ExecProc)    (Dbi_Handle *, Dbi_Statement *, int *nrows, int *ncols);
+typedef int         (Dbi_ValueProc)   (Dbi_Handle *, Dbi_Statement *, int rowIdx, int colIdx, CONST char **value, int *len);
+typedef int         (Dbi_ColumnProc)  (Dbi_Handle *, Dbi_Statement *, int colIdx, CONST char **column, int *len);
+typedef void        (Dbi_FlushProc)   (Dbi_Statement *);
+typedef int         (Dbi_ResetProc)   (Dbi_Handle *);
 
 
 /*
@@ -147,51 +147,137 @@ typedef struct Dbi_Driver {
  * drv.c:
  */
 
-NS_EXTERN int Dbi_RegisterDriver(Dbi_Driver *driver) _nsnonnull();
-NS_EXTERN CONST char *Dbi_DriverName(Dbi_Handle *) _nsnonnull();
-NS_EXTERN CONST char *Dbi_DriverDbType(Dbi_Handle *) _nsnonnull();
-NS_EXTERN int Dbi_DML(Dbi_Handle *, Dbi_Statement *stmt, int *nrows, int *ncols) _nsnonnull(1,2);
-NS_EXTERN int Dbi_Select(Dbi_Handle *, Dbi_Statement *, int *nrows, int *ncols) _nsnonnull(1,2);
-NS_EXTERN int Dbi_Exec(Dbi_Handle *, Dbi_Statement *, int *nrows, int *ncols) _nsnonnull(1,2);
-NS_EXTERN int Dbi_NextValue(Dbi_Statement *, CONST char **, int *, CONST char **, int *) _nsnonnull(1,2,3);
-NS_EXTERN void Dbi_Flush(Dbi_Statement *) _nsnonnull();
-NS_EXTERN int Dbi_ResetHandle(Dbi_Handle *) _nsnonnull();
+NS_EXTERN int
+Dbi_RegisterDriver(Dbi_Driver *driver)
+     NS_GNUC_NONNULL(1);
+
+NS_EXTERN CONST char *
+Dbi_DriverName(Dbi_Handle *)
+     NS_GNUC_NONNULL(1);
+
+NS_EXTERN CONST char *
+Dbi_DriverDbType(Dbi_Handle *)
+     NS_GNUC_NONNULL(1);
+
+NS_EXTERN int
+Dbi_DML(Dbi_Handle *, Dbi_Statement *stmt, int *nrows, int *ncols)
+     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
+
+NS_EXTERN int
+Dbi_Select(Dbi_Handle *, Dbi_Statement *, int *nrows, int *ncols)
+     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
+
+NS_EXTERN int
+Dbi_Exec(Dbi_Handle *, Dbi_Statement *, int *nrows, int *ncols)
+     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
+
+NS_EXTERN int
+Dbi_NextValue(Dbi_Statement *, CONST char **, int *, CONST char **, int *)
+     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2) NS_GNUC_NONNULL(3);
+
+NS_EXTERN void
+Dbi_Flush(Dbi_Statement *)
+     NS_GNUC_NONNULL(1);
+
+NS_EXTERN int
+Dbi_ResetHandle(Dbi_Handle *)
+     NS_GNUC_NONNULL(1);
 
 /*
  * init.c:
  */
 
-NS_EXTERN Dbi_Pool *Dbi_GetPool(CONST char *server, CONST char *pool) _nsnonnull();
-NS_EXTERN Dbi_Pool *Dbi_PoolDefault(CONST char *server) _nsnonnull();
-NS_EXTERN CONST char *Dbi_PoolDbType(Dbi_Pool *poolPtr) _nsnonnull();
-NS_EXTERN CONST char *Dbi_PoolDriverName(Dbi_Pool *poolPtr) _nsnonnull();
-NS_EXTERN int Dbi_PoolList(Ns_DString *ds, CONST char *server) _nsnonnull();
-NS_EXTERN void Dbi_PoolPutHandle(Dbi_Handle *handle) _nsnonnull();
-NS_EXTERN int Dbi_PoolGetHandle(Dbi_Handle **handlePtrPtr, Dbi_Pool *poolPtr) _nsnonnull();
-NS_EXTERN int Dbi_PoolTimedGetHandle(Dbi_Handle **handlePtrPtr, Dbi_Pool *poolPtr, int wait) _nsnonnull();
-NS_EXTERN void Dbi_BouncePool(Dbi_Pool *poolPtr) _nsnonnull();
-NS_EXTERN void Dbi_PoolStats(Ns_DString *ds, Dbi_Pool *poolPtr) _nsnonnull();
+NS_EXTERN Dbi_Pool *
+Dbi_GetPool(CONST char *server, CONST char *pool)
+     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
+
+NS_EXTERN Dbi_Pool *
+Dbi_PoolDefault(CONST char *server)
+     NS_GNUC_NONNULL(1);
+
+NS_EXTERN CONST char *
+Dbi_PoolDbType(Dbi_Pool *poolPtr)
+     NS_GNUC_NONNULL(1);
+
+NS_EXTERN CONST char *
+Dbi_PoolDriverName(Dbi_Pool *poolPtr)
+     NS_GNUC_NONNULL(1);
+
+NS_EXTERN int
+Dbi_PoolList(Ns_DString *ds, CONST char *server)
+     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
+
+NS_EXTERN void
+Dbi_PoolPutHandle(Dbi_Handle *handle)
+     NS_GNUC_NONNULL(1);
+
+NS_EXTERN int
+Dbi_PoolGetHandle(Dbi_Handle **handlePtrPtr, Dbi_Pool *poolPtr)
+     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
+
+NS_EXTERN int
+Dbi_PoolTimedGetHandle(Dbi_Handle **handlePtrPtr, Dbi_Pool *poolPtr, int wait)
+     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
+
+NS_EXTERN void
+Dbi_BouncePool(Dbi_Pool *poolPtr)
+     NS_GNUC_NONNULL(1);
+
+NS_EXTERN void
+Dbi_PoolStats(Ns_DString *ds, Dbi_Pool *poolPtr)
+     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
 
 /*
  * stmt.c
  */
 
-NS_EXTERN Dbi_Statement *Dbi_StatementAlloc(Dbi_Pool *, CONST char *sql, int len) _nsnonnull();
-NS_EXTERN void Dbi_StatementFree(Dbi_Statement *) _nsnonnull();
-NS_EXTERN int Dbi_StatementBindValue(Dbi_Statement *, char *name, char *value, int len) _nsnonnull();
+NS_EXTERN Dbi_Statement *
+Dbi_StatementAlloc(CONST char *sql, int len)
+     NS_GNUC_NONNULL(1);
+
+NS_EXTERN void
+Dbi_StatementFree(Dbi_Statement *)
+     NS_GNUC_NONNULL(1);
+
+NS_EXTERN int
+Dbi_StatementBindValue(Dbi_Statement *, char *name, char *value, int len)
+     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2) NS_GNUC_NONNULL(3);
 
 /*
  * util.c:
  */
 
-NS_EXTERN void Dbi_QuoteValue(Ns_DString *pds, CONST char *string);
-NS_EXTERN int Dbi_0or1Row(Dbi_Handle *handle, Dbi_Statement *stmt, int *nrows, int *ncols) _nsnonnull(1, 2);
-NS_EXTERN int Dbi_1Row(Dbi_Handle *handle, Dbi_Statement *stmt, int *ncols) _nsnonnull(1, 2);
-NS_EXTERN void Dbi_SetException(Dbi_Handle *handle, CONST char *sqlstate, CONST char *fmt, ...)
-     _nsprintflike(3, 4) _nsnonnull(1, 2);
-NS_EXTERN void Dbi_ResetException(Dbi_Handle *handle) _nsnonnull();
-NS_EXTERN char *Dbi_ExceptionCode(Dbi_Handle *handle) _nsnonnull();
-NS_EXTERN char *Dbi_ExceptionMsg(Dbi_Handle *handle) _nsnonnull();
-NS_EXTERN int Dbi_ExceptionPending(Dbi_Handle *handle) _nsnonnull();
+NS_EXTERN void
+Dbi_QuoteValue(Ns_DString *pds, CONST char *string)
+     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
+
+NS_EXTERN int
+Dbi_0or1Row(Dbi_Handle *handle, Dbi_Statement *stmt, int *nrows, int *ncols)
+     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
+
+NS_EXTERN int
+Dbi_1Row(Dbi_Handle *handle, Dbi_Statement *stmt, int *ncols)
+     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
+
+NS_EXTERN void
+Dbi_SetException(Dbi_Handle *handle, CONST char *sqlstate, CONST char *fmt, ...)
+     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2) NS_GNUC_PRINTF(3, 4);
+
+NS_EXTERN void
+Dbi_ResetException(Dbi_Handle *handle)
+     NS_GNUC_NONNULL(1);
+
+NS_EXTERN char *
+Dbi_ExceptionCode(Dbi_Handle *handle)
+     NS_GNUC_NONNULL(1);
+
+NS_EXTERN char *
+Dbi_ExceptionMsg(Dbi_Handle *handle)
+     NS_GNUC_NONNULL(1);
+
+NS_EXTERN int
+Dbi_ExceptionPending(Dbi_Handle *handle)
+     NS_GNUC_NONNULL(1);
+
 
 #endif /* NSDBI_H */
