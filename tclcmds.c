@@ -99,9 +99,6 @@ SqlException(Tcl_Interp *interp, Dbi_Handle *handle)
 static Ns_TclDeferProc         InterpCleanup;
 static Tcl_InterpDeleteProc    FreeInterpData;
 
-static Tcl_UpdateStringProc    UpdateStringOfPool;
-static Tcl_SetFromAnyProc      SetPoolFromAny;
-
 static Tcl_FreeInternalRepProc FreeStmt;
 static Tcl_DupInternalRepProc  DupStmt;
 static Tcl_UpdateStringProc    UpdateStringOfStmt;
@@ -117,14 +114,6 @@ static Tcl_ObjCmdProc
  */
 
 static char *datakey = "dbi:data";
-
-static Tcl_ObjType poolType = {
-    "nsdbi:pool",
-    (Tcl_FreeInternalRepProc *) NULL,
-    (Tcl_DupInternalRepProc *) NULL,
-    UpdateStringOfPool,
-    SetPoolFromAny
-};
 
 static Tcl_ObjType stmtType = {
     "nsdbi:statement",
@@ -182,7 +171,6 @@ static char *blockingCmds[] = {
 void
 DbiInitTclObjTypes()
 {
-    Tcl_RegisterObjType(&poolType);
     Tcl_RegisterObjType(&stmtType);
 }
 
@@ -219,7 +207,6 @@ DbiAddCmds(Tcl_Interp *interp, void *arg)
     Tcl_InitHashTable(&idataPtr->handles, TCL_STRING_KEYS);
     Tcl_SetAssocData(interp, datakey, FreeInterpData, idataPtr);
 
-    Tcl_RegisterObjType(&poolType);
     Tcl_RegisterObjType(&stmtType);
 
     for (i = 0; cmds[i].name != NULL; ++i) {
@@ -783,21 +770,27 @@ GetPool(InterpData *idataPtr, Tcl_Obj *objPtr)
     Tcl_Interp  *interp   = idataPtr->interp;
     ServerData  *sdataPtr = idataPtr->sdataPtr;
     Dbi_Pool    *pool;
+    const char  *poolType = "nsdbi:pool";
 
-    if (objPtr != NULL) {
-        if (objPtr->typePtr == &poolType
-            || SetPoolFromAny(interp, objPtr) == TCL_OK) {
-            return (Dbi_Pool *) objPtr->internalRep.otherValuePtr;
+    if (objPtr == NULL) {
+        pool = (Dbi_Pool *) sdataPtr->defpoolPtr;
+        if (pool == NULL) {
+            Tcl_AppendToObj(Tcl_GetObjResult(interp),
+                "no pool specified and no default configured",
+                -1);
+            return NULL;
         }
-        return NULL;
+    } else if (Ns_TclGetOpaqueFromObj(objPtr, poolType, (void **) &pool) != TCL_OK) {
+        pool = DbiGetPool(sdataPtr, Tcl_GetString(objPtr));
+        if (pool == NULL) {
+            Tcl_AppendToObj(Tcl_GetObjResult(interp),
+                "invalid pool name or pool not available to virtual server",
+                -1);
+            return NULL;
+        }
+        Ns_TclSetOpaqueObj(objPtr, poolType, pool);
     }
-    pool = (Dbi_Pool *) sdataPtr->defpoolPtr;
-    if (pool == NULL) {
-        Tcl_AppendToObj(Tcl_GetObjResult(interp),
-                        "no pool specified and no default configured",
-                        -1);
-        return NULL;
-    }
+
     return pool;
 }
 
@@ -1114,71 +1107,6 @@ FreeInterpData(ClientData arg, Tcl_Interp *interp)
     (void) ReleaseHandles(idataPtr);
     Tcl_DeleteHashTable(&idataPtr->handles);
     ns_free(idataPtr);
-}
-
-
-/*
- *----------------------------------------------------------------------
- * UpdateStringOfPool --
- *
- *     This procedure is called to convert a Tcl object from pool
- *     internal form to it's string form: the name of the pool.
- *
- * Results:
- *      None.
- *
- * Side effects:
- *      The string representation of the object is updated.
- *
- *----------------------------------------------------------------------
- */
-
-static void
-UpdateStringOfPool(Tcl_Obj *objPtr)
-{
-    Dbi_Pool     *pool;
-
-    pool = (Dbi_Pool *) objPtr->internalRep.otherValuePtr;
-    Ns_TclSetStringRep(objPtr, pool->name, -1);
-}
-
-
-/*
- *----------------------------------------------------------------------
- * SetPoolFromAny --
- *
- *      Attempt to convert a Tcl object to the nsdbi:pool type.
- *
- * Results:
- *      TCL_OK or TCL_ERROR.
- *
- * Side effects:
- *      None.
- *
- *----------------------------------------------------------------------
- */
-
-static int
-SetPoolFromAny(Tcl_Interp *interp, Tcl_Obj *objPtr)
-{
-    InterpData *idataPtr;
-    ServerData *sdataPtr;
-    Dbi_Pool   *pool;
-    char       *poolname;
-
-    idataPtr = (InterpData *) Tcl_GetAssocData(interp, datakey, NULL);
-    sdataPtr = idataPtr->sdataPtr;
-
-    poolname = Tcl_GetString(objPtr);
-    pool = DbiGetPool(sdataPtr, poolname);
-    if (pool == NULL) {
-        Tcl_AppendToObj(Tcl_GetObjResult(interp),
-                        "invalid pool name or pool not available to virtual server",
-                        -1);
-        return TCL_ERROR;
-    }
-    Ns_TclSetOtherValuePtr(objPtr, &poolType, pool);
-    return TCL_OK;
 }
 
 

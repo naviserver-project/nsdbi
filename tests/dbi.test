@@ -113,6 +113,13 @@ test poolb {query from pool b} -body {
 } -result v
 
 
+test poolhandle-1 {cache pool pointer in pool name obj} -body {
+    set poolname pool1
+    dbi_rows -pool $poolname {1 1}
+    dbi_rows -pool $poolname {1 1}
+    set poolname
+} -result pool1
+
 
 
 cleanupTests

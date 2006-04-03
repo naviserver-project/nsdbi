@@ -26,7 +26,7 @@ ns_param   server1        "Server One"
 #
 
 ns_section "ns/dbi/drivers"
-ns_param   dbitest        ../nsdbitest.so
+ns_param   dbitest        $homedir/nsdbitest.so
 
 ns_section "ns/dbi/pools"
 ns_param   pool1          "Pool One Description"
