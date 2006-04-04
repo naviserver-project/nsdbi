@@ -113,27 +113,36 @@ Dbi_Pool *
 Dbi_GetPool(CONST char *server, CONST char *poolname)
 {
     ServerData *sdataPtr;
-    Dbi_Pool   *poolPtr;
+    Dbi_Pool   *pool;
 
     if ((sdataPtr = DbiGetServer(server)) == NULL) {
         Ns_Log(Error, "nsdbi: invalid server '%s' while getting pool '%s'", server, poolname);
         return NULL;
     }
-    if ((poolPtr = DbiGetPool(sdataPtr, poolname)) == NULL) {
-        Ns_Log(Error, "nsdbi: invalid pool '%s' for server '%s'", poolname, server);
-        return NULL;
+    pool = DbiGetPool(sdataPtr, poolname);
+    if (pool == NULL) {
+        if (poolname == NULL) {
+            Ns_Log(Error, "nsdbi: no default pool for server '%s'", server); 
+        } else {
+            Ns_Log(Error, "nsdbi: invalid pool '%s' for server '%s'", poolname, server);
+        }
     }
-    return poolPtr;
-
+    return pool;
 }
 
 Dbi_Pool *
 DbiGetPool(ServerData *sdataPtr, CONST char *poolname)
 {
-   Tcl_HashEntry *hPtr;
+   Tcl_HashEntry  *hPtr;
+   Dbi_Pool       *pool;
 
-   hPtr = Tcl_FindHashEntry(&sdataPtr->poolsTable, poolname);
-   return hPtr ? Tcl_GetHashValue(hPtr) : NULL;
+   if (poolname == NULL) {
+       pool = (Dbi_Pool *) sdataPtr->defpoolPtr;
+   } else {
+       hPtr = Tcl_FindHashEntry(&sdataPtr->poolsTable, poolname);
+       pool = hPtr ? Tcl_GetHashValue(hPtr) : NULL;
+   }
+   return pool;
 }
 
 
@@ -156,8 +165,9 @@ DbiGetPool(ServerData *sdataPtr, CONST char *poolname)
 Dbi_Pool *
 Dbi_PoolDefault(CONST char *server)
 {
-    ServerData *sdataPtr = DbiGetServer(server);
+    ServerData *sdataPtr;
 
+    sdataPtr = DbiGetServer(server);
     return (sdataPtr ? (Dbi_Pool *) sdataPtr->defpoolPtr : NULL);
 }
 
@@ -268,47 +278,24 @@ Dbi_PoolList(Ns_DString *ds, CONST char *server)
 /*
  *----------------------------------------------------------------------
  *
- * Dbi_PoolPutHandle --
+ * Dbi_PoolGetHandle --
  *
- *      Cleanup and then return a handle to its pool.
+ *      Get a single handle from a pool, waiting at most maxwait
+ *      seconds specified by pool.
  *
  * Results:
- *      None.
+ *      NS_OK/NS_TIMEOUT/NS_ERROR.
  *
  * Side effects:
- *      Handle is flushed, reset, and possibly closed as required.
+ *      See Dbi_TimedGetHandle.
  *
  *----------------------------------------------------------------------
  */
 
-void
-Dbi_PoolPutHandle(Dbi_Handle *handle)
+int
+Dbi_PoolGetHandle(Dbi_Handle **handlePtrPtr, Dbi_Pool *poolPtr)
 {
-    Handle *handlePtr = (Handle *) handle;
-    Pool   *poolPtr = (Pool *) handlePtr->poolPtr;
-    time_t  now;
-
-    /*
-     * Cleanup the handle.
-     */
-
-    Dbi_ResetHandle(handle);
-
-    /*
-     * Close the handle if it's stale, otherwise update
-     * the last access time.
-     */
-
-    time(&now);
-    if (IsStale(handlePtr, now)) {
-        Disconnect(handlePtr);
-    } else {
-        handlePtr->atime = now;
-    }
-    Ns_MutexLock(&poolPtr->lock);
-    ReturnHandle(handlePtr);
-    Ns_CondSignal(&poolPtr->getCond);
-    Ns_MutexUnlock(&poolPtr->lock);
+    return Dbi_PoolTimedGetHandle(handlePtrPtr, poolPtr, -1);
 }
 
 
@@ -317,7 +304,7 @@ Dbi_PoolPutHandle(Dbi_Handle *handle)
  *
  * Dbi_PoolTimedGetHandle --
  *
- *      Return a single handle from a pool within the given number of
+ *      Get a single handle from a pool within the given number of
  *      seconds.
  *
  * Results:
@@ -392,24 +379,47 @@ Dbi_PoolTimedGetHandle(Dbi_Handle **handlePtrPtr, Dbi_Pool *pool, int wait)
 /*
  *----------------------------------------------------------------------
  *
- * Dbi_PoolGetHandle --
+ * Dbi_PoolPutHandle --
  *
- *      Return a single handle from a pool, waiting at most maxwait
- *      seconds specified by pool.
+ *      Cleanup the handle and return it to its pool.
  *
  * Results:
- *      NS_OK/NS_TIMEOUT/NS_ERROR.
+ *      None.
  *
  * Side effects:
- *      See Dbi_TimedGetHandle.
+ *      Handle is flushed, reset, and possibly closed as required.
  *
  *----------------------------------------------------------------------
  */
 
-int
-Dbi_PoolGetHandle(Dbi_Handle **handlePtrPtr, Dbi_Pool *poolPtr)
+void
+Dbi_PoolPutHandle(Dbi_Handle *handle)
 {
-    return Dbi_PoolTimedGetHandle(handlePtrPtr, poolPtr, -1);
+    Handle *handlePtr = (Handle *) handle;
+    Pool   *poolPtr   = (Pool *) handlePtr->poolPtr;
+    time_t  now;
+
+    /*
+     * Cleanup the handle.
+     */
+
+    Dbi_ResetHandle(handle);
+
+    /*
+     * Close the handle if it's stale, otherwise update
+     * the last access time.
+     */
+
+    time(&now);
+    if (IsStale(handlePtr, now)) {
+        Disconnect(handlePtr);
+    } else {
+        handlePtr->atime = now;
+    }
+    Ns_MutexLock(&poolPtr->lock);
+    ReturnHandle(handlePtr);
+    Ns_CondSignal(&poolPtr->getCond);
+    Ns_MutexUnlock(&poolPtr->lock);
 }
 
 
@@ -418,7 +428,7 @@ Dbi_PoolGetHandle(Dbi_Handle **handlePtrPtr, Dbi_Pool *poolPtr)
  *
  * Dbi_BouncePool --
  *
- *      Close all handles in the pool not currently being used.
+ *      Close all handles in the pool.
  *
  * Results:
  *      None.
