@@ -1061,8 +1061,9 @@ Connect(Handle *handlePtr)
 
     status = DbiOpen((Dbi_Handle *) handlePtr);
     if (status != NS_OK) {
-        handlePtr->connected = NS_FALSE;
         handlePtr->atime = handlePtr->otime = 0;
+        Ns_Log(Error, "nsdbi: failed to open connection for handle in pool '%s'",
+               poolPtr->name);
     } else {
         handlePtr->connected = NS_TRUE;
         handlePtr->atime = handlePtr->otime = time(NULL);
