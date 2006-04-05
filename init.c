@@ -68,9 +68,9 @@ CreatePool(char *poolname, char *path, char *drivername)
 static void
 CheckPool(Pool *poolPtr, int stale);
 
-static Ns_Callback  ScheduledPoolCheck;
-static Ns_Callback  LogStats;
-static Ns_ArgProc   PoolCheckArgProc;
+static Ns_Callback     ScheduledPoolCheck;
+static Ns_ShutdownProc LogStats;
+static Ns_ArgProc      PoolCheckArgProc;
 
 /*
  * Static variables defined in this file
@@ -78,7 +78,8 @@ static Ns_ArgProc   PoolCheckArgProc;
 
 static Tcl_HashTable  serversTable;
 static Tcl_HashTable  poolsTable;
-static CONST char    *reasons[] = {"?", "bounced", "aged", "idle", "used"};
+static const char    *reasons[] = {"?", "bounced", "aged", "idle", "used"};
+static Ns_Cls         handleCls; /* Cache a single handle for current conn. */
 
 /*
  * Handle disconnection reasons.
@@ -280,22 +281,22 @@ Dbi_PoolList(Ns_DString *ds, CONST char *server)
  *
  * Dbi_PoolGetHandle --
  *
- *      Get a single handle from a pool, waiting at most maxwait
- *      seconds specified by pool.
+ *      Get a single handle from a pool, waiting forever or the default
+ *      timeout for the pool.
  *
  * Results:
- *      NS_OK/NS_TIMEOUT/NS_ERROR.
+ *      NS_OK / NS_TIMEOUT / NS_ERROR.
  *
  * Side effects:
- *      See Dbi_TimedGetHandle.
+ *      See Dbi_PoolTimedGetHandle.
  *
  *----------------------------------------------------------------------
  */
 
 int
-Dbi_PoolGetHandle(Dbi_Handle **handlePtrPtr, Dbi_Pool *poolPtr)
+Dbi_PoolGetHandle(Dbi_Handle **handlePtrPtr, Dbi_Pool *pool)
 {
-    return Dbi_PoolTimedGetHandle(handlePtrPtr, poolPtr, -1);
+    return Dbi_PoolTimedGetHandle(handlePtrPtr, pool, -1);
 }
 
 
@@ -319,10 +320,10 @@ Dbi_PoolGetHandle(Dbi_Handle **handlePtrPtr, Dbi_Pool *poolPtr)
 int
 Dbi_PoolTimedGetHandle(Dbi_Handle **handlePtrPtr, Dbi_Pool *pool, int wait)
 {
-    Pool    *poolPtr = (Pool *) pool;
-    Handle  *handlePtr = NULL;
-    Ns_Time  timeout, *timePtr;
-    int      status;
+    Pool       *poolPtr   = (Pool *) pool;
+    Handle     *handlePtr;
+    Ns_Time     timeout, *timePtr;
+    int         status;
 
     /*
      * Wait until this thread can be the exclusive thread aquiring
@@ -352,6 +353,7 @@ Dbi_PoolTimedGetHandle(Dbi_Handle **handlePtrPtr, Dbi_Pool *pool, int wait)
         handlePtr->n = poolPtr->nhandles - poolPtr->npresent;
         handlePtr->stale_on_close = poolPtr->stale_on_close;
     } else {
+        handlePtr = NULL;
         poolPtr->stats.misses++;
     }
     Ns_MutexUnlock(&poolPtr->lock);
@@ -395,9 +397,18 @@ Dbi_PoolTimedGetHandle(Dbi_Handle **handlePtrPtr, Dbi_Pool *pool, int wait)
 void
 Dbi_PoolPutHandle(Dbi_Handle *handle)
 {
-    Handle *handlePtr = (Handle *) handle;
-    Pool   *poolPtr   = (Pool *) handlePtr->poolPtr;
-    time_t  now;
+    Handle  *handlePtr = (Handle *) handle;
+    Pool    *poolPtr   = (Pool *) handlePtr->poolPtr;
+    time_t   now;
+
+    /*
+     * Remove from connection cache.
+     */
+
+    if (handlePtr->conn != NULL) {
+        Ns_ClsSet(&handleCls, handlePtr->conn, NULL);
+        handlePtr->conn = NULL;
+    }
 
     /*
      * Cleanup the handle.
@@ -420,6 +431,82 @@ Dbi_PoolPutHandle(Dbi_Handle *handle)
     ReturnHandle(handlePtr);
     Ns_CondSignal(&poolPtr->getCond);
     Ns_MutexUnlock(&poolPtr->lock);
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * Dbi_PoolGetConnHandle --
+ *
+ *      Get a single handle for the specfied pool from the conn
+ *      cache, or if not present, from the pool and then cache for
+ *      the lifetime of the conn.
+ *
+ * Results:
+ *      NS_OK / NS_TIMEOUT / NS_ERROR.
+ *
+ * Side effects:
+ *      See Dbi_PoolTimedGetHandle.
+ *
+ *----------------------------------------------------------------------
+ */
+
+int
+Dbi_PoolGetConnHandle(Ns_Conn *conn, Dbi_Handle **handlePtrPtr,
+                      Dbi_Pool *pool, int wait)
+{
+    Dbi_Handle *handle;
+    int         status;
+
+    handle = Ns_ClsGet(&handleCls, conn);
+    if (handle != NULL) {
+        if (handle->pool == pool) {
+            *handlePtrPtr = handle;
+            return NS_OK;
+        }
+        Dbi_PoolPutHandle(handle);
+    }
+    status = Dbi_PoolTimedGetHandle(handlePtrPtr, pool, wait);
+    if (status == NS_OK) {
+        handle = *handlePtrPtr;
+        ((Handle *) handle)->conn = conn;
+        Ns_ClsSet(&handleCls, conn, handle);
+    }
+
+    return status;
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * Dbi_PoolPutConnHandle --
+ *
+ *      Return any cached handles for the given conn back to they're
+ *      pools.
+ *
+ * Results:
+ *      Number of cached handles returned.
+ *
+ * Side effects:
+ *      See Dbi_PoolPutHandle.
+ *
+ *----------------------------------------------------------------------
+ */
+
+int
+Dbi_PoolPutConnHandles(Ns_Conn *conn)
+{
+    Dbi_Handle *handle;
+    int         nhandles = 0;
+
+    handle = Ns_ClsGet(&handleCls, conn);
+    if (handle != NULL) {
+        Dbi_PoolPutHandle(handle);
+        nhandles = 1;
+    }
+    return nhandles;
 }
 
 
@@ -506,6 +593,12 @@ DbiInitPools(void)
     Ns_Set         *pools;
     char           *path, *pool, *driver;
     int             new, i;
+    static int      once = 0;
+
+    if (!once) {
+        Ns_ClsAlloc(&handleCls, (Ns_Callback *) Dbi_PoolPutHandle);
+        once = 1;
+    }
 
     /*
      * Attempt to create each database pool.
@@ -902,9 +995,6 @@ CreatePool(char *poolname, char *path, char *drivername)
     Ns_MutexSetName2(&poolPtr->lock, "nsdbi", poolname);
     Ns_CondInit(&poolPtr->getCond);
 
-    if (!Ns_ConfigGetBool(path, "cachehandles", &poolPtr->cache_handles)) {
-        poolPtr->cache_handles = 1;
-    }
     Ns_ConfigGetBool(path, "verbose", &poolPtr->fVerbose);
     Ns_ConfigGetBool(path, "logsqlerrors", &poolPtr->fVerboseError);
     if (!Ns_ConfigGetInt(path, "connections", &poolPtr->nhandles)
@@ -912,7 +1002,7 @@ CreatePool(char *poolname, char *path, char *drivername)
         Ns_Log(Notice, "nsdbi: setting connections for '%s' to %d", poolname, 2);
         poolPtr->nhandles = 2;
     }
-    if (!Ns_ConfigGetInt(path, "maxwait", (int *) &poolPtr->maxwait)
+    if (!Ns_ConfigGetInt(path, "maxwait", &poolPtr->maxwait)
         || poolPtr->maxwait < 0) {
         poolPtr->maxwait = 10;
     }
@@ -924,7 +1014,7 @@ CreatePool(char *poolname, char *path, char *drivername)
         || poolPtr->maxopen < 0) {
         poolPtr->maxopen = 0;
     }
-    if (!Ns_ConfigGetInt(path, "maxopps", (int *) &poolPtr->maxopps)
+    if (!Ns_ConfigGetInt(path, "maxopps", &poolPtr->maxopps)
         || poolPtr->maxopps < 0) {
         poolPtr->maxopps = 0;
     }
@@ -1056,23 +1146,25 @@ DbiGetServer(CONST char *server)
  */
 
 static void
-LogStats(void *arg)
+LogStats(Ns_Time *toPtr, void *arg)
 {
     Tcl_HashEntry  *hPtr;
     Tcl_HashSearch  search;
     Pool           *poolPtr;
     Ns_DString      ds;
 
-    Ns_DStringInit(&ds);
 
-    hPtr = Tcl_FirstHashEntry(&poolsTable, &search);
-    while (hPtr != NULL) {
-        poolPtr = Tcl_GetHashValue(hPtr);
-        Dbi_PoolStats(&ds, (Dbi_Pool *) poolPtr);
-        Ns_Log(Notice, "nsdbi: stats for pool '%s': %s",
-               poolPtr->name, Ns_DStringValue(&ds));
-        Ns_DStringTrunc(&ds, 0);
-        hPtr = Tcl_NextHashEntry(&search);
+    if (toPtr == NULL) {
+        Ns_DStringInit(&ds);
+        hPtr = Tcl_FirstHashEntry(&poolsTable, &search);
+        while (hPtr != NULL) {
+            poolPtr = Tcl_GetHashValue(hPtr);
+            Dbi_PoolStats(&ds, (Dbi_Pool *) poolPtr);
+            Ns_Log(Notice, "nsdbi: stats for pool '%s': %s",
+                   poolPtr->name, Ns_DStringValue(&ds));
+            Ns_DStringTrunc(&ds, 0);
+            hPtr = Tcl_NextHashEntry(&search);
+        }
+        Ns_DStringFree(&ds);
     }
-    Ns_DStringFree(&ds);
 }

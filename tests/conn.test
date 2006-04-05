@@ -1,0 +1,25 @@
+#
+# Test Suite
+#
+
+
+package require tcltest 2.2
+namespace import -force ::tcltest::*
+
+eval ::tcltest::configure $argv
+
+
+
+test handle-caching-1 {Execute db statement in conn thread} -setup {
+    ns_register_proc GET /dbi {
+        ns_return 200 text/plain "[dbi_rows {1 1}] [dbi_rows {1 1}]"
+    }
+} -body {
+    nstest_http -getbody 1 GET /dbi
+} -cleanup {
+    ns_unregister_proc GET /dbi
+} -result {200 {v v}}
+
+
+
+cleanupTests

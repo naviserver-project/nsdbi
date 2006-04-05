@@ -19,6 +19,17 @@ ns_param   tcllibrary     $bindir/../tcl
 ns_section "ns/servers"
 ns_param   server1        "Server One"
 
+ns_section "ns/modules"
+ns_param   nssock         $bindir/nssock.so
+
+ns_section "ns/module/nssock"
+ns_param   port            8080
+ns_param   hostname        localhost
+ns_param   address         127.0.0.1
+ns_param   defaultserver   server1
+
+ns_section "ns/module/nssock/servers"
+ns_param   server1            server1
 
 
 #
@@ -61,15 +72,10 @@ ns_param   password        "password2"
 
 ns_section "ns/server/server1/tcl"
 ns_param   initfile        ${bindir}/init.tcl
+ns_param   library         $homedir/tests/testserver/modules
 
 ns_section "ns/server/server1/modules"
-ns_param   nssock         $bindir/nssock.so
 ns_param   nsdbi          $homedir/nsdbi.so
-
-ns_section "ns/server/server1/module/nssock"
-ns_param   port           8080
-ns_param   hostname       localhost
-ns_param   address        127.0.0.1
 
 ns_section "ns/server/server1/dbi"
 ns_param   pools           pool1,pool2

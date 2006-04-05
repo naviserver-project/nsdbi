@@ -60,7 +60,6 @@ typedef struct Pool {
     int                npresent;
     Ns_Mutex           lock;
     Ns_Cond            getCond;
-    int                cache_handles;
 
     int                maxwait;
     time_t             maxidle;
@@ -98,6 +97,7 @@ typedef struct Handle {
 
     struct Handle    *nextPtr;
     struct Statement *stmtPtr;
+    Ns_Conn          *conn;   /* Conn that handle is cached for. */
     char              cExceptionCode[6];
     Ns_DString        dsExceptionMsg;
     time_t            otime;
@@ -207,8 +207,7 @@ DbiStatementPrepare(Dbi_Statement *, Dbi_Handle *)
  */
 
 extern void DbiInitTclObjTypes(void);
-extern Ns_TclInterpInitProc DbiAddCmds;
-extern Ns_TclInterpInitProc DbiAddTraces;
+extern Ns_TclInterpInitProc DbiInitInterp;
 
 
 #endif

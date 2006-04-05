@@ -188,7 +188,7 @@ Dbi_ResetHandle(Dbi_Handle *)
  */
 
 NS_EXTERN Dbi_Pool *
-Dbi_GetPool(CONST char *server, CONST char *pool)
+Dbi_GetPool(CONST char *server, CONST char *poolname)
      NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
 
 NS_EXTERN Dbi_Pool *
@@ -196,15 +196,23 @@ Dbi_PoolDefault(CONST char *server)
      NS_GNUC_NONNULL(1);
 
 NS_EXTERN CONST char *
-Dbi_PoolDbType(Dbi_Pool *poolPtr)
+Dbi_PoolDbType(Dbi_Pool *pool)
      NS_GNUC_NONNULL(1);
 
 NS_EXTERN CONST char *
-Dbi_PoolDriverName(Dbi_Pool *poolPtr)
+Dbi_PoolDriverName(Dbi_Pool *pool)
      NS_GNUC_NONNULL(1);
 
 NS_EXTERN int
 Dbi_PoolList(Ns_DString *ds, CONST char *server)
+     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
+
+NS_EXTERN int
+Dbi_PoolGetHandle(Dbi_Handle **handlePtrPtr, Dbi_Pool *pool)
+     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
+
+NS_EXTERN int
+Dbi_PoolTimedGetHandle(Dbi_Handle **handlePtrPtr, Dbi_Pool *pool, int wait)
      NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
 
 NS_EXTERN void
@@ -212,15 +220,16 @@ Dbi_PoolPutHandle(Dbi_Handle *handle)
      NS_GNUC_NONNULL(1);
 
 NS_EXTERN int
-Dbi_PoolGetHandle(Dbi_Handle **handlePtrPtr, Dbi_Pool *poolPtr)
-     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
+Dbi_PoolGetConnHandle(Ns_Conn *conn, Dbi_Handle **handlePtrPtr,
+                      Dbi_Pool *pool, int wait)
+    NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2) NS_GNUC_NONNULL(3);
 
 NS_EXTERN int
-Dbi_PoolTimedGetHandle(Dbi_Handle **handlePtrPtr, Dbi_Pool *poolPtr, int wait)
-     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
+Dbi_PoolPutConnHandles(Ns_Conn *conn)
+     NS_GNUC_NONNULL(1);
 
 NS_EXTERN void
-Dbi_BouncePool(Dbi_Pool *poolPtr)
+Dbi_BouncePool(Dbi_Pool *pool)
      NS_GNUC_NONNULL(1);
 
 NS_EXTERN void

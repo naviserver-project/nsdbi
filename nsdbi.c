@@ -68,7 +68,7 @@ Ns_ModuleInit(CONST char *server, CONST char *module)
         once = 1;
     }
     DbiInitServer(server);
-    return Ns_TclRegisterTrace(server, DbiAddCmds, (char *) server, NS_TCL_TRACE_CREATE);
+    return Ns_TclRegisterTrace(server, DbiInitInterp, server, NS_TCL_TRACE_CREATE);
 
     return NS_OK;
 }
