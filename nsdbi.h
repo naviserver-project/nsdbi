@@ -110,8 +110,8 @@ typedef struct Dbi_BindValue {
  */
 
 typedef int         (Dbi_InitProc)    (CONST char *server, CONST char *module, CONST char *driver);
-typedef CONST char *(Dbi_NameProc)    (Dbi_Handle *);
-typedef CONST char *(Dbi_DbTypeProc)  (Dbi_Handle *);
+typedef CONST char *(Dbi_NameProc)    (Dbi_Pool *);
+typedef CONST char *(Dbi_DbTypeProc)  (Dbi_Pool *);
 typedef int         (Dbi_OpenProc)    (Dbi_Handle *);
 typedef void        (Dbi_CloseProc)   (Dbi_Handle *);
 typedef int         (Dbi_BindVarProc) (Ns_DString *, int bindIdx);
@@ -149,39 +149,39 @@ typedef struct Dbi_Driver {
 
 NS_EXTERN int
 Dbi_RegisterDriver(Dbi_Driver *driver)
-     NS_GNUC_NONNULL(1);
+    NS_GNUC_NONNULL(1);
 
 NS_EXTERN CONST char *
-Dbi_DriverName(Dbi_Handle *)
-     NS_GNUC_NONNULL(1);
+Dbi_DriverName(Dbi_Pool *)
+    NS_GNUC_NONNULL(1);
 
 NS_EXTERN CONST char *
-Dbi_DriverDbType(Dbi_Handle *)
-     NS_GNUC_NONNULL(1);
+Dbi_DbType(Dbi_Pool *)
+    NS_GNUC_NONNULL(1);
 
 NS_EXTERN int
 Dbi_DML(Dbi_Handle *, Dbi_Statement *stmt, int *nrows, int *ncols)
-     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
+    NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
 
 NS_EXTERN int
 Dbi_Select(Dbi_Handle *, Dbi_Statement *, int *nrows, int *ncols)
-     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
+    NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
 
 NS_EXTERN int
 Dbi_Exec(Dbi_Handle *, Dbi_Statement *, int *nrows, int *ncols)
-     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
+    NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
 
 NS_EXTERN int
 Dbi_NextValue(Dbi_Statement *, CONST char **, int *, CONST char **, int *)
-     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2) NS_GNUC_NONNULL(3);
+    NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2) NS_GNUC_NONNULL(3);
 
 NS_EXTERN void
 Dbi_Flush(Dbi_Statement *)
-     NS_GNUC_NONNULL(1);
+    NS_GNUC_NONNULL(1);
 
 NS_EXTERN int
 Dbi_ResetHandle(Dbi_Handle *)
-     NS_GNUC_NONNULL(1);
+    NS_GNUC_NONNULL(1);
 
 /*
  * init.c:
@@ -189,52 +189,35 @@ Dbi_ResetHandle(Dbi_Handle *)
 
 NS_EXTERN Dbi_Pool *
 Dbi_GetPool(CONST char *server, CONST char *poolname)
-     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
+    NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
 
 NS_EXTERN Dbi_Pool *
-Dbi_PoolDefault(CONST char *server)
-     NS_GNUC_NONNULL(1);
-
-NS_EXTERN CONST char *
-Dbi_PoolDbType(Dbi_Pool *pool)
-     NS_GNUC_NONNULL(1);
-
-NS_EXTERN CONST char *
-Dbi_PoolDriverName(Dbi_Pool *pool)
-     NS_GNUC_NONNULL(1);
+Dbi_DefaultPool(CONST char *server)
+    NS_GNUC_NONNULL(1);
 
 NS_EXTERN int
-Dbi_PoolList(Ns_DString *ds, CONST char *server)
-     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
+Dbi_ListPools(Ns_DString *ds, CONST char *server)
+    NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
 
 NS_EXTERN int
-Dbi_PoolGetHandle(Dbi_Handle **handlePtrPtr, Dbi_Pool *pool)
-     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
-
-NS_EXTERN int
-Dbi_PoolTimedGetHandle(Dbi_Handle **handlePtrPtr, Dbi_Pool *pool, int wait)
-     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
+Dbi_GetHandle(Dbi_Handle **handlePtrPtr, Dbi_Pool *pool, Ns_Conn *conn, int wait)
+    NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
 
 NS_EXTERN void
-Dbi_PoolPutHandle(Dbi_Handle *handle)
-     NS_GNUC_NONNULL(1);
+Dbi_PutHandle(Dbi_Handle *handle)
+    NS_GNUC_NONNULL(1);
 
 NS_EXTERN int
-Dbi_PoolGetConnHandle(Ns_Conn *conn, Dbi_Handle **handlePtrPtr,
-                      Dbi_Pool *pool, int wait)
-    NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2) NS_GNUC_NONNULL(3);
-
-NS_EXTERN int
-Dbi_PoolPutConnHandles(Ns_Conn *conn)
-     NS_GNUC_NONNULL(1);
+Dbi_ReleaseConnHandles(Ns_Conn *conn)
+    NS_GNUC_NONNULL(1);
 
 NS_EXTERN void
 Dbi_BouncePool(Dbi_Pool *pool)
-     NS_GNUC_NONNULL(1);
+    NS_GNUC_NONNULL(1);
 
 NS_EXTERN void
-Dbi_PoolStats(Ns_DString *ds, Dbi_Pool *poolPtr)
-     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
+Dbi_Stats(Ns_DString *ds, Dbi_Pool *poolPtr)
+    NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
 
 /*
  * stmt.c

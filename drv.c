@@ -98,13 +98,13 @@ Dbi_RegisterDriver(Dbi_Driver *driver)
  */
 
 CONST char *
-Dbi_DriverName(Dbi_Handle *handle)
+Dbi_DriverName(Dbi_Pool *pool)
 {
-    Dbi_Driver *driver = handle->pool->driver;
+    Dbi_Driver *driver = pool->driver;
     CONST char *name   = NULL;
 
     if (driver->nameProc != NULL) {
-        name = (*driver->nameProc)(handle);
+        name = (*driver->nameProc)(pool);
     }
 
     return name;
@@ -114,7 +114,7 @@ Dbi_DriverName(Dbi_Handle *handle)
 /*
  *----------------------------------------------------------------------
  *
- * Dbi_DriverDbType --
+ * Dbi_DbType --
  *
  *      Return the string name of the database type (e.g., "sybase").
  *
@@ -128,13 +128,13 @@ Dbi_DriverName(Dbi_Handle *handle)
  */
 
 CONST char *
-Dbi_DriverDbType(Dbi_Handle *handle)
+Dbi_DriverDbType(Dbi_Pool *pool)
 {
-    Dbi_Driver *driver = handle->pool->driver;
+    Dbi_Driver *driver = pool->driver;
     CONST char *type   = NULL;
 
-    if (driver->typeProc != NULL && handle->connected) {
-        type = (*driver->typeProc)(handle);
+    if (driver->typeProc != NULL) {
+        type = (*driver->typeProc)(pool);
     }
 
     return type;

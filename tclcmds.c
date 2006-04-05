@@ -387,10 +387,8 @@ TclDmlCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
 static int
 TclPoolCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
 {
-    Tcl_Obj     *resultObj = Tcl_GetObjResult(interp);
-    Tcl_Obj     *poolObj   = NULL;
-    Dbi_Handle  *handle    = NULL;
-    Dbi_Pool    *pool      = NULL;
+    Tcl_Obj     *resultObj;
+    Dbi_Pool    *pool;
     Ns_DString   ds;
     int          opt;
 
@@ -412,18 +410,10 @@ TclPoolCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
         != TCL_OK) {
         return TCL_ERROR;
     }
-    if (objc == 3) {
-        poolObj = objv[2];
+    if ((pool = GetPool(arg, interp, objc == 3 ? objv[2] : NULL)) == NULL) {
+        return TCL_ERROR;
     }
-    if (opt == IDbtypeIdx || opt == IDriverIdx) {
-        if ((handle = GetHandle(arg, interp, poolObj, -1)) == NULL) {
-            return TCL_ERROR;
-        }
-    } else {
-        if ((pool = GetPool(arg, interp, poolObj)) == NULL) {
-            return TCL_ERROR;
-        }
-    }
+    resultObj = Tcl_GetObjResult(interp);
 
     switch (opt) {
 
@@ -432,13 +422,11 @@ TclPoolCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
         break;
 
     case IDriverIdx:
-        Tcl_SetStringObj(resultObj, Dbi_DriverName(handle), -1);
-        PutHandle(interp, handle);
+        Tcl_SetStringObj(resultObj, Dbi_DriverName(pool), -1);
         break;
 
     case IDbtypeIdx:
-        Tcl_SetStringObj(resultObj, Dbi_DriverDbType(handle), -1);
-        PutHandle(interp, handle);
+        Tcl_SetStringObj(resultObj, Dbi_DbType(pool), -1);
         break;
 
     case IDatasourceIdx:
@@ -459,7 +447,7 @@ TclPoolCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
 
     case IStatsIdx:
         Ns_DStringInit(&ds);
-        Dbi_PoolStats(&ds, pool);
+        Dbi_Stats(&ds, pool);
         Tcl_DStringResult(interp, &ds);
         break;
 
@@ -498,7 +486,7 @@ TclListpoolsCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST obj
     char       *p, *q;
 
     Ns_DStringInit(&ds);
-    if (Dbi_PoolList(&ds, sdataPtr->server) != NS_OK) {
+    if (Dbi_ListPools(&ds, sdataPtr->server) != NS_OK) {
         return TCL_ERROR;
     }
     result = Tcl_GetObjResult(interp);
@@ -540,7 +528,7 @@ TclDefaultpoolCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST o
     ServerData *sdataPtr = arg;
     Dbi_Pool   *pool;
 
-    pool = Dbi_PoolDefault(sdataPtr->server);
+    pool = Dbi_DefaultPool(sdataPtr->server);
     if (pool != NULL) {
         Tcl_SetStringObj(Tcl_GetObjResult(interp), pool->name, -1);
     }
@@ -573,7 +561,7 @@ TclReleasehandlesCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONS
 
     conn = Ns_TclGetConn(interp);
     if (conn != NULL) {
-        Dbi_PoolPutConnHandles(conn);
+        Dbi_ReleaseConnHandles(conn);
         released = 1;
     }
     Tcl_SetIntObj(Tcl_GetObjResult(interp), released);
@@ -661,20 +649,17 @@ GetHandleForStmt(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST ob
 static Dbi_Handle *
 GetHandle(ClientData arg, Tcl_Interp *interp, Tcl_Obj *poolObj, int timeout)
 {
-    Dbi_Handle    *handle = NULL;
     Dbi_Pool      *pool;
+    Dbi_Handle    *handle;
     Ns_Conn       *conn;
     int            status;
 
     if ((pool = GetPool(arg, interp, poolObj)) == NULL) {
         return NULL;
     }
+    handle = NULL;
     conn = Ns_TclGetConn(interp);
-    if  (conn != NULL) {
-        status = Dbi_PoolGetConnHandle(conn, &handle, pool, timeout);
-    } else {
-        status = Dbi_PoolTimedGetHandle(&handle, pool, timeout);
-    }
+    status = Dbi_GetHandle(&handle, pool, conn, timeout);
     if (status == NS_TIMEOUT) {
         Exception(interp, "TIMEOUT", "wait for database handle timed out");
     } else if (status != NS_OK) {
@@ -891,7 +876,7 @@ PutHandle(Tcl_Interp *interp, Dbi_Handle *handle)
     if (conn != NULL) {
         Dbi_ResetHandle(handle);
     } else {
-        Dbi_PoolPutHandle(handle);
+        Dbi_PutHandle(handle);
     }
 }
 
