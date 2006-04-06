@@ -234,5 +234,6 @@ DefineBindVar(Statement *stmtPtr, CONST char *name)
     hPtr = Tcl_CreateHashEntry(&stmtPtr->bindVars, name, &new);
     Tcl_SetHashValue(hPtr, NULL);
     driver = stmtPtr->poolPtr->driver;
-    driver->bindVarProc(&stmtPtr->dsBoundSql, stmtPtr->bindVars.numEntries);
+    driver->bindVarProc(&stmtPtr->dsBoundSql, stmtPtr->bindVars.numEntries,
+                        driver->arg);
 }

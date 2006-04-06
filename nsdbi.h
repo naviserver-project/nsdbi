@@ -61,7 +61,6 @@
 struct Dbi_Driver;
 
 typedef struct Dbi_Pool {
-    struct Dbi_Driver *driver;
     char              *name;
     char              *description;
     char              *datasource;
@@ -109,17 +108,19 @@ typedef struct Dbi_BindValue {
  * drivers implement.
  */
 
-typedef int         (Dbi_InitProc)    (CONST char *server, CONST char *module, CONST char *driver);
-typedef CONST char *(Dbi_NameProc)    (Dbi_Pool *);
-typedef CONST char *(Dbi_DbTypeProc)  (Dbi_Pool *);
-typedef int         (Dbi_OpenProc)    (Dbi_Handle *);
-typedef void        (Dbi_CloseProc)   (Dbi_Handle *);
-typedef int         (Dbi_BindVarProc) (Ns_DString *, int bindIdx);
-typedef int         (Dbi_ExecProc)    (Dbi_Handle *, Dbi_Statement *, int *nrows, int *ncols);
-typedef int         (Dbi_ValueProc)   (Dbi_Handle *, Dbi_Statement *, int rowIdx, int colIdx, CONST char **value, int *len);
-typedef int         (Dbi_ColumnProc)  (Dbi_Handle *, Dbi_Statement *, int colIdx, CONST char **column, int *len);
-typedef void        (Dbi_FlushProc)   (Dbi_Statement *);
-typedef int         (Dbi_ResetProc)   (Dbi_Handle *);
+typedef CONST char *(Dbi_NameProc)    (Dbi_Pool *, void *arg);
+typedef CONST char *(Dbi_DbTypeProc)  (Dbi_Pool *, void *arg);
+typedef int         (Dbi_OpenProc)    (Dbi_Handle *, void *arg);
+typedef void        (Dbi_CloseProc)   (Dbi_Handle *, void *arg);
+typedef int         (Dbi_BindVarProc) (Ns_DString *, int bindIdx, void *arg);
+typedef int         (Dbi_ExecProc)    (Dbi_Handle *, Dbi_Statement *, int *nrows,
+                                       int *ncols, void *arg);
+typedef int         (Dbi_ValueProc)   (Dbi_Handle *, Dbi_Statement *, int rowIdx,
+                                       int colIdx, CONST char **value, int *len, void *arg);
+typedef int         (Dbi_ColumnProc)  (Dbi_Handle *, Dbi_Statement *, int colIdx,
+                                       CONST char **column, int *len, void *arg);
+typedef void        (Dbi_FlushProc)   (Dbi_Statement *, void *arg);
+typedef int         (Dbi_ResetProc)   (Dbi_Handle *, void *arg);
 
 
 /*
@@ -128,8 +129,6 @@ typedef int         (Dbi_ResetProc)   (Dbi_Handle *);
  */
 
 typedef struct Dbi_Driver {
-    char                 *name;
-    Dbi_InitProc         *initProc;
     Dbi_NameProc         *nameProc;
     Dbi_DbTypeProc       *typeProc;
     Dbi_OpenProc         *openProc;
@@ -140,6 +139,7 @@ typedef struct Dbi_Driver {
     Dbi_ColumnProc       *columnProc;
     Dbi_FlushProc        *flushProc;
     Dbi_ResetProc        *resetProc;
+    void                 *arg;
 } Dbi_Driver;
 
 
@@ -148,8 +148,8 @@ typedef struct Dbi_Driver {
  */
 
 NS_EXTERN int
-Dbi_RegisterDriver(Dbi_Driver *driver)
-    NS_GNUC_NONNULL(1);
+Dbi_RegisterDriver(CONST char *server, CONST char *module, Dbi_Driver *driver)
+    NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2) NS_GNUC_NONNULL(3);
 
 NS_EXTERN CONST char *
 Dbi_DriverName(Dbi_Pool *)

@@ -43,7 +43,6 @@ typedef struct Pool {
 
     /* Publicly visible in a Dbi_Pool struct */
 
-    Dbi_Driver        *driver;
     char              *name;
     char              *description;
     char              *datasource;
@@ -55,6 +54,8 @@ typedef struct Pool {
 
     /* Private to a Pool struct */
 
+    Dbi_Driver        *driver;
+    struct ServerData *sdataPtr;
     struct Handle     *firstPtr;
     struct Handle     *lastPtr;
     int                npresent;
@@ -139,7 +140,7 @@ typedef struct Statement {
 
 
 /*
- * The following struct tracks which pools are
+ * The following structure tracks which pools are
  * available to a virtual server.
  */
 
@@ -155,44 +156,29 @@ typedef struct ServerData {
  * init.c
  */
 
-extern void
-DbiInitPools(void);
-
 extern Dbi_Pool *
 DbiGetPool(ServerData *sdataPtr, CONST char *poolname)
-     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
-
-extern void
-DbiInitServer(CONST char *server)
-     NS_GNUC_NONNULL(1);
+    NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
 
 extern ServerData *
 DbiGetServer(CONST char *server)
-     NS_GNUC_NONNULL(1);
+    NS_GNUC_NONNULL(1);
 
 extern void
 DbiLogSql(Dbi_Statement *)
-     NS_GNUC_NONNULL(1);
+    NS_GNUC_NONNULL(1);
 
 /*
  * drv.c
  */
 
-extern Dbi_Driver *
-DbiLoadDriver(CONST char *drivername)
-     NS_GNUC_NONNULL(1);
-
-extern void
-DbiDriverInit(CONST char *server, Dbi_Driver *driver)
-     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
-
 extern int
 DbiOpen(Dbi_Handle *)
-     NS_GNUC_NONNULL(1);
+    NS_GNUC_NONNULL(1);
 
 extern void
 DbiClose(Dbi_Handle *)
-     NS_GNUC_NONNULL(1);
+    NS_GNUC_NONNULL(1);
 
 /*
  * stmt.c
@@ -200,7 +186,7 @@ DbiClose(Dbi_Handle *)
 
 extern int
 DbiStatementPrepare(Dbi_Statement *, Dbi_Handle *)
-     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
+    NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
 
 /*
  * tclcmds.c

@@ -31,54 +31,13 @@
 /*
  * drv.c --
  *
- *      Routines for handling the loadable db driver interface.
+ *      Routines for calling driver callbacks.
  */
 
 #include "dbi.h"
 
 NS_RCSID("@(#) $Header$");
 
-
-/*
- * Static variables defined in this file
- */
-
-static Tcl_HashTable driversTable;
-
-
-
-/*
- *----------------------------------------------------------------------
- *
- * Dbi_RegisterDriver --
- *
- *      Register dbi procs for a driver.  This routine is called by
- *      driver modules when loaded.
- *
- * Results:
- *      NS_OK if procs registered, NS_ERROR otherwise.
- *
- * Side effects:
- *      Driver structure is stashed in the driversTable.
- *
- *----------------------------------------------------------------------
- */
-
-int
-Dbi_RegisterDriver(Dbi_Driver *driver)
-{
-    Tcl_HashEntry *hPtr;
-    int new;
-
-    hPtr = Tcl_CreateHashEntry(&driversTable, driver->name, &new);
-    if (!new) {
-        Ns_Log(Error, "nsdbi: a driver is already registered as '%s'", driver->name);
-        return NS_ERROR;
-    }
-    Tcl_SetHashValue(hPtr, driver);
-
-    return NS_OK;
-}
 
 
 /*
@@ -100,13 +59,12 @@ Dbi_RegisterDriver(Dbi_Driver *driver)
 CONST char *
 Dbi_DriverName(Dbi_Pool *pool)
 {
-    Dbi_Driver *driver = pool->driver;
+    Dbi_Driver *driver = ((Pool *) pool)->driver;
     CONST char *name   = NULL;
 
     if (driver->nameProc != NULL) {
-        name = (*driver->nameProc)(pool);
+        name = (*driver->nameProc)(pool, driver->arg);
     }
-
     return name;
 }
 
@@ -128,15 +86,14 @@ Dbi_DriverName(Dbi_Pool *pool)
  */
 
 CONST char *
-Dbi_DriverDbType(Dbi_Pool *pool)
+Dbi_DbType(Dbi_Pool *pool)
 {
-    Dbi_Driver *driver = pool->driver;
+    Dbi_Driver *driver = ((Pool *) pool)->driver;
     CONST char *type   = NULL;
 
     if (driver->typeProc != NULL) {
-        type = (*driver->typeProc)(pool);
+        type = (*driver->typeProc)(pool, driver->arg);
     }
-
     return type;
 }
 
@@ -244,7 +201,8 @@ Dbi_Exec(Dbi_Handle *handle, Dbi_Statement *stmt, int *nrows, int *ncols)
 
     if (driver->execProc != NULL && handle->connected) {
 
-        status = (*driver->execProc)(handle, stmt, &stmtPtr->numRows, &stmtPtr->numCols);
+        status = (*driver->execProc)(handle, stmt, &stmtPtr->numRows, &stmtPtr->numCols,
+                                     driver->arg);
 
         stmtPtr->handlePtr->stats.opps++;
         if (nrows != NULL) {
@@ -316,14 +274,16 @@ Dbi_NextValue(Dbi_Statement *stmt, CONST char **value, int *vLen, CONST char **c
         stmtPtr->currentCol = 0;
     }
 
-    driver = stmt->pool->driver;
-    status = driver->valueProc(handle, stmt, stmtPtr->currentRow,
-                               stmtPtr->currentCol, value, vLen);
+    driver = ((Pool *) stmt->pool)->driver;
+    status = (*driver->valueProc)(handle, stmt, stmtPtr->currentRow,
+                                  stmtPtr->currentCol, value, vLen,
+                                  driver->arg);
     if (status == NS_ERROR) {
         return NS_ERROR;
     }
     if (column != NULL && cLen != NULL) {
-        status = (*driver->columnProc)(handle, stmt, stmtPtr->currentCol, column, cLen);
+        status = (*driver->columnProc)(handle, stmt, stmtPtr->currentCol,
+                                       column, cLen, driver->arg);
         if (status == NS_ERROR) {
             return NS_ERROR;
         }
@@ -367,9 +327,9 @@ Dbi_Flush(Dbi_Statement *stmt)
     Dbi_Driver *driver;
 
     if (stmtPtr->poolPtr != NULL) {
-        driver = stmt->pool->driver;
+        driver = ((Pool *) stmt->pool)->driver;
         if (driver->flushProc != NULL) {
-            driver->flushProc(stmt);
+            (*driver->flushProc)(stmt, driver->arg);
         }
     }
     stmt->arg = NULL;
@@ -399,7 +359,7 @@ int
 Dbi_ResetHandle(Dbi_Handle *handle)
 {
     Handle     *handlePtr = (Handle *) handle;
-    Dbi_Driver *driver    = handle->pool->driver;
+    Dbi_Driver *driver    = handlePtr->poolPtr->driver;
     int         status    = NS_ERROR;
 
     if (handlePtr->stmtPtr != NULL) {
@@ -407,100 +367,11 @@ Dbi_ResetHandle(Dbi_Handle *handle)
         handlePtr->stmtPtr = NULL;
     }
     if (driver->resetProc != NULL && handle->connected) {
-        status = (*driver->resetProc)(handle);
+        status = (*driver->resetProc)(handle, driver->arg);
     }
     Dbi_ResetException(handle);
 
     return status;
-}
-
-
-/*
- *----------------------------------------------------------------------
- *
- * DbiLoadDriver --
- *
- *      Load a database driver for one or more pools.
- *
- * Results:
- *      Pointer to driver structure or NULL on error.
- *
- * Side effects:
- *      Driver module file may be mapped into the process.
- *
- *----------------------------------------------------------------------
- */
-
-struct Dbi_Driver *
-DbiLoadDriver(CONST char *name)
-{
-    Tcl_HashEntry  *hPtr;
-    Dbi_Driver     *driver;
-    char           *module, *path;
-    static int      initialized = NS_FALSE;
-
-    if (initialized == NS_FALSE) {
-        Tcl_InitHashTable(&driversTable, TCL_STRING_KEYS);
-        initialized = NS_TRUE;
-    }
-
-    /*
-     * Check if driver was already loaded.
-     */
-
-    hPtr = Tcl_FindHashEntry(&driversTable, name);
-    if (hPtr != NULL) {
-        driver = (Dbi_Driver *) Tcl_GetHashValue(hPtr);
-        return driver;
-    }
-
-    /*
-     * Load new driver.
-     */
-
-    module = Ns_ConfigGetValue("ns/dbi/drivers", name);
-    if (module == NULL) {
-        Ns_Log(Error, "nsdbi: no such driver '%s'", name);
-        return NULL;
-    }
-    path = Ns_ConfigGetPath(NULL, NULL, "dbi", "driver", name, NULL);
-    if (Ns_ModuleLoad(name, path, module, "Dbi_DriverInit") != NS_OK) {
-        Ns_Log(Error, "nsdbi: failed to load driver '%s'", name);
-        return NULL;
-    }
-    hPtr = Tcl_FindHashEntry(&driversTable, name);
-    driver = (Dbi_Driver *) Tcl_GetHashValue(hPtr);
-
-    return driver;
-}
-
-
-/*
- *----------------------------------------------------------------------
- *
- * DbiDriverInit --
- *
- *      Invoke driver provided server init proc (e.g., to add driver
- *      specific Tcl commands).
- *
- * Results:
- *      None.
- *
- * Side effects:
- *      None.
- *
- *----------------------------------------------------------------------
- */
-
-void
-DbiDriverInit(CONST char *server, Dbi_Driver *driver)
-{
-    if (driver->initProc != NULL &&
-        ((*driver->initProc) (server, "dbi", driver->name)) != NS_OK) {
-
-        Ns_Log(Error, "nsdbi: init proc failed for driver '%s'",
-               driver->name);
-    }
 }
 
 
@@ -524,10 +395,10 @@ DbiDriverInit(CONST char *server, Dbi_Driver *driver)
 int
 DbiOpen(Dbi_Handle *handle)
 {
-    Dbi_Driver *driver = handle->pool->driver;
+    Dbi_Driver *driver = ((Pool *) handle->pool)->driver;
 
     if (driver->openProc == NULL ||
-        (*driver->openProc) (handle) != NS_OK) {
+        (*driver->openProc)(handle, driver->arg) != NS_OK) {
 
         Ns_Log(Error, "nsdbi: failed to open handle in pool '%s': code: '%s' msg: %s",
                handle->pool->name,
@@ -559,10 +430,10 @@ DbiOpen(Dbi_Handle *handle)
 void
 DbiClose(Dbi_Handle *handle)
 {
-    Dbi_Driver *driver = handle->pool->driver;
+    Dbi_Driver *driver = ((Pool *) handle->pool)->driver;
 
     if (driver->closeProc != NULL && handle->connected) {
-        (*driver->closeProc)(handle);
+        (*driver->closeProc)(handle, driver->arg);
         handle->connected = NS_FALSE;
     }
 }

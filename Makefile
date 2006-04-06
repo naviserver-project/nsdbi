@@ -39,26 +39,24 @@ LIBOBJS     = init.o drv.o tclcmds.o util.o stmt.o
 HDRS        = dbi.h
 LIBHDRS     = nsdbi.h
 
-MOD         = nsdbi.so
-MODOBJS     = nsdbi.o
+MOD         = nsdbitest.so
+MODOBJS     = nsdbitest.o
 
 TCL         = util.tcl
 
-BUILD       += nsdbitest.so
 
 include $(NAVISERVER)/include/Makefile.module
 
 
-
-nsdbitest.o: nsdbitest.c libnsdbi.so
-
-nsdbitest.so: nsdbitest.o
-	$(RM) nsdbitest.so
-	$(LDSO) $(LDFLAGS) -L./ -o nsdbitest.so nsdbitest.o -lnsdbi $(NSLIBS) $(LDRFLAG)$(INSTLIB) $(LDRFLAG)$(TCL_EXEC_PREFIX)/lib
-
-clean-mod:
-	$(RM) $(MOD) $(MODOBJS) nsdbitest.o nsdbitest.so
-
-
 test: all
 	LD_LIBRARY_PATH="./:$LD_LIBRARY_PATH" $(NSD) -c -d -t tests/config.tcl tests/all.tcl $(TESTFLAGS) $(TCLTESTARGS)
+
+gdbtest: all
+	@echo "set args -c -d -t tests/config.tcl tests/all.tcl $(TESTFLAGS) $(TCLTESTARGS)" > gdb.run
+	LD_LIBRARY_PATH="./:$LD_LIBRARY_PATH" gdb -x gdb.run $(NSD)
+	rm gdb.run
+
+gdbruntest: all
+	@echo "set args -c -d -t tests/config.tcl" > gdb.run
+	LD_LIBRARY_PATH="./:$LD_LIBRARY_PATH" gdb -x gdb.run $(NSD)
+	rm gdb.run
