@@ -60,21 +60,17 @@ CONST char *
 Dbi_DriverName(Dbi_Pool *pool)
 {
     Dbi_Driver *driver = ((Pool *) pool)->driver;
-    CONST char *name   = NULL;
 
-    if (driver->nameProc != NULL) {
-        name = (*driver->nameProc)(pool, driver->arg);
-    }
-    return name;
+    return driver->name;
 }
 
 
 /*
  *----------------------------------------------------------------------
  *
- * Dbi_DbType --
+ * Dbi_DatabaseName --
  *
- *      Return the string name of the database type (e.g., "sybase").
+ *      Return the string name of the database type (e.g. "oracle").
  *
  * Results:
  *      String name.
@@ -86,15 +82,11 @@ Dbi_DriverName(Dbi_Pool *pool)
  */
 
 CONST char *
-Dbi_DbType(Dbi_Pool *pool)
+Dbi_DatabaseName(Dbi_Pool *pool)
 {
     Dbi_Driver *driver = ((Pool *) pool)->driver;
-    CONST char *type   = NULL;
 
-    if (driver->typeProc != NULL) {
-        type = (*driver->typeProc)(pool, driver->arg);
-    }
-    return type;
+    return driver->database;
 }
 
 

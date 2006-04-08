@@ -10,76 +10,96 @@ eval ::tcltest::configure $argv
 
 
 
-test pools {two pools for testing} -body {
-    lsort [dbi_listpools]
+test basic-syntax.1 {check the basic syntax and arg handling} -body {
+    dbi
+} -returnCodes error -result {wrong # args: should be "dbi command ?args?"}
+
+test basic-syntax.2 {check the basic syntax and arg handling} -body {
+    dbi ?
+} -returnCodes error -result {bad command "?": must be 0or1row, 1row, bounce, default, dml, info, pools, releasehandles, rows, or stats}
+
+
+
+test pools {list all pools} -body {
+    lsort [dbi pools]
 } -result {pool1 pool2}
 
-test defaultpool {default pool is a for testing} -body {
-    dbi_defaultpool
+
+test default {default pool} -body {
+    dbi default
 } -result pool1
 
-test dbtype {dbtype of default pool} -body {
-    dbi_pool dbtype
-} -result dbname
 
-test driver {driver of default pool} -body {
-    dbi_pool driver
-} -result drivername
 
-test user {user of default pool} -body {
-    dbi_pool user
-} -match regexp -result {[A-z0-9]+}
+test info.1 {pool info} -body {
+    array set a [dbi info [dbi default]]
+    lsort [array names a]
+} -result {connections database datasource description driver user}
 
-test password {password of default pool} -body {
-    dbi_pool password
-} -match regexp -result {[A-z0-9]+}
-
-test nhandles {nhandles of default pool} -body {
-    dbi_pool nhandles
+test info.2 {pool info} -body {
+    array set a [dbi info [dbi default]]
+    list $a(connections)
 } -result 5
 
-test datasource {datasource of default pool} -body {
-    dbi_pool datasource
-} -match regexp -result {[A-z0-9]+}
+test info.3 {pool info} -body {
+    array set a [dbi info [dbi default]]
+    set _ $a(datasource)
+} -result ::datasource1
 
-test description {description of default pool} -body {
-    dbi_pool description
-} -match regexp -result {[A-z0-9]+}
+test info.4 {pool info} -body {
+    array set a [dbi info [dbi default]]
+    set _ $a(description)
+} -result {Pool One Description}
+
+test info.5 {pool info} -body {
+    array set a [dbi info [dbi default]]
+    set _ $a(driver)
+} -result drivername
+
+test info.6 {pool info} -body {
+    array set a [dbi info [dbi default]]
+    set _ $a(database)
+} -result dbname
+
+test info.7 {pool info} -body {
+    array set a [dbi info [dbi default]]
+    set _ $a(user)
+} -result username1
 
 
 
 test 0or1row-1 {found single column} -body {
-    dbi_0or1row {1 1}
+    dbi 0or1row {1 1}
 } -result v
 
 test 0or1row-2 {found multiple columns} -body {
-    dbi_0or1row {1 3}
+    dbi 0or1row {1 3}
 } -result {v v v}
 
 test 0or1row-3 {not found} -body {
-    dbi_0or1row {0 1}
+    dbi 0or1row {0 1}
 } -result {}
 
 test 0or1row-4 {query error} -body {
-    dbi_0or1row {ERROR}
+    dbi 0or1row {ERROR}
 } -returnCodes error -result {nsdbitest error}
 
 
 
 test 1row-1 {found single column} -body {
-    dbi_1row {1 1}
+    dbi 1row {1 1}
 } -result v
 
 test 1row-2 {found multiple columns} -body {
-    dbi_1row {1 3}
+    dbi 1row {1 3}
 } -result {v v v}
 
 test 1row-3 {1row not found} -body {
-    dbi_1row {0 0}
-} -returnCodes error -result "Query was not a statement returning rows."
+    dbi 1row {0 0}
+} -returnCodes error -result "query was not a statement returning rows"
 
 test 1row-4 {query error} -body {
-    dbi_1row {ERROR}
+    dbi 1row {ERROR}
 } -returnCodes error -result {nsdbitest error}
 
 
@@ -87,36 +107,36 @@ test 1row-4 {query error} -body {
 
 
 test rows-1 {found 1 row, 1 column} -body {
-    dbi_rows {1 1}
+    dbi rows {1 1}
 } -result v
 
 test rows-2 {found 1 row, 3 columns} -body {
-    dbi_rows {1 3}
+    dbi rows {1 3}
 } -result {v v v}
 
 test rows-3 {found 2 rows, 1 column} -body {
-    dbi_rows {2 1}
+    dbi rows {2 1}
 } -result {v v}
 
 test rows-4 {no rows} -body {
-    dbi_rows {0 0}
+    dbi rows {0 0}
 } -result {}
 
 test rows-5 {query error} -body {
-    dbi_rows {select * from noexist}
+    dbi rows {select * from noexist}
 } -returnCodes error -result {nsdbitest error}
 
 
 
 test poolb {query from pool b} -body {
-    dbi_rows -pool pool2 {1 1}
+    dbi rows -pool pool2 {1 1}
 } -result v
 
 
 test poolhandle-1 {cache pool pointer in pool name obj} -body {
     set poolname pool1
-    dbi_rows -pool $poolname {1 1}
-    dbi_rows -pool $poolname {1 1}
+    dbi rows -pool $poolname {1 1}
+    dbi rows -pool $poolname {1 1}
     set poolname
 } -result pool1
 

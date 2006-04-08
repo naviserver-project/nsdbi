@@ -108,8 +108,6 @@ typedef struct Dbi_BindValue {
  * drivers implement.
  */
 
-typedef CONST char *(Dbi_NameProc)    (Dbi_Pool *, void *arg);
-typedef CONST char *(Dbi_DbTypeProc)  (Dbi_Pool *, void *arg);
 typedef int         (Dbi_OpenProc)    (Dbi_Handle *, void *arg);
 typedef void        (Dbi_CloseProc)   (Dbi_Handle *, void *arg);
 typedef int         (Dbi_BindVarProc) (Ns_DString *, int bindIdx, void *arg);
@@ -129,8 +127,8 @@ typedef int         (Dbi_ResetProc)   (Dbi_Handle *, void *arg);
  */
 
 typedef struct Dbi_Driver {
-    Dbi_NameProc         *nameProc;
-    Dbi_DbTypeProc       *typeProc;
+    CONST char           *name;
+    CONST char           *database;
     Dbi_OpenProc         *openProc;
     Dbi_CloseProc        *closeProc;
     Dbi_BindVarProc      *bindVarProc;
@@ -156,7 +154,7 @@ Dbi_DriverName(Dbi_Pool *)
     NS_GNUC_NONNULL(1);
 
 NS_EXTERN CONST char *
-Dbi_DbType(Dbi_Pool *)
+Dbi_DatabaseName(Dbi_Pool *)
     NS_GNUC_NONNULL(1);
 
 NS_EXTERN int
