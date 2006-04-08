@@ -93,74 +93,6 @@ Dbi_DatabaseName(Dbi_Pool *pool)
 /*
  *----------------------------------------------------------------------
  *
- * Dbi_DML --
- *
- *      Execute an SQL statement which is expected to be DML.
- *
- * Results:
- *      NS_OK or NS_ERROR.
- *
- * Side effects:
- *      SQL is sent to database for evaluation.
- *
- *----------------------------------------------------------------------
- */
-
-int
-Dbi_DML(Dbi_Handle *handle, Dbi_Statement *stmt, int *nrows, int *ncols)
-{
-    int status;
-
-    status = Dbi_Exec(handle, stmt, nrows, ncols);
-    if (status == DBI_DML) {
-        status = NS_OK;
-    } else {
-        if (status == DBI_ROWS) {
-            Dbi_SetException(handle, "DBI",
-                "Query was not a DML or DDL command.");
-            Dbi_Flush(stmt);
-        }
-        status = NS_ERROR;
-    }
-
-    return status;
-}
-
-
-/*
- *----------------------------------------------------------------------
- *
- * Dbi_Select --
- *
- *      Execute an SQL statement which is expected to return rows.
- *
- * Results:
- *      NS_OK/NS_ERROR.
- *
- * Side effects:
- *      SQL is sent to database for evaluation.
- *
- *----------------------------------------------------------------------
- */
-
-int
-Dbi_Select(Dbi_Handle *handle, Dbi_Statement *stmt, int *nrows, int *ncols)
-{
-    if (Dbi_Exec(handle, stmt, nrows, ncols) != DBI_ROWS) {
-        if (Dbi_ExceptionPending(handle) == NS_FALSE) {
-            Dbi_SetException(handle, "DBI",
-                "Query was not a statement returning rows.");
-        }
-        return NS_ERROR;
-    }
-
-    return NS_OK;
-}
-
-
-/*
- *----------------------------------------------------------------------
- *
  * Dbi_Exec --
  *
  *      Execute an SQL statement.

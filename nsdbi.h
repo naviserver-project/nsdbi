@@ -158,14 +158,6 @@ Dbi_DatabaseName(Dbi_Pool *)
     NS_GNUC_NONNULL(1);
 
 NS_EXTERN int
-Dbi_DML(Dbi_Handle *, Dbi_Statement *stmt, int *nrows, int *ncols)
-    NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
-
-NS_EXTERN int
-Dbi_Select(Dbi_Handle *, Dbi_Statement *, int *nrows, int *ncols)
-    NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
-
-NS_EXTERN int
 Dbi_Exec(Dbi_Handle *, Dbi_Statement *, int *nrows, int *ncols)
     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
 
@@ -238,12 +230,20 @@ Dbi_StatementBindValue(Dbi_Statement *, char *name, char *value, int len)
  */
 
 NS_EXTERN int
+Dbi_Select(Dbi_Handle *, Dbi_Statement *, int *nrows, int *ncols)
+    NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
+
+NS_EXTERN int
 Dbi_0or1Row(Dbi_Handle *handle, Dbi_Statement *stmt, int *nrows, int *ncols)
      NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
 
 NS_EXTERN int
 Dbi_1Row(Dbi_Handle *handle, Dbi_Statement *stmt, int *ncols)
      NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
+
+NS_EXTERN int
+Dbi_DML(Dbi_Handle *, Dbi_Statement *stmt, int *nrows, int *ncols)
+    NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
 
 NS_EXTERN void
 Dbi_SetException(Dbi_Handle *handle, CONST char *sqlstate, CONST char *fmt, ...)
