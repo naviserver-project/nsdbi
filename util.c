@@ -45,35 +45,6 @@ NS_RCSID("@(#) $Header$");
 
 #define DBI_SQLERRORCODE "DBI" /* SQL error code for exceptions. */
 
-
-/*
- *----------------------------------------------------------------------
- *
- * Dbi_QuoteValue --
- *
- *      Add single quotes around an SQL string value if necessary.
- *
- * Results:
- *      None.
- *
- * Side effects:
- *      Copy of the string, modified if needed, is placed in the 
- *      given Ns_DString.
- *
- *----------------------------------------------------------------------
- */
-
-void
-Dbi_QuoteValue(Ns_DString *pds, CONST char *string)
-{
-    while (*string != '\0') {
-        if (*string == '\'') {
-            Ns_DStringNAppend(pds, "'", 1);
-        }
-        Ns_DStringNAppend(pds, (char *) string, 1);
-        ++string;
-    }
-}
 
 
 /*

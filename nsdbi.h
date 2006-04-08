@@ -237,10 +237,6 @@ Dbi_StatementBindValue(Dbi_Statement *, char *name, char *value, int len)
  * util.c:
  */
 
-NS_EXTERN void
-Dbi_QuoteValue(Ns_DString *pds, CONST char *string)
-     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
-
 NS_EXTERN int
 Dbi_0or1Row(Dbi_Handle *handle, Dbi_Statement *stmt, int *nrows, int *ncols)
      NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
