@@ -32,40 +32,19 @@ test default {default pool} -body {
 
 
 test info.1 {pool info} -body {
-    array set a [dbi info [dbi default]]
-    lsort [array names a]
-} -result {connections database datasource description driver user}
+    dbi info [dbi default]
+} -cleanup {
+    unset -nocomplain a
+} -result {driver drivername database dbname datasource ::datasource1 description {Pool One Description} user username1 connections 5}
 
-test info.2 {pool info} -body {
-    array set a [dbi info [dbi default]]
-    list $a(connections)
-} -result 5
 
-test info.3 {pool info} -body {
-    array set a [dbi info [dbi default]]
-    set _ $a(datasource)
-} -result ::datasource1
 
-test info.4 {pool info} -body {
-    array set a [dbi info [dbi default]]
-    set _ $a(description)
-} -result {Pool One Description}
-
-test info.5 {pool info} -body {
-    array set a [dbi info [dbi default]]
-    set _ $a(driver)
-} -result drivername
-
-test info.6 {pool info} -body {
-    array set a [dbi info [dbi default]]
-    set _ $a(database)
-} -result dbname
-
-test info.7 {pool info} -body {
-    array set a [dbi info [dbi default]]
-    set _ $a(user)
-} -result username1
-
+test stats.1 {pool stats} -body {
+     array set a [dbi stats pool1]
+     lsort [array names a]
+} -cleanup {
+    unset -nocomplain a
+} -result {agedcloses bounces handlefailures handlegets handlemisses handleopens idlecloses oppscloses queries}
 
 
 test 0or1row-1 {found single column} -body {

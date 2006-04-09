@@ -128,7 +128,7 @@ Dbi_Exec(Dbi_Handle *handle, Dbi_Statement *stmt, int *nrows, int *ncols)
         status = (*driver->execProc)(handle, stmt, &stmtPtr->numRows, &stmtPtr->numCols,
                                      driver->arg);
 
-        stmtPtr->handlePtr->stats.opps++;
+        stmtPtr->handlePtr->stats.queries++;
         if (nrows != NULL) {
             *nrows = stmtPtr->numRows;
         }

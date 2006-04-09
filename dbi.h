@@ -65,17 +65,18 @@ typedef struct Pool {
     int                maxwait;
     time_t             maxidle;
     time_t             maxopen;
-    int                maxopps;
+    int                maxqueries;
     int                stale_on_close;
 
     struct {
-        unsigned int attempts;
-        unsigned int successes;
-        unsigned int misses;
-        unsigned int opps;
+        unsigned int handlegets;
+        unsigned int handlemisses;
+        unsigned int handleopens;
+        unsigned int handlefailures;
+        unsigned int queries;
         unsigned int otimecloses;
         unsigned int atimecloses;
-        unsigned int oppscloses;
+        unsigned int querycloses;
     } stats;
 
 } Pool;
@@ -108,7 +109,7 @@ typedef struct Handle {
     int               reason; /* why the handle is being disconnected */
 
     struct {
-        unsigned int opps;
+        unsigned int queries;
     } stats;
 
 } Handle;
