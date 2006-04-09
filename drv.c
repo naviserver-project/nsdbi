@@ -358,6 +358,5 @@ DbiClose(Dbi_Handle *handle)
 
     if (driver->closeProc != NULL && handle->connected) {
         (*driver->closeProc)(handle, driver->arg);
-        handle->connected = NS_FALSE;
     }
 }

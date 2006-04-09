@@ -46,19 +46,15 @@ NS_RCSID("@(#) $Header$");
 
 static void
 ReturnHandle(Handle * handle)
-     NS_GNUC_NONNULL(1);
+    NS_GNUC_NONNULL(1);
 
 static int
-IsStale(Handle *, time_t now)
-     NS_GNUC_NONNULL(1);
+CloseIfStale(Handle *, time_t now)
+    NS_GNUC_NONNULL(1);
 
 static int
 Connect(Handle *)
-     NS_GNUC_NONNULL(1);
-
-static void
-Disconnect(Handle *)
-     NS_GNUC_NONNULL(1);
+    NS_GNUC_NONNULL(1);
 
 static void
 CheckPool(Pool *poolPtr, int stale);
@@ -71,17 +67,7 @@ static Ns_ArgProc      PoolCheckArgProc;
  */
 
 static Tcl_HashTable  serversTable;
-static Ns_Cls         handleCls; /* Cache a single handle for current conn. */
-static const char    *reasons[] = {"?", "bounced", "aged", "idle", "used"};
-
-/*
- * Handle disconnection reasons.
- */
-
-#define DBI_CLOSE_STALE 1
-#define DBI_CLOSE_OTIME 2
-#define DBI_CLOSE_ATIME 3
-#define DBI_CLOSE_OPPS  4
+static Ns_Cls         handleCls; /* Cache a single handle for current socket conn. */
 
 
 
@@ -491,9 +477,7 @@ Dbi_PutHandle(Dbi_Handle *handle)
      */
 
     time(&now);
-    if (IsStale(handlePtr, now)) {
-        Disconnect(handlePtr);
-    } else {
+    if (!CloseIfStale(handlePtr, now)) {
         handlePtr->atime = now;
     }
     Ns_MutexLock(&poolPtr->lock);
@@ -626,9 +610,35 @@ DbiLogSql(Dbi_Statement *stmt)
 /*
  *----------------------------------------------------------------------
  *
+ * DbiGetServer --
+ *
+ *      Get per-server data.
+ *
+ * Results:
+ *      Pointer to per-server data structure.
+ *
+ * Side effects:
+ *      None.
+ *
+ *----------------------------------------------------------------------
+ */
+
+ServerData *
+DbiGetServer(CONST char *server)
+{
+    Tcl_HashEntry *hPtr;
+
+    hPtr = Tcl_FindHashEntry(&serversTable, server);
+    return hPtr ? Tcl_GetHashValue(hPtr) : NULL;
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
  * ReturnHandle --
  *
- *      Return a handle to its pool.  Connected handles are pushed on
+ *      Return a handle to its pool. Connected handles are pushed on
  *      the front of the list, disconnected handles are appened to
  *      the end.
  *
@@ -636,9 +646,8 @@ DbiLogSql(Dbi_Statement *stmt)
  *      None.
  *
  * Side effects:
- *      Handle is returned to the pool.  Note:  The pool lock must be
- *      held by the caller and this function does not signal a thread
- *      waiting for handles.
+ *      Note:  The pool lock must be held by the caller and this
+ *      function does not signal a thread waiting for handles.
  *
  *----------------------------------------------------------------------
  */
@@ -648,22 +657,6 @@ ReturnHandle(Handle *handlePtr)
 {
     Pool *poolPtr = (Pool *) handlePtr->poolPtr;
 
-    if (!handlePtr->connected) {
-        poolPtr->stats.opps += handlePtr->stats.opps;
-        handlePtr->stats.opps = 0;
-        switch (handlePtr->reason) {
-        case DBI_CLOSE_OTIME:
-            poolPtr->stats.otimecloses++;
-            break;
-        case DBI_CLOSE_ATIME:
-            poolPtr->stats.atimecloses++;
-            break;
-        case DBI_CLOSE_OPPS:
-            poolPtr->stats.oppscloses++;
-            break;
-        }
-        handlePtr->reason = 0;
-    }
     if (poolPtr->firstPtr == NULL) {
         poolPtr->firstPtr = poolPtr->lastPtr = handlePtr;
         handlePtr->nextPtr = NULL;
@@ -682,40 +675,51 @@ ReturnHandle(Handle *handlePtr)
 /*
  *----------------------------------------------------------------------
  *
- * IsStale --
+ * CloseIfStale --
  *
- *      Check to see if a handle is stale.
+ *      If the handle is stale, close it.
  *
  * Results:
- *      NS_TRUE if handle stale, NS_FALSE otherwise.
+ *      NS_TRUE if connection closed, NS_FALSE otherwise.
  *
  * Side effects:
- *      Staleness reason is updated.
+ *      None.
  *
  *----------------------------------------------------------------------
  */
 
 static int
-IsStale(Handle *handlePtr, time_t now)
+CloseIfStale(Handle *handlePtr, time_t now)
 {
     Pool *poolPtr = handlePtr->poolPtr;
 
+    char *reason  = NULL;
+
     if (handlePtr->connected) {
         if (poolPtr->stale_on_close > handlePtr->stale_on_close) {
-            handlePtr->reason = DBI_CLOSE_STALE;
-            return NS_TRUE;
+            reason = "bounced";
         } else if (poolPtr->maxopen && (handlePtr->otime < (now - poolPtr->maxopen))) {
-            handlePtr->reason = DBI_CLOSE_OTIME;
-            return NS_TRUE;
+            reason = "aged";
         } else if (poolPtr->maxidle && (handlePtr->atime < (now - poolPtr->maxidle))) {
-            handlePtr->reason = DBI_CLOSE_ATIME;
-            return NS_TRUE;
+            reason = "idle";
+            poolPtr->stats.atimecloses++;
         } else if (poolPtr->maxopps && (handlePtr->stats.opps >= poolPtr->maxopps)) {
-            handlePtr->reason = DBI_CLOSE_OPPS;
-            return NS_TRUE;
+            reason = "used";
+            poolPtr->stats.oppscloses++;
+        }
+        if (reason) {
+            Ns_Log(Notice, "nsdbi: closing %s handle in pool '%s', %d opperations",
+                   reason, poolPtr->name, handlePtr->stats.opps);
+            DbiClose((Dbi_Handle *) handlePtr);
+            handlePtr->connected = NS_FALSE;
+            handlePtr->arg = NULL;
+            handlePtr->atime = handlePtr->otime = 0;
+            poolPtr->stats.opps += handlePtr->stats.opps;
+            handlePtr->stats.opps = 0;
         }
     }
-    return NS_FALSE;
+
+    return reason ? NS_TRUE : NS_FALSE;
 }
 
 
@@ -767,9 +771,7 @@ CheckPool(Pool *poolPtr, int stale)
         while (handlePtr != NULL) {
             poolPtr->npresent--;
             nextPtr = handlePtr->nextPtr;
-            if (IsStale(handlePtr, now)) {
-                Disconnect(handlePtr);
-            }
+            CloseIfStale(handlePtr, now);
             handlePtr->nextPtr = checkedPtr;
             checkedPtr = handlePtr;
             handlePtr = nextPtr;
@@ -857,59 +859,4 @@ Connect(Handle *handlePtr)
     }
 
     return status;
-}
-
-
-/*
- *----------------------------------------------------------------------
- *
- * Disconnect --
- *
- *      Disconnect a handle by closing the database if needed.
- *
- * Results:
- *      None.
- *
- * Side effects:
- *      None.
- *
- *----------------------------------------------------------------------
- */
-
-void
-Disconnect(Handle *handlePtr)
-{
-    Pool *poolPtr = handlePtr->poolPtr;
-
-    Ns_Log(Notice, "nsdbi: closing %s handle in pool '%s', %d opperations",
-           reasons[handlePtr->reason], poolPtr->name, handlePtr->stats.opps);
-    DbiClose((Dbi_Handle *) handlePtr);
-    handlePtr->arg = NULL;
-    handlePtr->atime = handlePtr->otime = 0;
-}
-
-
-/*
- *----------------------------------------------------------------------
- *
- * DbiGetServer --
- *
- *      Get per-server data.
- *
- * Results:
- *      Pointer to per-server data structure.
- *
- * Side effects:
- *      None.
- *
- *----------------------------------------------------------------------
- */
-
-ServerData *
-DbiGetServer(CONST char *server)
-{
-    Tcl_HashEntry *hPtr;
-
-    hPtr = Tcl_FindHashEntry(&serversTable, server);
-    return hPtr ? Tcl_GetHashValue(hPtr) : NULL;
 }
