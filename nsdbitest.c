@@ -60,7 +60,7 @@ static Dbi_ResetProc        Reset;
 /*
  *----------------------------------------------------------------------
  *
- * Dbi_ModuleInit --
+ * Ns_ModuleInit --
  *
  *      Register the driver procs.
  *

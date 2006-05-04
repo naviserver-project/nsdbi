@@ -67,6 +67,7 @@ typedef struct Pool {
     time_t             maxopen;
     int                maxqueries;
     int                stale_on_close;
+    int                stopping;
 
     struct {
         unsigned int handlegets;
