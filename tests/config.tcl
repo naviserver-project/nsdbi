@@ -65,7 +65,7 @@ ns_param   user            "username1"
 ns_param   password        "password1"
 ns_param   maxidle         20          ;# Handle closed after maxidle seconds if unused.
 ns_param   maxopen         40          ;# Handle closed after maxopen seconds, regardles of use.
-ns_param   maxqueries      4           ;# Handle closed after maxqueries sql queries.
+ns_param   maxqueries      10          ;# Handle closed after maxqueries sql queries.
 ns_param   checkinterval   15          ;# Check for stale handles every 15 seconds.
 
 ns_section "ns/server/server1/module/nsdbitest/pool/pool2"
