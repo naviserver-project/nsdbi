@@ -565,7 +565,7 @@ Dbi_BouncePool(Dbi_Pool *pool)
  *      Append a list of statistics to the given dstring.
  *
  * Results:
- *      None.
+ *      Pointer to dest.string.
  *
  * Side effects:
  *      None.
@@ -573,13 +573,13 @@ Dbi_BouncePool(Dbi_Pool *pool)
  *----------------------------------------------------------------------
  */
 
-void
-Dbi_Stats(Ns_DString *ds, Dbi_Pool *pool)
+char *
+Dbi_Stats(Ns_DString *dest, Dbi_Pool *pool)
 {
     Pool *poolPtr = (Pool *) pool;
 
     Ns_MutexLock(&poolPtr->lock);
-    Ns_DStringPrintf(ds, "handlegets %d handlemisses %d "
+    Ns_DStringPrintf(dest, "handlegets %d handlemisses %d "
                      "handleopens %d handlefailures %d queries %d "
                      "agedcloses %d idlecloses %d "
                      "oppscloses %d bounces %d",
@@ -589,6 +589,8 @@ Dbi_Stats(Ns_DString *ds, Dbi_Pool *pool)
                      poolPtr->stats.otimecloses, poolPtr->stats.atimecloses,
                      poolPtr->stats.querycloses, poolPtr->stale_on_close);
     Ns_MutexUnlock(&poolPtr->lock);
+
+    return Ns_DStringValue(dest);
 }
 
 
@@ -857,7 +859,8 @@ PoolCheckArgProc(Tcl_DString *dsPtr, void *arg)
 static void
 AtShutdown(Ns_Time *toPtr, void *arg)
 {
-    Pool *poolPtr = arg;
+    Pool       *poolPtr = arg;
+    Ns_DString  ds;
 
     if (toPtr == NULL) {
         Ns_MutexLock(&poolPtr->lock);
@@ -865,6 +868,10 @@ AtShutdown(Ns_Time *toPtr, void *arg)
         Ns_CondBroadcast(&poolPtr->getCond);
         Ns_MutexUnlock(&poolPtr->lock);
     } else {
+        Ns_DStringInit(&ds);
+        Dbi_Stats(&ds, (Dbi_Pool *) poolPtr);
+        Ns_Log(Notice, "nsdbi[%s]: %s", poolPtr->name, ds.string);
+        Ns_DStringFree(&ds);
         CheckPool(poolPtr, 1);
     }
 }

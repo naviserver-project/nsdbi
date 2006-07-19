@@ -193,7 +193,7 @@ NS_EXTERN void
 Dbi_BouncePool(Dbi_Pool *pool)
     NS_GNUC_NONNULL(1);
 
-NS_EXTERN void
+NS_EXTERN char *
 Dbi_Stats(Ns_DString *ds, Dbi_Pool *poolPtr)
     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
 
