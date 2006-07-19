@@ -345,6 +345,7 @@ TclDbiCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
                 status = Exception(interp, NULL, "query was not a DML or DDL command");
             } else {
                 Tcl_SetIntObj(Tcl_GetObjResult(interp), n);
+                status = TCL_OK;
             }
             break;
 
@@ -461,12 +462,10 @@ GetPool(ClientData arg, Tcl_Interp *interp, Tcl_Obj *poolObj)
 static int
 BindVars(Tcl_Interp *interp, Dbi_Statement *stmt, char *array, char *set)
 {
-    Tcl_HashSearch  search;
-    Tcl_HashEntry  *hPtr;
     Ns_Set         *bindSet;
     Tcl_Obj        *valObjPtr;
-    char           *key, *value;
-    int             len;
+    CONST char     *key, *value;
+    int             len, idx = 0;
 
     if (set != NULL) {
         if (Ns_TclGetSet2(interp, set, &bindSet) != TCL_OK) {
@@ -474,9 +473,7 @@ BindVars(Tcl_Interp *interp, Dbi_Statement *stmt, char *array, char *set)
         }
     }
 
-    hPtr = Tcl_FirstHashEntry(&stmt->bindVars, &search);
-    while (hPtr != NULL) {
-        key = Tcl_GetHashKey(&stmt->bindVars, hPtr);
+    while (Dbi_StatementGetBindValue(stmt, idx++, NULL, NULL, &key) == NS_OK) {
         value = NULL;
 
         if (bindSet != NULL) {
@@ -495,10 +492,8 @@ BindVars(Tcl_Interp *interp, Dbi_Statement *stmt, char *array, char *set)
             Tcl_AddObjErrorInfo(interp, key, -1);
             return TCL_ERROR;
         }
-        
-        Dbi_StatementBindValue(stmt, key, value, len);
 
-        hPtr = Tcl_NextHashEntry(&search);
+        Dbi_StatementSetBindValue(stmt, idx, value, len);
     }
 
     return TCL_OK;

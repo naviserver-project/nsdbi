@@ -111,24 +111,30 @@ Dbi_Exec(Dbi_Handle *handle, Dbi_Statement *stmt, int *nrows, int *ncols)
 {
     Statement  *stmtPtr   = (Statement *) stmt;
     Handle     *handlePtr = (Handle *) handle;
-    Dbi_Driver *driver;
+    Dbi_Driver *driver    = handlePtr->poolPtr->driver;
     int         status    = NS_ERROR;
 
     Dbi_ResetException(handle);
     if (DbiStatementPrepare(stmt, handle) != NS_OK) {
         return NS_ERROR;
     }
-    stmtPtr->handlePtr = handlePtr;
-    stmtPtr->fetchingRows = NS_FALSE;
-    handlePtr->stmtPtr = stmtPtr;
-    driver = handlePtr->poolPtr->driver;
 
     if (driver->execProc != NULL && handle->connected) {
 
         status = (*driver->execProc)(handle, stmt, &stmtPtr->numRows, &stmtPtr->numCols,
                                      driver->arg);
-
         stmtPtr->handlePtr->stats.queries++;
+
+        if (status == DBI_ROWS) {
+            if (stmtPtr->numRows && !stmtPtr->numCols) {
+                Dbi_SetException(handle, "DBI",
+                                 "driver returned rows but no columns");
+                return NS_ERROR;
+            }
+            stmt->fetchingRows = NS_TRUE;
+            stmtPtr->currentRow = 0;
+            stmtPtr->currentCol = 0;
+        }
         if (nrows != NULL) {
             *nrows = stmtPtr->numRows;
         }
@@ -136,11 +142,6 @@ Dbi_Exec(Dbi_Handle *handle, Dbi_Statement *stmt, int *nrows, int *ncols)
             *ncols = stmtPtr->numCols;
         }
         DbiLogSql(stmt);
-        if (status == DBI_ROWS) {
-            stmt->fetchingRows = NS_TRUE;
-            stmtPtr->currentRow = 0;
-            stmtPtr->currentCol = 0;
-        }
     }
 
     return status;

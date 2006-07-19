@@ -160,12 +160,10 @@ Close(Dbi_Handle *handle, void *arg)
  *----------------------------------------------------------------------
  */
 
-static int
-Bind(Ns_DString *ds, int bindIdx, void *arg)
+static void
+Bind(Ns_DString *ds, CONST char *name, int bindIdx, void *arg)
 {
-    Ns_DStringPrintf(ds, "@%d@", bindIdx);
-
-    return NS_OK;
+    Ns_DStringPrintf(ds, "%d:%s", bindIdx, name);
 }
 
 
@@ -188,19 +186,29 @@ Bind(Ns_DString *ds, int bindIdx, void *arg)
 static int
 Exec(Dbi_Handle *handle, Dbi_Statement *stmt, int *nrows, int *ncols, void *arg)
 {
-    char *sql;
-    int   status;
+    char *sql, cmd[64];
+    int   n, status, rest = 0;
 
     sql = stmt->dsBoundSql.string;
+    n = sscanf(sql, "%s %d %d %n", cmd, nrows, ncols, &rest);
 
-    if (STREQ(sql, "DML")) {
-        status = DBI_DML;
-    } else if (sscanf(sql, "%d %d", nrows, ncols) == 2) {
-        status = DBI_ROWS;
+    if (n >= 1) {
+        if (STREQ(cmd, "DML")) {
+            status = DBI_DML;
+        } else if (STREQ(cmd, "ROWS")) {
+            status = DBI_ROWS;
+        } else if (STREQ(cmd, "ERROR")) {
+            Dbi_SetException(handle, "TEST", "driver error");
+            status = NS_ERROR;
+        } else {
+            goto error;
+        }
     } else {
-        Dbi_SetException(handle, "TEST", "nsdbitest error");
+    error:
+        Dbi_SetException(handle, "TEST", "nsdbitest query syntax error");
         status = NS_ERROR;
     }
+    stmt->arg = sql + rest;
 
     return status;
 }
@@ -212,7 +220,9 @@ Exec(Dbi_Handle *handle, Dbi_Statement *stmt, int *nrows, int *ncols, void *arg)
  * Value --
  *
  *      Fetch the value of the given row and column. For testing, all
- *      columns are named "v".
+ *      values are "v", except the first which is the original SQL
+ *      statement with driver specific bind variable notation
+ *      substituted.
  *
  * Results:
  *      Always NS_OK.
@@ -227,8 +237,13 @@ static int
 Value(Dbi_Handle *handle, Dbi_Statement *stmt, int rowIdx, int colIdx,
       CONST char **value, int *len, void *arg)
 {
-    *value = "v";
-    *len = 1;
+    if (rowIdx == 0 && colIdx == 0) {
+        *value = stmt->arg;
+        *len = strlen(*value);
+    } else {
+        *value = "v";
+        *len = 1;
+    }
 
     return NS_OK;
 }

@@ -12,7 +12,7 @@ eval ::tcltest::configure $argv
 
 test handle-caching-1 {Execute db statement in conn thread} -setup {
     ns_register_proc GET /dbi {
-        ns_return 200 text/plain "[dbi rows {1 1}] [dbi rows {1 1}]"
+        ns_return 200 text/plain "[dbi rows {ROWS 1 1 v}] [dbi rows {ROWS 1 1 v}]"
     }
 } -body {
     nstest_http -getbody 1 GET /dbi

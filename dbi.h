@@ -33,6 +33,8 @@
 #include "nsdbi.h"
 
 
+#define DBI_MAX_BIND_VARS 32
+
 /*
  * The following structure defines a database pool.
  */
@@ -127,7 +129,6 @@ typedef struct Statement {
     Pool             *poolPtr;
     Ns_DString        dsBoundSql; /* SQL with driver specific bind variable notation */
     int               fetchingRows;
-    Tcl_HashTable     bindVars;
     void             *arg;        /* Driver statement context */
 
     /* Private to a Statement struct */
@@ -138,6 +139,22 @@ typedef struct Statement {
     int               currentCol;
     int               numRows;
     int               currentRow;
+
+    /*
+     * The following structure tracks bind variables by
+     * both key and index within the SQL statement.
+     */
+
+    struct {
+        Tcl_HashTable   table;
+        int             nbound;
+        struct Bind {
+            CONST char *name;
+            CONST void *value;
+            int         len;
+        } vars[DBI_MAX_BIND_VARS];
+    } bind;
+
 } Statement;
 
 

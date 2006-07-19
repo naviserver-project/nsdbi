@@ -58,8 +58,6 @@
  * Database pool structure.
  */
 
-struct Dbi_Driver;
-
 typedef struct Dbi_Pool {
     char              *name;
     char              *description;
@@ -94,23 +92,13 @@ typedef struct Dbi_Statement {
 } Dbi_Statement;
 
 /*
- * Structure for tracking the values of bind variables.
- */
- 
-typedef struct Dbi_BindValue {
-    CONST char    *data;
-    int            len;
-} Dbi_BindValue;
-
-
-/*
  * The following typedefs define the functions that loadable
  * drivers implement.
  */
 
 typedef int         (Dbi_OpenProc)    (Dbi_Handle *, void *arg);
 typedef void        (Dbi_CloseProc)   (Dbi_Handle *, void *arg);
-typedef int         (Dbi_BindVarProc) (Ns_DString *, int bindIdx, void *arg);
+typedef void        (Dbi_BindVarProc) (Ns_DString *, CONST char *name, int bindIdx, void *arg);
 typedef int         (Dbi_ExecProc)    (Dbi_Handle *, Dbi_Statement *, int *nrows,
                                        int *ncols, void *arg);
 typedef int         (Dbi_ValueProc)   (Dbi_Handle *, Dbi_Statement *, int rowIdx,
@@ -222,8 +210,13 @@ Dbi_StatementFree(Dbi_Statement *)
      NS_GNUC_NONNULL(1);
 
 NS_EXTERN int
-Dbi_StatementBindValue(Dbi_Statement *, char *name, char *value, int len)
-     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2) NS_GNUC_NONNULL(3);
+Dbi_StatementSetBindValue(Dbi_Statement *, int idx, CONST char *value, int len)
+     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(3);
+
+NS_EXTERN int
+Dbi_StatementGetBindValue(Dbi_Statement *, int idx,
+                          CONST char **value, int *len, CONST char **key)
+    NS_GNUC_NONNULL(1);
 
 /*
  * util.c:
