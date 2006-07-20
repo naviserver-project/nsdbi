@@ -184,7 +184,7 @@ Dbi_NextValue(Dbi_Statement *stmt, CONST char **value, int *vLen, CONST char **c
         return DBI_END_DATA;
     }
     if (!handle) {
-        Ns_Log(Error, "nsdbi: %s", norows);
+        Ns_Log(Error, "nsdbi[%s]: %s", handle->pool->name, norows);
         return NS_ERROR;
     }
     if (handle->connected == NS_FALSE) {
@@ -326,7 +326,7 @@ DbiOpen(Dbi_Handle *handle)
     if (driver->openProc == NULL ||
         (*driver->openProc)(handle, driver->arg) != NS_OK) {
 
-        Ns_Log(Error, "nsdbi: failed to open handle in pool '%s': code: '%s' msg: %s",
+        Ns_Log(Error, "nsdbi[%s]: failed to open handle: code: '%s' msg: %s",
                handle->pool->name,
                Dbi_ExceptionCode(handle), Dbi_ExceptionMsg(handle));
         return NS_ERROR;

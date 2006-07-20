@@ -114,8 +114,7 @@ Dbi_RegisterDriver(CONST char *server, CONST char *module, Dbi_Driver *driver)
 
     path = Ns_ConfigGetPath(server, module, NULL);
     if (path == NULL) {
-        Ns_Log(Error, "nsdbi: no configuration for pool: '%s', server: '%s'",
-               module, server);
+        Ns_Log(Error, "nsdbi[%s]: no configuration for pool", module);
         return NS_ERROR;
     }
 
@@ -168,8 +167,8 @@ Dbi_RegisterDriver(CONST char *server, CONST char *module, Dbi_Driver *driver)
             Tcl_SetHashValue(hPtr, sdataPtr);
             if (Ns_TclRegisterTrace(server, DbiInitInterp, server,
                                     NS_TCL_TRACE_CREATE) != NS_OK) {
-                Ns_Log(Error, "nsdbi: error register tcl commands "
-                       "for server '%s'", server);
+                Ns_Log(Error, "nsdbi[%s]: error register tcl commands "
+                       "for server '%s'", module, server);
                 return NS_ERROR;
             }
         } else {
@@ -671,8 +670,8 @@ CloseIfStale(Handle *handlePtr, time_t now)
             poolPtr->stats.querycloses++;
         }
         if (reason) {
-            Ns_Log(Notice, "nsdbi: closing %s handle in pool '%s', %d queries",
-                   reason, poolPtr->name, handlePtr->stats.queries);
+            Ns_Log(Notice, "nsdbi[%s]: closing %s handle, %d queries",
+                   poolPtr->name, reason, handlePtr->stats.queries);
             DbiClose((Dbi_Handle *) handlePtr);
             handlePtr->connected = NS_FALSE;
             handlePtr->arg = NULL;
@@ -852,13 +851,13 @@ Connect(Handle *handlePtr)
         if (status != NS_OK) {
             poolPtr->stats.handlefailures++;
             handlePtr->atime = handlePtr->otime = 0;
-            Ns_Log(Error, "nsdbi: failed to open connection for handle in pool '%s'",
+            Ns_Log(Error, "nsdbi[%s]: failed to open connection for handle",
                    poolPtr->name);
         } else {
             handlePtr->connected = NS_TRUE;
             handlePtr->atime = handlePtr->otime = time(NULL);
-            Ns_Log(Notice, "nsdbi: opened handle %d/%d in pool '%s'",
-                   handlePtr->n, poolPtr->nhandles, poolPtr->name);
+            Ns_Log(Notice, "nsdbi[%s]: opened handle %d/%d",
+                   poolPtr->name, handlePtr->n, poolPtr->nhandles);
         }
     }
 
