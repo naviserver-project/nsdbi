@@ -46,10 +46,6 @@ typedef struct Pool {
     /* Publicly visible in a Dbi_Pool struct */
 
     char              *name;
-    char              *description;
-    char              *datasource;
-    char              *user;
-    char              *password;
     int                nhandles;
 
     /* Private to a Pool struct */

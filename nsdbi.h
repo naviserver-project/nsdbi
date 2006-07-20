@@ -60,13 +60,7 @@
 
 typedef struct Dbi_Pool {
     char              *name;
-    char              *description;
-    char              *datasource;
-    char              *user;
-    char              *password;
     int                nhandles;
-    int                fVerbose;
-    int                fVerboseError;
 } Dbi_Pool;
 
 /*

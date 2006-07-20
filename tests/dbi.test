@@ -35,7 +35,7 @@ test info.1 {pool info} -body {
     dbi info [dbi default]
 } -cleanup {
     unset -nocomplain a
-} -result {driver drivername database dbname datasource ::datasource1 description {Pool One Description} user username1 connections 5}
+} -result {driver drivername database dbname connections 5}
 
 
 

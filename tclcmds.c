@@ -265,12 +265,6 @@ TclDbiCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
             Tcl_AppendElement(interp, Dbi_DriverName(pool));
             Tcl_AppendElement(interp, "database");
             Tcl_AppendElement(interp, Dbi_DatabaseName(pool));
-            Tcl_AppendElement(interp, "datasource");
-            Tcl_AppendElement(interp, pool->datasource);
-            Tcl_AppendElement(interp, "description");
-            Tcl_AppendElement(interp, pool->description);
-            Tcl_AppendElement(interp, "user");
-            Tcl_AppendElement(interp, pool->user);
             Tcl_AppendElement(interp, "connections");
             Tcl_ListObjAppendElement(interp, Tcl_GetObjResult(interp),
                                      Tcl_NewIntObj(pool->nhandles));

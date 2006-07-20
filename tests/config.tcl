@@ -52,20 +52,14 @@ ns_param   pool2           $homedir/nsdbitest.so
 #
 
 ns_section "ns/module/global1"
-ns_param   description     "Global Pool One"
 ns_param   handles         2
 
 ns_section "ns/module/global2"
-ns_param   description     "Global Pool Two"
 ns_param   handles         2
 
 ns_section "ns/server/server1/module/pool1"
-ns_param   description     "Pool One Description"
 ns_param   default         true
 ns_param   handles         5
-ns_param   datasource      "::datasource1"
-ns_param   user            "username1"
-ns_param   password        "password1"
 ns_param   maxidle         20          ;# Handle closed after maxidle seconds if unused.
 ns_param   maxopen         40          ;# Handle closed after maxopen seconds, regardles of use.
 ns_param   maxqueries      10          ;# Handle closed after maxqueries sql queries.

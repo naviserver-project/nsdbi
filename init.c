@@ -123,10 +123,6 @@ Dbi_RegisterDriver(CONST char *server, CONST char *module, Dbi_Driver *driver)
     Ns_CondInit(&poolPtr->getCond);
     poolPtr->driver = driver;
     poolPtr->name = ns_strdup(module);
-    poolPtr->description = Ns_ConfigGetValue(path, "description");
-    poolPtr->datasource = Ns_ConfigGetValue(path, "datasource");
-    poolPtr->user = Ns_ConfigGetValue(path, "user");
-    poolPtr->password = Ns_ConfigGetValue(path, "password");
     poolPtr->nhandles = Ns_ConfigIntRange(path, "handles", 2, 1, INT_MAX);
     poolPtr->maxwait = Ns_ConfigIntRange(path, "maxwait", 10, 0, INT_MAX);
     poolPtr->maxidle = Ns_ConfigIntRange(path, "maxidle", 0, 0, INT_MAX);
