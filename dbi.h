@@ -57,7 +57,6 @@ typedef struct Pool {
     /* Private to a Pool struct */
 
     Dbi_Driver        *driver;
-    struct ServerData *sdataPtr;
     struct Handle     *firstPtr;
     struct Handle     *lastPtr;
     int                npresent;

@@ -22,7 +22,7 @@ test basic-syntax.2 {check the basic syntax and arg handling} -body {
 
 test pools {list all pools} -body {
     lsort [dbi pools]
-} -result {pool1 pool2}
+} -result {global1 global2 pool1 pool2}
 
 
 test default {default pool} -body {
@@ -122,8 +122,8 @@ test rows-5 {query error} -body {
 
 
 
-test poolb {query from pool b} -body {
-    dbi rows -pool pool2 {ROWS 1 1 v}
+test pool-global {query from non-default global pool} -body {
+    dbi rows -pool global1 {ROWS 1 1 v}
 } -result v
 
 

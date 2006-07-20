@@ -91,14 +91,14 @@ static Ns_Cls         handleCls; /* Cache a single handle for current socket con
 int
 Dbi_RegisterDriver(CONST char *server, CONST char *module, Dbi_Driver *driver)
 {
-    ServerData    *sdataPtr;
-    Pool          *poolPtr;
-    Handle        *handlePtr;
-    Tcl_HashEntry *hPtr;
-    Ns_Set        *pools;
-    char          *path, *poolname, *description, *defaultPool;
-    int            i, j, new;
-    static int     once = 0;
+    ServerData     *sdataPtr;
+    Pool           *poolPtr;
+    Handle         *handlePtr;
+    Tcl_HashEntry  *hPtr;
+    Tcl_HashSearch  search;
+    char           *path;
+    int             i, new, isdefault;
+    static int      once = 0;
 
     if (!once) {
         once = 1;
@@ -109,112 +109,90 @@ Dbi_RegisterDriver(CONST char *server, CONST char *module, Dbi_Driver *driver)
     }
 
     /*
-     * Create a server structure to track this virtual server's pools.
+     * Configure the pool.
      */
 
-    if (server == NULL) {
-        Ns_Log(Error, "nsdbi: driver must be loaded into a virtual server");
-        return NS_ERROR;
-    }
-
-    hPtr = Tcl_CreateHashEntry(&serversTable, server, &new);
-    if (new) {
-        sdataPtr = ns_calloc(1, sizeof(ServerData));
-        sdataPtr->server = server;
-        Tcl_InitHashTable(&sdataPtr->poolsTable, TCL_STRING_KEYS);
-        Tcl_SetHashValue(hPtr, sdataPtr);
-        if (Ns_TclRegisterTrace(server, DbiInitInterp, (char *) server,
-                                NS_TCL_TRACE_CREATE) != NS_OK) {
-            Ns_Log(Error, "nsdbi: error register tcl commands "
-                   "for server '%s'", server);
-            return NS_ERROR;
-        }
-    }
-    sdataPtr = Tcl_GetHashValue(hPtr);
-
-    /*
-     * Configure all the pools for this driver.
-     */
-
-    path = Ns_ConfigGetPath(server, module, "pools", NULL);
+    path = Ns_ConfigGetPath(server, module, NULL);
     if (path == NULL) {
-        Ns_Log(Error, "nsdbi: no database pools configured for module '%s', server '%s'",
+        Ns_Log(Error, "nsdbi: no configuration for pool: '%s', server: '%s'",
                module, server);
         return NS_ERROR;
     }
-    pools = Ns_ConfigGetSection(path);
 
-    for (i = 0; pools != NULL && i < Ns_SetSize(pools); ++i) {
+    poolPtr = ns_calloc(1, sizeof(Pool));
+    Ns_MutexSetName2(&poolPtr->lock, "nsdbi", module);
+    Ns_CondInit(&poolPtr->getCond);
+    poolPtr->driver = driver;
+    poolPtr->name = ns_strdup(module);
+    poolPtr->description = Ns_ConfigGetValue(path, "description");
+    poolPtr->datasource = Ns_ConfigGetValue(path, "datasource");
+    poolPtr->user = Ns_ConfigGetValue(path, "user");
+    poolPtr->password = Ns_ConfigGetValue(path, "password");
+    poolPtr->fVerbose = Ns_ConfigBool(path, "verbose", 0);
+    poolPtr->fVerboseError = Ns_ConfigBool(path, "logsqlerrors", 0);
+    poolPtr->nhandles = Ns_ConfigIntRange(path, "handles", 2, 1, INT_MAX);
+    poolPtr->maxwait = Ns_ConfigIntRange(path, "maxwait", 10, 0, INT_MAX);
+    poolPtr->maxidle = Ns_ConfigIntRange(path, "maxidle", 0, 0, INT_MAX);
+    poolPtr->maxopen = Ns_ConfigIntRange(path, "maxopen", 0, 0, INT_MAX);
+    poolPtr->maxqueries = Ns_ConfigIntRange(path, "maxqueries", 0, 0, INT_MAX);
+    if (poolPtr->maxidle || poolPtr->maxopen) {
+        Ns_ScheduleProc(ScheduledPoolCheck, poolPtr, 0,
+                        Ns_ConfigIntRange(path, "checkinterval", 600, 30, INT_MAX));
+    }
+    Ns_RegisterAtShutdown(AtShutdown, poolPtr);
 
-        poolname = Ns_SetKey(pools, i);
-        description = Ns_SetValue(pools, i);
-        hPtr = Tcl_CreateHashEntry(&sdataPtr->poolsTable, poolname, &new);
-        if (!new) {
-            Ns_Log(Error, "nsdbi: duplicate pool '%s' for server '%s'",
-                   poolname, server);
-            return NS_ERROR;
+    /*
+     * Fill the pool with handles.
+     */
+
+    handlePtr = ns_calloc(poolPtr->nhandles, sizeof(Handle));
+    for (i = 0; i < poolPtr->nhandles; i++, handlePtr++) {
+        handlePtr->poolPtr = poolPtr;
+        Ns_DStringInit(&handlePtr->dsExceptionMsg);
+        ReturnHandle(handlePtr);
+    }
+
+    /*
+     * Map pool to all virtual servers if module is global.
+     * 
+     * NB: Server modules are loaded before global modules
+     *     so all servers should exist when needed.
+     */
+
+    isdefault = Ns_ConfigBool(path, "default", 0);
+
+    if (server != NULL) {
+        hPtr = Tcl_CreateHashEntry(&serversTable, server, &new);
+        if (new) {
+            sdataPtr = ns_calloc(1, sizeof(ServerData));
+            sdataPtr->server = server;
+            Tcl_InitHashTable(&sdataPtr->poolsTable, TCL_STRING_KEYS);
+            Tcl_SetHashValue(hPtr, sdataPtr);
+            if (Ns_TclRegisterTrace(server, DbiInitInterp, server,
+                                    NS_TCL_TRACE_CREATE) != NS_OK) {
+                Ns_Log(Error, "nsdbi: error register tcl commands "
+                       "for server '%s'", server);
+                return NS_ERROR;
+            }
+        } else {
+            sdataPtr = Tcl_GetHashValue(hPtr);
         }
-
-        /*
-         * Configure a single pool.
-         */
-
-        poolPtr = ns_calloc(1, sizeof(Pool));
-        Ns_MutexInit(&poolPtr->lock);
-        Ns_MutexSetName2(&poolPtr->lock, "nsdbi", poolname);
-        Ns_CondInit(&poolPtr->getCond);
+        hPtr = Tcl_CreateHashEntry(&sdataPtr->poolsTable, module, &new);
         Tcl_SetHashValue(hPtr, poolPtr);
-
-        path = Ns_ConfigGetPath(server, module, "pool", poolname, NULL);
-        if (path == NULL) {
-            Ns_Log(Error, "nsdbi: no configuration for pool '%s', module '%s'",
-                   poolname, module);
-            return NS_ERROR;
-        }
-
-        poolPtr->sdataPtr = sdataPtr;
-        poolPtr->driver = driver;
-        poolPtr->name = poolname;
-        poolPtr->description = description;
-        poolPtr->datasource = Ns_ConfigGetValue(path, "datasource");
-        poolPtr->user = Ns_ConfigGetValue(path, "user");
-        poolPtr->password = Ns_ConfigGetValue(path, "password");
-        poolPtr->fVerbose = Ns_ConfigBool(path, "verbose", 0);
-        poolPtr->fVerboseError = Ns_ConfigBool(path, "logsqlerrors", 0);
-        poolPtr->nhandles = Ns_ConfigIntRange(path, "handles", 2, 1, INT_MAX);
-        poolPtr->maxwait = Ns_ConfigIntRange(path, "maxwait", 10, 0, INT_MAX);
-        poolPtr->maxidle = Ns_ConfigIntRange(path, "maxidle", 0, 0, INT_MAX);
-        poolPtr->maxopen = Ns_ConfigIntRange(path, "maxopen", 0, 0, INT_MAX);
-        poolPtr->maxqueries = Ns_ConfigIntRange(path, "maxqueries", 0, 0, INT_MAX);
-
-        if (poolPtr->maxidle || poolPtr->maxopen) {
-            Ns_ScheduleProc(ScheduledPoolCheck, poolPtr, 0,
-                Ns_ConfigIntRange(path, "checkinterval", 600, 30, INT_MAX));
-        }
-
-        Ns_RegisterAtShutdown(AtShutdown, poolPtr);
-
-        /*
-         * Fill the pool with handles.
-         */
-
-        poolPtr->firstPtr = poolPtr->lastPtr = NULL;
-        handlePtr = ns_calloc(poolPtr->nhandles, sizeof(Handle));
-        for (j = 0; j < poolPtr->nhandles; j++, handlePtr++) {
-            handlePtr->poolPtr = poolPtr;
-            Ns_DStringInit(&handlePtr->dsExceptionMsg);
-            ReturnHandle(handlePtr);
-        }
-
-        /*
-         * Is this the default pool for this virtual server?
-         */
-
-        path = Ns_ConfigGetPath(server, NULL, "dbi", NULL);
-        defaultPool = Ns_ConfigGetValue(path, "defaultpool");
-        if (STREQ(poolname, defaultPool)) {
+        if (isdefault) {
             sdataPtr->defpoolPtr = poolPtr;
         }
+    } else {
+        hPtr = Tcl_FirstHashEntry(&serversTable, &search);
+        while (hPtr != NULL) {
+            sdataPtr = Tcl_GetHashValue(hPtr);
+            hPtr = Tcl_CreateHashEntry(&sdataPtr->poolsTable, module, &new);
+            Tcl_SetHashValue(hPtr, poolPtr);
+            if (isdefault) {
+                sdataPtr->defpoolPtr = poolPtr;
+            }
+            hPtr = Tcl_NextHashEntry(&search);
+        }    
     }
 
     return NS_OK;
@@ -631,7 +609,7 @@ DbiLogSql(Dbi_Statement *stmt)
  *      Get per-server data.
  *
  * Results:
- *      Pointer to per-server data structure.
+ *      Pointer to per-server data structure or NULL if doesn't exist.
  *
  * Side effects:
  *      None.
