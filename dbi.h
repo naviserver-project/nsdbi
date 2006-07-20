@@ -51,8 +51,6 @@ typedef struct Pool {
     char              *user;
     char              *password;
     int                nhandles;
-    int                fVerbose;
-    int                fVerboseError;
 
     /* Private to a Pool struct */
 
@@ -180,10 +178,6 @@ DbiGetPool(ServerData *sdataPtr, CONST char *poolname)
 
 extern ServerData *
 DbiGetServer(CONST char *server)
-    NS_GNUC_NONNULL(1);
-
-extern void
-DbiLogSql(Dbi_Statement *)
     NS_GNUC_NONNULL(1);
 
 /*

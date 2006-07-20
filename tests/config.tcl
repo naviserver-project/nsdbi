@@ -63,8 +63,6 @@ ns_section "ns/server/server1/module/pool1"
 ns_param   description     "Pool One Description"
 ns_param   default         true
 ns_param   handles         5
-ns_param   verbose         off
-ns_param   logsqlerrors    on
 ns_param   datasource      "::datasource1"
 ns_param   user            "username1"
 ns_param   password        "password1"

@@ -141,7 +141,8 @@ Dbi_Exec(Dbi_Handle *handle, Dbi_Statement *stmt, int *nrows, int *ncols)
         if (ncols != NULL) {
             *ncols = stmtPtr->numCols;
         }
-        DbiLogSql(stmt);
+        Ns_Log(Debug, "nsdbi[%s]: %s",
+               handle->pool->name, Ns_DStringValue(&stmt->dsBoundSql));
     }
 
     return status;

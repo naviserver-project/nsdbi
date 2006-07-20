@@ -128,8 +128,6 @@ Dbi_RegisterDriver(CONST char *server, CONST char *module, Dbi_Driver *driver)
     poolPtr->datasource = Ns_ConfigGetValue(path, "datasource");
     poolPtr->user = Ns_ConfigGetValue(path, "user");
     poolPtr->password = Ns_ConfigGetValue(path, "password");
-    poolPtr->fVerbose = Ns_ConfigBool(path, "verbose", 0);
-    poolPtr->fVerboseError = Ns_ConfigBool(path, "logsqlerrors", 0);
     poolPtr->nhandles = Ns_ConfigIntRange(path, "handles", 2, 1, INT_MAX);
     poolPtr->maxwait = Ns_ConfigIntRange(path, "maxwait", 10, 0, INT_MAX);
     poolPtr->maxidle = Ns_ConfigIntRange(path, "maxidle", 0, 0, INT_MAX);
@@ -569,35 +567,6 @@ Dbi_Stats(Ns_DString *dest, Dbi_Pool *pool)
     Ns_MutexUnlock(&poolPtr->lock);
 
     return Ns_DStringValue(dest);
-}
-
-
-/*
- *----------------------------------------------------------------------
- *
- * DbiLogSql --
- *
- *      Log a SQL statement depending on the verbose state of the
- *      pool.
- *
- * Results:
- *      None.
- *
- * Side effects:
- *      None.
- *
- *----------------------------------------------------------------------
- */
-
-void
-DbiLogSql(Dbi_Statement *stmt)
-{
-    Statement *stmtPtr = (Statement *) stmt;
-
-    if (stmt->pool->fVerbose) {
-        Ns_Log(Notice, "nsdbi: pool: '%s' sql '%s'",
-               stmt->pool->name, Ns_DStringValue(&stmtPtr->dsSql));
-    }
 }
 
 
