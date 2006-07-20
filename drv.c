@@ -59,9 +59,7 @@ NS_RCSID("@(#) $Header$");
 CONST char *
 Dbi_DriverName(Dbi_Pool *pool)
 {
-    Dbi_Driver *driver = ((Pool *) pool)->driver;
-
-    return driver->name;
+    return DbiDriverForPool(pool)->name;
 }
 
 
@@ -84,9 +82,7 @@ Dbi_DriverName(Dbi_Pool *pool)
 CONST char *
 Dbi_DatabaseName(Dbi_Pool *pool)
 {
-    Dbi_Driver *driver = ((Pool *) pool)->driver;
-
-    return driver->database;
+    return DbiDriverForPool(pool)->database;
 }
 
 
@@ -109,17 +105,16 @@ Dbi_DatabaseName(Dbi_Pool *pool)
 int
 Dbi_Exec(Dbi_Handle *handle, Dbi_Statement *stmt, int *nrows, int *ncols)
 {
-    Statement  *stmtPtr   = (Statement *) stmt;
-    Handle     *handlePtr = (Handle *) handle;
-    Dbi_Driver *driver    = handlePtr->poolPtr->driver;
-    int         status    = NS_ERROR;
+    Statement  *stmtPtr = (Statement *) stmt;
+    Dbi_Driver *driver  = DbiDriverForHandle(handle);
+    int         status  = NS_ERROR;
 
     Dbi_ResetException(handle);
     if (DbiStatementPrepare(stmt, handle) != NS_OK) {
         return NS_ERROR;
     }
 
-    if (driver->execProc != NULL && handle->connected) {
+    if (driver->execProc != NULL && DbiConnected(handle)) {
 
         status = (*driver->execProc)(handle, stmt, &stmtPtr->numRows, &stmtPtr->numCols,
                                      driver->arg);
@@ -141,8 +136,7 @@ Dbi_Exec(Dbi_Handle *handle, Dbi_Statement *stmt, int *nrows, int *ncols)
         if (ncols != NULL) {
             *ncols = stmtPtr->numCols;
         }
-        Ns_Log(Debug, "nsdbi[%s]: %s",
-               handle->pool->name, Ns_DStringValue(&stmt->dsBoundSql));
+        DbiLog(handle, Debug, "%s", Ns_DStringValue(&stmt->dsBoundSql));
     }
 
     return status;
@@ -177,17 +171,17 @@ Dbi_NextValue(Dbi_Statement *stmt, CONST char **value, int *vLen, CONST char **c
     Statement  *stmtPtr = (Statement *) stmt;
     Dbi_Handle *handle  = (Dbi_Handle *) stmtPtr->handlePtr;
     Dbi_Driver *driver;
-    char       *norows  = "Cannot fetch next value; no waiting rows.";
+    CONST char *norows  = "Cannot fetch next value; no waiting rows.";
     int         status;
 
     if (stmtPtr->fetchingRows == NS_FALSE) {
         return DBI_END_DATA;
     }
     if (!handle) {
-        Ns_Log(Error, "nsdbi[%s]: %s", handle->pool->name, norows);
+        DbiLog(handle, Error, "%s", norows);
         return NS_ERROR;
     }
-    if (handle->connected == NS_FALSE) {
+    if (!DbiConnected(handle)) {
         Dbi_SetException(handle, "DBI", norows);
         return NS_ERROR;
     }
@@ -200,7 +194,7 @@ Dbi_NextValue(Dbi_Statement *stmt, CONST char **value, int *vLen, CONST char **c
         stmtPtr->currentCol = 0;
     }
 
-    driver = ((Pool *) stmt->pool)->driver;
+    driver = DbiDriverForHandle(handle);
     status = (*driver->valueProc)(handle, stmt, stmtPtr->currentRow,
                                   stmtPtr->currentCol, value, vLen,
                                   driver->arg);
@@ -285,14 +279,14 @@ int
 Dbi_ResetHandle(Dbi_Handle *handle)
 {
     Handle     *handlePtr = (Handle *) handle;
-    Dbi_Driver *driver    = handlePtr->poolPtr->driver;
+    Dbi_Driver *driver    = DbiDriverForHandle(handle);
     int         status    = NS_ERROR;
 
     if (handlePtr->stmtPtr != NULL) {
         Dbi_Flush((Dbi_Statement *) handlePtr->stmtPtr);
         handlePtr->stmtPtr = NULL;
     }
-    if (driver->resetProc != NULL && handle->connected) {
+    if (driver->resetProc != NULL && DbiConnected(handle)) {
         status = (*driver->resetProc)(handle, driver->arg);
     }
     Dbi_ResetException(handle);
@@ -321,13 +315,12 @@ Dbi_ResetHandle(Dbi_Handle *handle)
 int
 DbiOpen(Dbi_Handle *handle)
 {
-    Dbi_Driver *driver = ((Pool *) handle->pool)->driver;
+    Dbi_Driver *driver = DbiDriverForHandle(handle);
 
     if (driver->openProc == NULL ||
         (*driver->openProc)(handle, driver->arg) != NS_OK) {
 
-        Ns_Log(Error, "nsdbi[%s]: failed to open handle: code: '%s' msg: %s",
-               handle->pool->name,
+        DbiLog(handle, Error, "failed to open handle: code: '%s' msg:: %s",
                Dbi_ExceptionCode(handle), Dbi_ExceptionMsg(handle));
         return NS_ERROR;
     }
@@ -356,9 +349,9 @@ DbiOpen(Dbi_Handle *handle)
 void
 DbiClose(Dbi_Handle *handle)
 {
-    Dbi_Driver *driver = ((Pool *) handle->pool)->driver;
+    Dbi_Driver *driver = DbiDriverForHandle(handle);
 
-    if (driver->closeProc != NULL && handle->connected) {
+    if (driver->closeProc != NULL && DbiConnected(handle)) {
         (*driver->closeProc)(handle, driver->arg);
     }
 }

@@ -173,7 +173,7 @@ Dbi_RegisterDriver(CONST char *server, CONST char *module, Dbi_Driver *driver)
         hPtr = Tcl_CreateHashEntry(&sdataPtr->poolsTable, module, &new);
         Tcl_SetHashValue(hPtr, poolPtr);
         if (isdefault) {
-            sdataPtr->defpoolPtr = poolPtr;
+            sdataPtr->defpoolPtr = (Dbi_Pool *) poolPtr;
         }
     } else {
         hPtr = Tcl_FirstHashEntry(&serversTable, &search);
@@ -182,7 +182,7 @@ Dbi_RegisterDriver(CONST char *server, CONST char *module, Dbi_Driver *driver)
             hPtr = Tcl_CreateHashEntry(&sdataPtr->poolsTable, module, &new);
             Tcl_SetHashValue(hPtr, poolPtr);
             if (isdefault) {
-                sdataPtr->defpoolPtr = poolPtr;
+                sdataPtr->defpoolPtr = (Dbi_Pool *) poolPtr;
             }
             hPtr = Tcl_NextHashEntry(&search);
         }    
@@ -238,7 +238,7 @@ DbiGetPool(ServerData *sdataPtr, CONST char *poolname)
    Dbi_Pool       *pool;
 
    if (poolname == NULL) {
-       pool = (Dbi_Pool *) sdataPtr->defpoolPtr;
+       pool = sdataPtr->defpoolPtr;
    } else {
        hPtr = Tcl_FindHashEntry(&sdataPtr->poolsTable, poolname);
        pool = hPtr ? Tcl_GetHashValue(hPtr) : NULL;
@@ -269,7 +269,7 @@ Dbi_DefaultPool(CONST char *server)
     ServerData *sdataPtr;
 
     sdataPtr = DbiGetServer(server);
-    return (sdataPtr ? (Dbi_Pool *) sdataPtr->defpoolPtr : NULL);
+    return (sdataPtr ? sdataPtr->defpoolPtr : NULL);
 }
 
 
@@ -390,7 +390,7 @@ Dbi_GetHandle(Dbi_Handle **handlePtrPtr, Dbi_Pool *pool, Ns_Conn *conn, int wait
      * If we got a handle, make sure its connected, otherwise return it.
      */
 
-    if (handlePtr != NULL && handlePtr->connected == NS_FALSE) {
+    if (handlePtr != NULL && !DbiConnected(handlePtr)) {
         if (Connect(handlePtr) != NS_OK) {
             Ns_MutexLock(&poolPtr->lock);
             ReturnHandle(handlePtr);
@@ -618,7 +618,7 @@ ReturnHandle(Handle *handlePtr)
     if (poolPtr->firstPtr == NULL) {
         poolPtr->firstPtr = poolPtr->lastPtr = handlePtr;
         handlePtr->nextPtr = NULL;
-    } else if (handlePtr->connected) {
+    } else if (DbiConnected(handlePtr)) {
         handlePtr->nextPtr = poolPtr->firstPtr;
         poolPtr->firstPtr = handlePtr;
     } else {
@@ -653,7 +653,7 @@ CloseIfStale(Handle *handlePtr, time_t now)
 
     char *reason  = NULL;
 
-    if (handlePtr->connected) {
+    if (DbiConnected(handlePtr)) {
         if (poolPtr->stale_on_close > handlePtr->stale_on_close) {
             reason = "bounced";
         } else if (poolPtr->maxopen && (handlePtr->otime < (now - poolPtr->maxopen))) {
@@ -666,8 +666,8 @@ CloseIfStale(Handle *handlePtr, time_t now)
             poolPtr->stats.querycloses++;
         }
         if (reason) {
-            Ns_Log(Notice, "nsdbi[%s]: closing %s handle, %d queries",
-                   poolPtr->name, reason, handlePtr->stats.queries);
+            DbiLog((Dbi_Handle *) handlePtr, Notice, "closing %s handle, %d queries",
+                   reason, handlePtr->stats.queries);
             DbiClose((Dbi_Handle *) handlePtr);
             handlePtr->connected = NS_FALSE;
             handlePtr->arg = NULL;
@@ -838,22 +838,23 @@ AtShutdown(Ns_Time *toPtr, void *arg)
 static int
 Connect(Handle *handlePtr)
 {
-    Pool *poolPtr = handlePtr->poolPtr;
-    int   status  = NS_ERROR;
+    Dbi_Handle *handle  = (Dbi_Handle *) handlePtr;
+    Pool       *poolPtr = handlePtr->poolPtr;
+    int         status  = NS_ERROR;
 
     if (!poolPtr->stopping) {
         poolPtr->stats.handleopens++;
-        status = DbiOpen((Dbi_Handle *) handlePtr);
+        status = DbiOpen(handle);
         if (status != NS_OK) {
             poolPtr->stats.handlefailures++;
             handlePtr->atime = handlePtr->otime = 0;
-            Ns_Log(Error, "nsdbi[%s]: failed to open connection for handle",
-                   poolPtr->name);
+            DbiLog(handle, Error, "handle connection failed (%d)",
+                   poolPtr->stats.handlefailures);
         } else {
             handlePtr->connected = NS_TRUE;
             handlePtr->atime = handlePtr->otime = time(NULL);
-            Ns_Log(Notice, "nsdbi[%s]: opened handle %d/%d",
-                   poolPtr->name, handlePtr->n, poolPtr->nhandles);
+            DbiLog(handle, Notice, "opened handle %d/%d",
+                   handlePtr->n, poolPtr->nhandles);
         }
     }
 

@@ -43,13 +43,8 @@ struct Handle;
 
 typedef struct Pool {
 
-    /* Publicly visible in a Dbi_Pool struct */
-
     char              *name;
     int                nhandles;
-
-    /* Private to a Pool struct */
-
     Dbi_Driver        *driver;
     struct Handle     *firstPtr;
     struct Handle     *lastPtr;
@@ -87,14 +82,14 @@ typedef struct Handle {
 
     /* Publicly visible in a Dbi_Handle struct */
 
-    Pool             *poolPtr;
-    int               connected;
+    struct Pool      *poolPtr;
     void             *arg;  /* Driver private connection context. */
 
     /* Private to a Handle struct */
 
     struct Handle    *nextPtr;
     struct Statement *stmtPtr;
+    int               connected;
     Ns_Conn          *conn;   /* Conn that handle is cached for. */
     char              cExceptionCode[6];
     Ns_DString        dsExceptionMsg;
@@ -158,15 +153,29 @@ typedef struct Statement {
 
 typedef struct ServerData {
     CONST char    *server;
-    Pool          *defpoolPtr;
+    Dbi_Pool      *defpoolPtr;
     Tcl_HashTable  poolsTable;
 } ServerData;
 
 
-
 /*
- * init.c
+ * The following are some convenience macros to access structures etc.
  */
+
+#define DbiPoolForHandle(handle)     (((Handle *) handle)->poolPtr)
+#define DbiDriverForHandle(handle)   (((Handle *) handle)->poolPtr->driver)
+#define DbiDriverForPool(pool)       (((Pool *) pool)->driver)
+
+#define DbiPoolName(pool)            (((Pool *) pool)->name)
+#define DbiPoolNameForHandle(handle) (((Handle *) handle)->poolPtr->name)
+
+#define DbiConnected(handle)         (((Handle *) handle)->connected)
+
+#define DbiLog(handle,level,msg,...)                   \
+    Ns_Log(level, "nsdbi[%s]: " msg,                   \
+           DbiPoolNameForHandle(handle), __VA_ARGS__)
+
+
 
 extern Dbi_Pool *
 DbiGetPool(ServerData *sdataPtr, CONST char *poolname)
@@ -176,10 +185,6 @@ extern ServerData *
 DbiGetServer(CONST char *server)
     NS_GNUC_NONNULL(1);
 
-/*
- * drv.c
- */
-
 extern int
 DbiOpen(Dbi_Handle *)
     NS_GNUC_NONNULL(1);
@@ -188,17 +193,9 @@ extern void
 DbiClose(Dbi_Handle *)
     NS_GNUC_NONNULL(1);
 
-/*
- * stmt.c
- */
-
 extern int
 DbiStatementPrepare(Dbi_Statement *, Dbi_Handle *)
     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
-
-/*
- * tclcmds.c
- */
 
 extern void DbiInitTclObjTypes(void);
 extern Ns_TclInterpInitProc DbiInitInterp;

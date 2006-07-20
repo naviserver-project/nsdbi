@@ -55,22 +55,18 @@
 
 
 /*
- * Database pool structure.
+ * The following defines an opaque pool handle.
  */
 
-typedef struct Dbi_Pool {
-    char              *name;
-    int                nhandles;
-} Dbi_Pool;
+typedef struct _Dbi_Pool *Dbi_Pool;
 
 /*
  * Database handle structure.
  */
 
 typedef struct Dbi_Handle {
-    Dbi_Pool          *pool;
-    int                connected;
-    void              *arg;  /* Driver private connection context. */
+    Dbi_Pool        *pool; /* The pool this handle belongs to. */
+    void            *arg;  /* Driver private handle context. */
 } Dbi_Handle;
 
 /*
@@ -78,11 +74,11 @@ typedef struct Dbi_Handle {
  */
 
 typedef struct Dbi_Statement {
-    Dbi_Pool          *pool;
-    Ns_DString         dsBoundSql;
-    int                fetchingRows;
-    Tcl_HashTable      bindVars;
-    void               *arg;   /* Driver private statement context. */
+    Dbi_Pool        *pool;
+    Ns_DString       dsBoundSql;
+    int              fetchingRows;
+    Tcl_HashTable    bindVars;
+    void             *arg;   /* Driver private statement context. */
 } Dbi_Statement;
 
 /*

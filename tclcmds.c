@@ -222,7 +222,7 @@ TclDbiCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
     case CDefaultCmd:
         pool = Dbi_DefaultPool(server);
         if (pool != NULL) {
-            Tcl_SetStringObj(Tcl_GetObjResult(interp), pool->name, -1);
+            Tcl_SetStringObj(Tcl_GetObjResult(interp), DbiPoolName(pool), -1);
         }
         break;
 
@@ -267,7 +267,7 @@ TclDbiCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
             Tcl_AppendElement(interp, Dbi_DatabaseName(pool));
             Tcl_AppendElement(interp, "connections");
             Tcl_ListObjAppendElement(interp, Tcl_GetObjResult(interp),
-                                     Tcl_NewIntObj(pool->nhandles));
+                                     Tcl_NewIntObj(((Pool *) pool)->nhandles));
         }
         break;
 
@@ -415,7 +415,7 @@ GetPool(ClientData arg, Tcl_Interp *interp, Tcl_Obj *poolObj)
     const char  *poolType = "nsdbi:pool";
 
     if (poolObj == NULL) {
-        pool = (Dbi_Pool *) sdataPtr->defpoolPtr;
+        pool = sdataPtr->defpoolPtr;
         if (pool == NULL) {
             Tcl_AppendToObj(Tcl_GetObjResult(interp),
                 "no pool specified and no default configured",
