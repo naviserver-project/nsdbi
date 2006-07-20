@@ -103,40 +103,41 @@ Dbi_DatabaseName(Dbi_Pool *pool)
  */
 
 int
-Dbi_Exec(Dbi_Handle *handle, Dbi_Statement *stmt, int *nrows, int *ncols)
+Dbi_Exec(Dbi_Query *query)
 {
-    Statement  *stmtPtr = (Statement *) stmt;
-    Dbi_Driver *driver  = DbiDriverForHandle(handle);
-    int         status  = NS_ERROR;
+    Handle        *handlePtr;
+    Dbi_Driver    *driver;
+    int            status  = NS_ERROR;
 
-    Dbi_ResetException(handle);
-    if (DbiStatementPrepare(stmt, handle) != NS_OK) {
+    if (query->handle == NULL || query->stmt == NULL) {
+        Ns_Log(Error, "nsdbi: Dbi_Exec: null handle or statement for query.");
+        return NS_ERROR;
+    }
+    handlePtr = (Handle *) query->handle;
+    driver    = DbiDriverForHandle(query->handle);
+    
+    Dbi_ResetException(query->handle);
+    if (DbiStatementPrepare(query->stmt, query->handle) != NS_OK) {
         return NS_ERROR;
     }
 
-    if (driver->execProc != NULL && DbiConnected(handle)) {
+    if (driver->execProc != NULL && DbiConnected(handlePtr)) {
 
-        status = (*driver->execProc)(handle, stmt, &stmtPtr->numRows, &stmtPtr->numCols,
-                                     driver->arg);
-        stmtPtr->handlePtr->stats.queries++;
+        status = (*driver->execProc)(query, driver->arg);
+        handlePtr->stats.queries++;
 
         if (status == DBI_ROWS) {
-            if (stmtPtr->numRows && !stmtPtr->numCols) {
-                Dbi_SetException(handle, "DBI",
-                                 "driver returned rows but no columns");
+            if (!query->result.numCols) {
+                Dbi_SetException(query->handle, "DBI",
+                                 "bug: driver failed to set number of columns");
                 return NS_ERROR;
             }
-            stmt->fetchingRows = NS_TRUE;
-            stmtPtr->currentRow = 0;
-            stmtPtr->currentCol = 0;
+            query->result.fetchingRows = NS_TRUE;
+            query->result.currentRow = 0;
+            query->result.currentCol = 0;
         }
-        if (nrows != NULL) {
-            *nrows = stmtPtr->numRows;
-        }
-        if (ncols != NULL) {
-            *ncols = stmtPtr->numCols;
-        }
-        DbiLog(handle, Debug, "%s", Ns_DStringValue(&stmt->dsBoundSql));
+        DbiLog(query->handle, Debug, "%s",
+               Dbi_StatementBoundSQL(query->stmt, NULL));
     }
 
     return status;
@@ -166,55 +167,42 @@ Dbi_Exec(Dbi_Handle *handle, Dbi_Statement *stmt, int *nrows, int *ncols)
  */
 
 int
-Dbi_NextValue(Dbi_Statement *stmt, CONST char **value, int *vLen, CONST char **column, int *cLen)
+Dbi_NextValue(Dbi_Query *query, CONST char **value, int *vLen, CONST char **column, int *cLen)
 {
-    Statement  *stmtPtr = (Statement *) stmt;
-    Dbi_Handle *handle  = (Dbi_Handle *) stmtPtr->handlePtr;
-    Dbi_Driver *driver;
-    CONST char *norows  = "Cannot fetch next value; no waiting rows.";
-    int         status;
+    Dbi_Driver    *driver;
+    int            status;
 
-    if (stmtPtr->fetchingRows == NS_FALSE) {
+    if (query->result.fetchingRows == NS_FALSE) {
         return DBI_END_DATA;
     }
-    if (!handle) {
-        DbiLog(handle, Error, "%s", norows);
-        return NS_ERROR;
-    }
-    if (!DbiConnected(handle)) {
-        Dbi_SetException(handle, "DBI", norows);
-        return NS_ERROR;
-    }
-    if (stmtPtr->poolPtr == NULL) {
-        Dbi_SetException(handle, "DBI", "Dbi_NextValue called with invalid statement.");
+    if (!DbiConnected(query->handle)) {
+        Dbi_SetException(query->handle, "DBI",
+                         "Cannot fetch next value; handle disconnected.");
         return NS_ERROR;
     }
 
-    if (stmtPtr->currentCol == stmtPtr->numCols) {
-        stmtPtr->currentCol = 0;
+    if (query->result.currentCol == query->result.numCols) {
+        query->result.currentCol = 0; /* Reset for next row. */
     }
 
-    driver = DbiDriverForHandle(handle);
-    status = (*driver->valueProc)(handle, stmt, stmtPtr->currentRow,
-                                  stmtPtr->currentCol, value, vLen,
-                                  driver->arg);
+    driver = DbiDriverForHandle(query->handle);
+    status = (*driver->valueProc)(query, value, vLen, driver->arg);
     if (status == NS_ERROR) {
         return NS_ERROR;
     }
     if (column != NULL && cLen != NULL) {
-        status = (*driver->columnProc)(handle, stmt, stmtPtr->currentCol,
-                                       column, cLen, driver->arg);
+        status = (*driver->columnProc)(query, column, cLen, driver->arg);
         if (status == NS_ERROR) {
             return NS_ERROR;
         }
     }
-    stmtPtr->currentCol++;
-    if (stmtPtr->currentCol == stmtPtr->numCols) {
-        if (stmtPtr->currentRow == (stmtPtr->numRows - 1)) {
-            stmt->fetchingRows = NS_FALSE;
+    query->result.currentCol++;
+    if (query->result.currentCol == query->result.numCols) {
+        if (query->result.currentRow == (query->result.numRows - 1)) {
+            query->result.fetchingRows = NS_FALSE;
             status = DBI_END_DATA;
         } else {
-            stmtPtr->currentRow++;
+            query->result.currentRow++;
             status = DBI_LAST_COL;
         }
     }
@@ -235,27 +223,23 @@ Dbi_NextValue(Dbi_Statement *stmt, CONST char **value, int *vLen, CONST char **c
  *
  * Side effects:
  *      Rows waiting in the result set are dumped, perhaps by simply
- *      fetching them over one by one.
+ *      fetching them over one by one -- depends on driver.
  *
  *----------------------------------------------------------------------
  */
 
 void
-Dbi_Flush(Dbi_Statement *stmt)
+Dbi_Flush(Dbi_Query  *query)
 {
-    Statement  *stmtPtr = (Statement *) stmt;
-    Dbi_Driver *driver;
+    Dbi_Driver *driver = DbiDriverForHandle(query->handle);
 
-    if (stmtPtr->poolPtr != NULL) {
-        driver = ((Pool *) stmt->pool)->driver;
-        if (driver->flushProc != NULL) {
-            (*driver->flushProc)(stmt, driver->arg);
-        }
+    if (driver->flushProc != NULL && DbiConnected(query->handle)) {
+        (*driver->flushProc)(query, driver->arg);
     }
-    stmt->arg = NULL;
-    stmt->fetchingRows = NS_FALSE;
-    stmtPtr->numRows = stmtPtr->numCols = 0;
-    stmtPtr->currentRow = stmtPtr->currentCol = 0;
+    query->handle = NULL;
+    query->stmt = NULL;
+    query->arg = NULL;
+    memset(&query->result, 0, sizeof(query->result));
 }
 
 
@@ -270,7 +254,7 @@ Dbi_Flush(Dbi_Statement *stmt)
  *      NS_OK or NS_ERROR.
  *
  * Side effects:
- *      Current statement is flushed.
+ *      Depends on driver.
  *
  *----------------------------------------------------------------------
  */
@@ -278,14 +262,9 @@ Dbi_Flush(Dbi_Statement *stmt)
 int
 Dbi_ResetHandle(Dbi_Handle *handle)
 {
-    Handle     *handlePtr = (Handle *) handle;
-    Dbi_Driver *driver    = DbiDriverForHandle(handle);
-    int         status    = NS_ERROR;
+    Dbi_Driver *driver = DbiDriverForHandle(handle);
+    int         status = NS_ERROR;
 
-    if (handlePtr->stmtPtr != NULL) {
-        Dbi_Flush((Dbi_Statement *) handlePtr->stmtPtr);
-        handlePtr->stmtPtr = NULL;
-    }
     if (driver->resetProc != NULL && DbiConnected(handle)) {
         status = (*driver->resetProc)(handle, driver->arg);
     }

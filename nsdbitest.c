@@ -172,7 +172,7 @@ Bind(Ns_DString *ds, CONST char *name, int bindIdx, void *arg)
  *
  * Exec --
  *
- *      Execute a statement using the given handle.
+ *      Execute a query.
  *
  * Results:
  *      DBI_ROWS, DBI_DML or NS_ERROR.
@@ -184,13 +184,15 @@ Bind(Ns_DString *ds, CONST char *name, int bindIdx, void *arg)
  */
 
 static int
-Exec(Dbi_Handle *handle, Dbi_Statement *stmt, int *nrows, int *ncols, void *arg)
+Exec(Dbi_Query *query, void *arg)
 {
-    char *sql, cmd[64];
-    int   n, status, rest = 0;
+    CONST char *sql;
+    char        cmd[64];
+    int         n, rest = 0, status = NS_ERROR;
 
-    sql = stmt->dsBoundSql.string;
-    n = sscanf(sql, "%s %d %d %n", cmd, nrows, ncols, &rest);
+    sql = Dbi_StatementBoundSQL(query->stmt, NULL);
+    n = sscanf(sql, "%s %d %d %n", cmd,
+               &query->result.numRows, &query->result.numCols, &rest);
 
     if (n >= 1) {
         if (STREQ(cmd, "DML")) {
@@ -198,17 +200,15 @@ Exec(Dbi_Handle *handle, Dbi_Statement *stmt, int *nrows, int *ncols, void *arg)
         } else if (STREQ(cmd, "ROWS")) {
             status = DBI_ROWS;
         } else if (STREQ(cmd, "ERROR")) {
-            Dbi_SetException(handle, "TEST", "driver error");
-            status = NS_ERROR;
+            Dbi_SetException(query->handle, "TEST", "driver error");
         } else {
             goto error;
         }
     } else {
     error:
-        Dbi_SetException(handle, "TEST", "nsdbitest query syntax error");
-        status = NS_ERROR;
+        Dbi_SetException(query->handle, "TEST", "nsdbitest query syntax error");
     }
-    stmt->arg = sql + rest;
+    query->arg = (char *) sql + rest;
 
     return status;
 }
@@ -219,10 +219,11 @@ Exec(Dbi_Handle *handle, Dbi_Statement *stmt, int *nrows, int *ncols, void *arg)
  *
  * Value --
  *
- *      Fetch the value of the given row and column. For testing, all
- *      values are "v", except the first which is the original SQL
- *      statement with driver specific bind variable notation
- *      substituted.
+ *      Fetch the value of the current row and column.
+
+ *      For testing, all values are "v", except the first which is
+ *      the original SQL statement with driver specific bind
+ *      variable notation substituted.
  *
  * Results:
  *      Always NS_OK.
@@ -234,11 +235,12 @@ Exec(Dbi_Handle *handle, Dbi_Statement *stmt, int *nrows, int *ncols, void *arg)
  */
 
 static int
-Value(Dbi_Handle *handle, Dbi_Statement *stmt, int rowIdx, int colIdx,
-      CONST char **value, int *len, void *arg)
+Value(Dbi_Query *query, CONST char **value, int *len, void *arg)
 {
-    if (rowIdx == 0 && colIdx == 0) {
-        *value = stmt->arg;
+    if (query->result.currentRow == 0
+        && query->result.currentCol == 0) {
+
+        *value = query->arg;
         *len = strlen(*value);
     } else {
         *value = "v";
@@ -254,8 +256,9 @@ Value(Dbi_Handle *handle, Dbi_Statement *stmt, int rowIdx, int colIdx,
  *
  * Column --
  *
- *      Fetch the name of the given column. For testing, all columns
- *      are named "c".
+ *      Fetch the name of the current column.
+ *
+ *      For testing, all columns are named "c".
  *
  * Results:
  *      Always NS_OK.
@@ -267,8 +270,7 @@ Value(Dbi_Handle *handle, Dbi_Statement *stmt, int rowIdx, int colIdx,
  */
 
 static int
-Column(Dbi_Handle *handle, Dbi_Statement *stmt, int colIdx, CONST char **column,
-       int *len, void *arg)
+Column(Dbi_Query *query, CONST char **column, int *len, void *arg)
 {
     *column = "c";
     *len = 1;
@@ -282,7 +284,8 @@ Column(Dbi_Handle *handle, Dbi_Statement *stmt, int colIdx, CONST char **column,
  *
  * Flush --
  *
- *      Clear the current result, which discards any pending rows.
+ *      Clear the current query result, which should discards any
+ *      pending rows.
  *
  * Results:
  *      None.
@@ -294,9 +297,9 @@ Column(Dbi_Handle *handle, Dbi_Statement *stmt, int colIdx, CONST char **column,
  */
 
 static void
-Flush(Dbi_Statement *stmt, void *arg)
+Flush(Dbi_Query *query, void *arg)
 {
-    stmt->arg = NULL;
+    query->arg = NULL;
 }
 
 

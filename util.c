@@ -52,7 +52,7 @@ NS_RCSID("@(#) $Header$");
  *
  * Dbi_Select --
  *
- *      Execute an SQL statement which is expected to return rows.
+ *      Execute a query which is expected to return rows.
  *
  * Results:
  *      NS_OK/NS_ERROR.
@@ -64,11 +64,11 @@ NS_RCSID("@(#) $Header$");
  */
 
 int
-Dbi_Select(Dbi_Handle *handle, Dbi_Statement *stmt, int *nrows, int *ncols)
+Dbi_Select(Dbi_Query *query)
 {
-    if (Dbi_Exec(handle, stmt, nrows, ncols) != DBI_ROWS) {
-        if (Dbi_ExceptionPending(handle) == NS_FALSE) {
-            Dbi_SetException(handle, "DBI",
+    if (Dbi_Exec(query) != DBI_ROWS) {
+        if (Dbi_ExceptionPending(query->handle) == NS_FALSE) {
+            Dbi_SetException(query->handle, "DBI",
                 "Query was not a statement returning rows.");
         }
         return NS_ERROR;
@@ -83,7 +83,7 @@ Dbi_Select(Dbi_Handle *handle, Dbi_Statement *stmt, int *nrows, int *ncols)
  *
  * Dbi_0or1Row --
  *
- *      Send an SQL statement which should return either no rows or
+ *      Execute a query which should return either no rows or
  *      exactly one row.
  *
  * Results:
@@ -97,15 +97,15 @@ Dbi_Select(Dbi_Handle *handle, Dbi_Statement *stmt, int *nrows, int *ncols)
  */
 
 int
-Dbi_0or1Row(Dbi_Handle *handle, Dbi_Statement *stmt, int *nrows, int *ncols)
+Dbi_0or1Row(Dbi_Query *query)
 {
-    if (Dbi_Select(handle, stmt, nrows, ncols) != NS_OK) {
+    if (Dbi_Select(query) != NS_OK) {
         return NS_ERROR;
     }
-    if (*nrows > 1) {
-        Dbi_SetException(handle, DBI_SQLERRORCODE,
+    if (query->result.numRows > 1) {
+        Dbi_SetException(query->handle, DBI_SQLERRORCODE,
             "Query returned more than one row.");
-        Dbi_Flush(stmt);
+        Dbi_Flush(query);
         return NS_ERROR;
     }
  
@@ -118,7 +118,7 @@ Dbi_0or1Row(Dbi_Handle *handle, Dbi_Statement *stmt, int *nrows, int *ncols)
  *
  * Dbi_1Row --
  *
- *      Send a SQL statement which is expected to return exactly 1 row.
+ *      Execute a query which is expected to return exactly 1 row.
  *
  * Results:
  *      NS_OK/NS_ERROR
@@ -130,15 +130,13 @@ Dbi_0or1Row(Dbi_Handle *handle, Dbi_Statement *stmt, int *nrows, int *ncols)
  */
 
 int
-Dbi_1Row(Dbi_Handle *handle, Dbi_Statement *stmt, int *ncols)
+Dbi_1Row(Dbi_Query *query)
 {
-    int nrows;
-
-    if (Dbi_0or1Row(handle, stmt, &nrows, ncols) != NS_OK) {
+    if (Dbi_0or1Row(query) != NS_OK) {
         return NS_ERROR;
     }
-    if (nrows == 0) {
-        Dbi_SetException(handle, DBI_SQLERRORCODE,
+    if (query->result.numRows == 0) {
+        Dbi_SetException(query->handle, DBI_SQLERRORCODE,
             "Query was not a statement returning rows.");
         return NS_ERROR;
     }
@@ -152,7 +150,7 @@ Dbi_1Row(Dbi_Handle *handle, Dbi_Statement *stmt, int *ncols)
  *
  * Dbi_DML --
  *
- *      Execute an SQL statement which is expected to be DML.
+ *      Execute a query which is expected to be DML.
  *
  * Results:
  *      NS_OK or NS_ERROR.
@@ -164,18 +162,18 @@ Dbi_1Row(Dbi_Handle *handle, Dbi_Statement *stmt, int *ncols)
  */
 
 int
-Dbi_DML(Dbi_Handle *handle, Dbi_Statement *stmt, int *nrows, int *ncols)
+Dbi_DML(Dbi_Query *query)
 {
     int status;
 
-    status = Dbi_Exec(handle, stmt, nrows, ncols);
+    status = Dbi_Exec(query);
     if (status == DBI_DML) {
         status = NS_OK;
     } else {
         if (status == DBI_ROWS) {
-            Dbi_SetException(handle, "DBI",
+            Dbi_SetException(query->handle, "DBI",
                 "Query was not a DML or DDL command.");
-            Dbi_Flush(stmt);
+            Dbi_Flush(query);
         }
         status = NS_ERROR;
     }
@@ -197,7 +195,7 @@ Dbi_DML(Dbi_Handle *handle, Dbi_Statement *stmt, int *nrows, int *ncols)
  *
  * Side effects:
  *      Status code and message may be updated.
- *
+*
  *----------------------------------------------------------------------
  */
 

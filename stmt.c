@@ -40,6 +40,29 @@ NS_RCSID("@(#) $Header$");
 
 
 /*
+ * The following structure defines an SQL statement.
+ */
+
+typedef struct Statement {
+
+    Ns_DString          dsSql;      /* Original SQL statement. */
+    Ns_DString          dsBoundSql; /* SQL with bind variable notation. */
+
+    Dbi_Pool           *pool;       /* Pool statement is prepared for. */
+
+    struct {
+        Tcl_HashTable   table;      /* Bind variables by name. */
+        int             nbound;     /* Number of bind variables. */
+        struct {
+            CONST char *name;       /* (Hash table key) */
+        } vars[DBI_MAX_BIND];       /* Bind variables by order. */
+
+    } bind;
+
+} Statement;
+
+
+/*
  * Static functions defined in this file
  */
 
@@ -103,7 +126,6 @@ Dbi_StatementFree(Dbi_Statement *stmt)
 {
     Statement *stmtPtr = (Statement *) stmt;
 
-    Dbi_Flush(stmt);
     Tcl_DeleteHashTable(&stmtPtr->bind.table);
     Ns_DStringFree(&stmtPtr->dsSql);
     Ns_DStringFree(&stmtPtr->dsBoundSql);
@@ -114,31 +136,85 @@ Dbi_StatementFree(Dbi_Statement *stmt)
 /*
  *----------------------------------------------------------------------
  *
- * Dbi_StatementSetBindValue --
+ * Dbi_StatementBoundSQL --
  *
- *      Set the value of the bind variable at the given index.
+ *      Return the SQL statement with driver specific bind variable
+ *      notation. This is the SQL that a driver executes.
  *
  * Results:
- *      NS_OK if set, NS_ERROR otherwise.
+ *      Pointer to cstring, length updated if not NULL.
  *
  * Side effects:
- *      Old value, if any, is over written.
+ *      None.
+ *
+ *----------------------------------------------------------------------
+ */
+
+CONST char *
+Dbi_StatementBoundSQL(Dbi_Statement *stmt, int *length)
+{
+    Statement *stmtPtr = (Statement *) stmt;
+
+    if (length != NULL) {
+        *length = Ns_DStringLength(&stmtPtr->dsSql);
+    }
+    return (CONST char *) Ns_DStringValue(&stmtPtr->dsBoundSql);
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * Dbi_StatementSQL --
+ *
+ *      Return the original SQL statement.
+ *
+ * Results:
+ *      Pointer to cstring, length updated if not NULL.
+ *
+ * Side effects:
+ *      None.
+ *
+ *----------------------------------------------------------------------
+ */
+
+CONST char *
+Dbi_StatementSQL(Dbi_Statement *stmt, int *length)
+{
+    Statement *stmtPtr = (Statement *) stmt;
+
+    if (length != NULL) {
+        *length = Ns_DStringLength(&stmtPtr->dsSql);
+    }
+    return (CONST char *) Ns_DStringValue(&stmtPtr->dsSql);
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * Dbi_StatementGetBindVar --
+ *
+ *      Get the name of the bind variable at the given index.
+ *
+ * Results:
+ *      NS_OK if exists, NS_ERROR otherwise.
+ *
+ * Side effects:
+ *      None.
  *
  *----------------------------------------------------------------------
  */
 
 int
-Dbi_StatementSetBindValue(Dbi_Statement *stmt, int idx, CONST char *value, int len)
+Dbi_StatementGetBindVar(Dbi_Statement *stmt, int idx, CONST char **name)
 {
     Statement *stmtPtr = (Statement *) stmt;
 
     if (idx < 0 || idx >= stmtPtr->bind.nbound) {
-        Ns_Log(Bug, "nsdbi: Dbi_StatementSetBindValue: bad index: %d, nbound: %d",
-               idx, stmtPtr->bind.nbound);
         return NS_ERROR;
     }
-    stmtPtr->bind.vars[idx].value = value;
-    stmtPtr->bind.vars[idx].len = len;
+    *name = stmtPtr->bind.vars[idx].name;
 
     return NS_OK;
 }
@@ -147,7 +223,7 @@ Dbi_StatementSetBindValue(Dbi_Statement *stmt, int idx, CONST char *value, int l
 /*
  *----------------------------------------------------------------------
  *
- * Dbi_StatementGetBindValue --
+ * Dbi_QueryGetBindValue --
  *
  *      Get the value of the bind variable at the given index.
  *
@@ -161,23 +237,50 @@ Dbi_StatementSetBindValue(Dbi_Statement *stmt, int idx, CONST char *value, int l
  */
 
 int
-Dbi_StatementGetBindValue(Dbi_Statement *stmt, int idx,
-                          CONST char **value, int *len, CONST char **name)
+Dbi_QueryGetBindValue(Dbi_Query *query, int idx,
+                      CONST char **value, int *len)
 {
-    Statement *stmtPtr = (Statement *) stmt;
-
-    if (idx < 0 || idx >= stmtPtr->bind.nbound) {
+    if (idx < 0 || idx >= query->nbound) {
         return NS_ERROR;
     }
     if (value != NULL) {
-        *value = stmtPtr->bind.vars[idx].value;
+        *value = query->bind[idx].value;
     }
     if (len != NULL) {
-        *len = stmtPtr->bind.vars[idx].len;
+        *len = query->bind[idx].len;
     }
-    if (name != NULL) {
-        *name = stmtPtr->bind.vars[idx].name;
+
+    return NS_OK;
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * Dbi_QuerySetBindValue --
+ *
+ *      Set the value of the bind variable at the given index.
+ *
+ * Results:
+ *      NS_OK if set, NS_ERROR if index out of bounds.
+ *
+ * Side effects:
+ *      Old value, if any, is over written.
+ *
+ *----------------------------------------------------------------------
+ */
+
+int
+Dbi_QuerySetBindValue(Dbi_Query *query, int idx, CONST char *value, int len)
+{
+    if (idx < 0 || idx >= query->nbound) {
+        Ns_Log(Bug, "nsdbi: Dbi_QuerySetBindValue: bad index: %d, nbound: %d",
+               idx, query->nbound);
+        return NS_ERROR;
     }
+    query->bind[idx].value = value;
+    query->bind[idx].len = len;
+
     return NS_OK;
 }
 
@@ -204,25 +307,23 @@ Dbi_StatementGetBindValue(Dbi_Statement *stmt, int idx,
 int
 DbiStatementPrepare(Dbi_Statement *stmt, Dbi_Handle *handle)
 {
-    Statement *stmtPtr   = (Statement *) stmt;
-    Handle    *handlePtr = (Handle *) handle;
+    Statement *stmtPtr = (Statement *) stmt;
+    int        status  = NS_OK;
 
-    if (stmtPtr->poolPtr == NULL
-        || stmtPtr->poolPtr != (Pool *) handle->pool) {
+    if (stmtPtr->pool == NULL
+        || stmtPtr->pool != handle->pool) {
 
-        stmtPtr->poolPtr = (Pool *) handle->pool;
+        stmtPtr->pool = handle->pool;
         if (ParseBindVars(stmtPtr) != NS_OK) {
             Dbi_SetException(handle, "DBI",
                              "max bind variables exceeded: %d",
-                             DBI_MAX_BIND_VARS);
-            return NS_ERROR;
+                             DBI_MAX_BIND);
+            stmtPtr->pool = NULL;
+            status = NS_ERROR;
         }
     }
-    handlePtr->stmtPtr = stmtPtr;
-    stmtPtr->handlePtr = handlePtr;
-    stmtPtr->fetchingRows = NS_FALSE;
 
-    return NS_OK;
+    return status;
 }
 
 
@@ -247,10 +348,12 @@ DbiStatementPrepare(Dbi_Statement *stmt, Dbi_Handle *handle)
 static int
 ParseBindVars(Statement *stmtPtr)
 {
+    Dbi_Driver *driver;
     char       *sql, *p, *chunk, *bind, save;
     int         len, quote;
 
-    if (stmtPtr->poolPtr->driver->bindVarProc == NULL) {
+    driver = DbiDriverForPool(stmtPtr->pool);
+    if (driver->bindVarProc == NULL) {
         return NS_ERROR;
     }
 
@@ -302,12 +405,12 @@ ParseBindVars(Statement *stmtPtr)
 static int
 DefineBindVar(Statement *stmtPtr, CONST char *name)
 {
-    Dbi_Driver    *driver = stmtPtr->poolPtr->driver;
+    Dbi_Driver    *driver = DbiDriverForPool(stmtPtr->pool);
     Tcl_HashEntry *hPtr;
     int            new, index;
 
     index = stmtPtr->bind.nbound;
-    if (index >= DBI_MAX_BIND_VARS) {
+    if (index >= DBI_MAX_BIND) {
         return NS_ERROR;
     }
     hPtr = Tcl_CreateHashEntry(&stmtPtr->bind.table, name, &new);
@@ -315,8 +418,6 @@ DefineBindVar(Statement *stmtPtr, CONST char *name)
         stmtPtr->bind.nbound++;
         Tcl_SetHashValue(hPtr, (void *) index);
         stmtPtr->bind.vars[index].name = Tcl_GetHashKey(&stmtPtr->bind.table, hPtr);
-        stmtPtr->bind.vars[index].value = NULL;
-        stmtPtr->bind.vars[index].len = 0;
     } else {
         index = (int) Tcl_GetHashValue(hPtr);
     }

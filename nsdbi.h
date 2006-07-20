@@ -53,15 +53,18 @@
 
 #define DBI_READONLY      -3
 
+#define DBI_MAX_BIND      32
+
 
 /*
- * The following defines an opaque pool handle.
+ * The following defines opaque pool and statement handles.
  */
 
-typedef struct _Dbi_Pool *Dbi_Pool;
+typedef struct _Dbi_Pool       *Dbi_Pool;
+typedef struct _Dbi_Statement  *Dbi_Statement;
 
 /*
- * Database handle structure.
+ * The following struct defines a database handle.
  */
 
 typedef struct Dbi_Handle {
@@ -70,34 +73,55 @@ typedef struct Dbi_Handle {
 } Dbi_Handle;
 
 /*
- * Statement structure for performing queries.
+ * The following struct defines a query which is used to
+ * send SQL to the database and fetch the result.
  */
 
-typedef struct Dbi_Statement {
-    Dbi_Pool        *pool;
-    Ns_DString       dsBoundSql;
-    int              fetchingRows;
-    Tcl_HashTable    bindVars;
-    void             *arg;   /* Driver private statement context. */
-} Dbi_Statement;
+typedef struct Dbi_Query {
+
+    Dbi_Handle      *handle;       /* The db handle to query. */
+    Dbi_Statement   *stmt;         /* The statement to send. */
+    void            *arg;          /* Driver private query context. */
+
+    /*
+     * The following defines any values for bind variables.
+     */
+
+    int              nbound;       /* The number of bound values. */
+    struct {
+        char        *value;        /* The values. */
+        int          len;          /* Value length. */
+    } bind[DBI_MAX_BIND];
+
+    /*
+     * The following maintains the query result.
+     */
+
+    struct {
+        int          fetchingRows; /* Is there a pending result set? */
+        int          numCols;      /* Number of columns in penfing result. */
+        int          numRows;      /* Number of rows in pending result. */
+        int          currentCol;   /* The current column index. */
+        int          currentRow;   /* The current row index. */
+    } result;
+
+} Dbi_Query;
 
 /*
  * The following typedefs define the functions that loadable
- * drivers implement.
+ * drivers must implement.
  */
 
 typedef int         (Dbi_OpenProc)    (Dbi_Handle *, void *arg);
 typedef void        (Dbi_CloseProc)   (Dbi_Handle *, void *arg);
 typedef void        (Dbi_BindVarProc) (Ns_DString *, CONST char *name, int bindIdx, void *arg);
-typedef int         (Dbi_ExecProc)    (Dbi_Handle *, Dbi_Statement *, int *nrows,
-                                       int *ncols, void *arg);
-typedef int         (Dbi_ValueProc)   (Dbi_Handle *, Dbi_Statement *, int rowIdx,
-                                       int colIdx, CONST char **value, int *len, void *arg);
-typedef int         (Dbi_ColumnProc)  (Dbi_Handle *, Dbi_Statement *, int colIdx,
-                                       CONST char **column, int *len, void *arg);
-typedef void        (Dbi_FlushProc)   (Dbi_Statement *, void *arg);
+typedef int         (Dbi_ExecProc)    (Dbi_Query *, void *arg);
+typedef int         (Dbi_ValueProc)   (Dbi_Query *, CONST char **value, int *len,
+                                       void *arg);
+typedef int         (Dbi_ColumnProc)  (Dbi_Query *, CONST char **column, int *len,
+                                       void *arg);
+typedef void        (Dbi_FlushProc)   (Dbi_Query *, void *arg);
 typedef int         (Dbi_ResetProc)   (Dbi_Handle *, void *arg);
-
 
 /*
  * The following structure specifies the driver-specific functions
@@ -136,15 +160,15 @@ Dbi_DatabaseName(Dbi_Pool *)
     NS_GNUC_NONNULL(1);
 
 NS_EXTERN int
-Dbi_Exec(Dbi_Handle *, Dbi_Statement *, int *nrows, int *ncols)
-    NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
+Dbi_Exec(Dbi_Query *)
+    NS_GNUC_NONNULL(1);
 
 NS_EXTERN int
-Dbi_NextValue(Dbi_Statement *, CONST char **, int *, CONST char **, int *)
+Dbi_NextValue(Dbi_Query *, CONST char **, int *, CONST char **, int *)
     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2) NS_GNUC_NONNULL(3);
 
 NS_EXTERN void
-Dbi_Flush(Dbi_Statement *)
+Dbi_Flush(Dbi_Query *)
     NS_GNUC_NONNULL(1);
 
 NS_EXTERN int
@@ -199,34 +223,47 @@ NS_EXTERN void
 Dbi_StatementFree(Dbi_Statement *)
      NS_GNUC_NONNULL(1);
 
-NS_EXTERN int
-Dbi_StatementSetBindValue(Dbi_Statement *, int idx, CONST char *value, int len)
-     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(3);
+NS_EXTERN CONST char *
+Dbi_StatementBoundSQL(Dbi_Statement *, int *len)
+     NS_GNUC_NONNULL(1);
+
+NS_EXTERN CONST char *
+Dbi_StatementSQL(Dbi_Statement *, int *len)
+     NS_GNUC_NONNULL(1);
 
 NS_EXTERN int
-Dbi_StatementGetBindValue(Dbi_Statement *, int idx,
-                          CONST char **value, int *len, CONST char **key)
-    NS_GNUC_NONNULL(1);
+Dbi_StatementGetBindVar(Dbi_Statement *, int idx, CONST char **key)
+    NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(3);
+
+NS_EXTERN int
+Dbi_QueryGetBindValue(Dbi_Query *, int idx,
+                      CONST char **value, int *len)
+    NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(3) NS_GNUC_NONNULL(4);
+
+NS_EXTERN int
+Dbi_QuerySetBindValue(Dbi_Query *, int idx, CONST char *value, int len)
+     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(3);
+
 
 /*
  * util.c:
  */
 
 NS_EXTERN int
-Dbi_Select(Dbi_Handle *, Dbi_Statement *, int *nrows, int *ncols)
-    NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
+Dbi_Select(Dbi_Query *)
+    NS_GNUC_NONNULL(1);
 
 NS_EXTERN int
-Dbi_0or1Row(Dbi_Handle *handle, Dbi_Statement *stmt, int *nrows, int *ncols)
-     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
+Dbi_0or1Row(Dbi_Query *)
+     NS_GNUC_NONNULL(1);
 
 NS_EXTERN int
-Dbi_1Row(Dbi_Handle *handle, Dbi_Statement *stmt, int *ncols)
-     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
+Dbi_1Row(Dbi_Query *)
+     NS_GNUC_NONNULL(1);
 
 NS_EXTERN int
-Dbi_DML(Dbi_Handle *, Dbi_Statement *stmt, int *nrows, int *ncols)
-    NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
+Dbi_DML(Dbi_Query *)
+    NS_GNUC_NONNULL(1);
 
 NS_EXTERN void
 Dbi_SetException(Dbi_Handle *handle, CONST char *sqlstate, CONST char *fmt, ...)

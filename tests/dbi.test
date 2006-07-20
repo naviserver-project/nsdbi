@@ -72,7 +72,7 @@ test 0or1row-3 {not found} -body {
 
 test 0or1row-4 {no columns} -body {
     dbi 0or1row {ROWS 1 0}
-} -returnCodes error -result {driver returned rows but no columns}
+} -returnCodes error -result {bug: driver failed to set number of columns}
 
 test 0or1row-5 {query error} -body {
     dbi 0or1row {ERROR}
@@ -89,8 +89,8 @@ test 1row-2 {found multiple columns} -body {
 } -result {v v v}
 
 test 1row-3 {1row not found} -body {
-    dbi 1row {ROWS 0 0}
-} -returnCodes error -result "query was not a statement returning rows"
+    dbi 1row {ROWS 0 1}
+} -returnCodes error -result {query was not a statement returning rows}
 
 test 1row-4 {query error} -body {
     dbi 1row {ERROR}
@@ -114,7 +114,7 @@ test rows-3 {found 2 rows, 1 column} -body {
 
 test rows-4 {no rows} -body {
     dbi rows {ROWS 0 0}
-} -result {}
+} -returnCodes error -result {bug: driver failed to set number of columns}
 
 test rows-5 {query error} -body {
     dbi rows {ERROR}

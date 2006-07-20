@@ -33,8 +33,6 @@
 #include "nsdbi.h"
 
 
-#define DBI_MAX_BIND_VARS 32
-
 /*
  * The following structure defines a database pool.
  */
@@ -80,71 +78,29 @@ typedef struct Pool {
 
 typedef struct Handle {
 
-    /* Publicly visible in a Dbi_Handle struct */
+    /* Publicly visible in a Dbi_Handle. */
 
-    struct Pool      *poolPtr;
-    void             *arg;  /* Driver private connection context. */
+    struct Pool      *poolPtr;      /* The pool this handle belongs to. */
+    void             *arg;          /* Driver private handle context. */
 
-    /* Private to a Handle struct */
+    /* Private to a Handle. */
 
-    struct Handle    *nextPtr;
-    struct Statement *stmtPtr;
-    int               connected;
-    Ns_Conn          *conn;   /* Conn that handle is cached for. */
+    struct Handle    *nextPtr;      /* Next handle in the pool. */
+    Ns_Conn          *conn;         /* Conn that handle is cached for, if any. */
     char              cExceptionCode[6];
     Ns_DString        dsExceptionMsg;
-    time_t            otime;
-    time_t            atime;
-    int               n;      /* handle n of nhandles when acquired */
+    int               connected;    /* Is handle currently connected. */
+    time_t            otime;        /* Time when handle was connected to db. */
+    time_t            atime;        /* Time when handle was last used. */
+    int               n;            /* Handle n of nhandles when acquired. */
     int               stale_on_close;
-    int               reason; /* why the handle is being disconnected */
+    int               reason;       /* Why the handle is being disconnected. */
 
     struct {
-        unsigned int queries;
+        unsigned int queries;       /* Total queries via current connection. */
     } stats;
 
 } Handle;
-
-
-/*
- * The following structure defines an SQL statement.
- */
-
-typedef struct Statement {
-
-    /* Publicly visible in a Dbi_Statement struct */
-
-    Pool             *poolPtr;
-    Ns_DString        dsBoundSql; /* SQL with driver specific bind variable notation */
-    int               fetchingRows;
-    void             *arg;        /* Driver statement context */
-
-    /* Private to a Statement struct */
-
-    Handle           *handlePtr;
-    Ns_DString        dsSql;      /* Original SQL statement */
-    int               numCols;
-    int               currentCol;
-    int               numRows;
-    int               currentRow;
-
-    /*
-     * The following structure tracks bind variables by
-     * both key and index within the SQL statement.
-     */
-
-    struct {
-        Tcl_HashTable   table;
-        int             nbound;
-        struct Bind {
-            CONST char *name;
-            CONST void *value;
-            int         len;
-        } vars[DBI_MAX_BIND_VARS];
-    } bind;
-
-} Statement;
-
 
 /*
  * The following structure tracks which pools are
