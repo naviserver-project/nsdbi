@@ -1,0 +1,45 @@
+
+This is a shared library for the naviserver webserver which supports loadable
+database drivers.
+
+The simple Tcl interface handles pool connections etc. transparently.
+
+Examples:
+
+    foreach {x y z} [dbi rows {select x, y, z from table}] {
+        append $page "x: $x, y: $y, z: $z \n"
+    }
+
+
+    dbi 1row {select x, y from table where z = 1}
+    append $page "$x $y"
+
+
+    dbi 0or1row {as above, query can return 0 or 1 row ...}
+
+
+    set num_rows_effected [dbi dml {query which must be DML ...}]
+
+
+    set x 1
+    set y 2
+    dbi rows {select * from table when x = :x and y = :y}
+
+
+    set a(x) 1
+    set a(y) 2
+    dbi rows -bindarray $a -- {
+        select * from table where x = :x and y = :y
+    }
+
+
+    
+    dbi rows -bindset [ns_conn form] -- {
+        select * from table where x = :x and y = :y
+    }
+
+
+    dbi rows -pool mypool {select ...}
+
+
+See sample-config.tcl for configuration examples.
