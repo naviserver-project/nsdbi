@@ -115,11 +115,8 @@ Dbi_Exec(Dbi_Query *query)
     }
     handlePtr = (Handle *) query->handle;
     driver    = DbiDriverForHandle(query->handle);
-    
+
     Dbi_ResetException(query->handle);
-    if (DbiStatementPrepare(query->stmt, query->handle) != NS_OK) {
-        return NS_ERROR;
-    }
 
     if (driver->execProc != NULL && DbiConnected(handlePtr)) {
 
@@ -236,8 +233,6 @@ Dbi_Flush(Dbi_Query  *query)
     if (driver->flushProc != NULL && DbiConnected(query->handle)) {
         (*driver->flushProc)(query, driver->arg);
     }
-    query->handle = NULL;
-    query->stmt = NULL;
     query->arg = NULL;
     memset(&query->result, 0, sizeof(query->result));
 }

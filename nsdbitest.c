@@ -186,18 +186,28 @@ Bind(Ns_DString *ds, CONST char *name, int bindIdx, void *arg)
 static int
 Exec(Dbi_Query *query, void *arg)
 {
-    CONST char *sql;
+    Ns_DString *dsPtr;
+    CONST char *sql, *value;
     char        cmd[64];
-    int         n, rest = 0, status = NS_ERROR;
+    int         n, i, rest = 0, status = NS_ERROR;
+
+    assert(query->arg == NULL);
 
     sql = Dbi_StatementBoundSQL(query->stmt, NULL);
     n = sscanf(sql, "%s %d %d %n", cmd,
                &query->result.numRows, &query->result.numCols, &rest);
 
+    dsPtr = ns_malloc(sizeof(Ns_DString));
+    Ns_DStringInit(dsPtr);
+
     if (n >= 1) {
         if (STREQ(cmd, "DML")) {
             status = DBI_DML;
         } else if (STREQ(cmd, "ROWS")) {
+            i = 0;
+            while (Dbi_QueryGetBindValue(query, i++, &value, NULL) == NS_OK) {
+                Tcl_DStringAppendElement(dsPtr, value);
+            }
             status = DBI_ROWS;
         } else if (STREQ(cmd, "ERROR")) {
             Dbi_SetException(query->handle, "TEST", "driver error");
@@ -208,7 +218,9 @@ Exec(Dbi_Query *query, void *arg)
     error:
         Dbi_SetException(query->handle, "TEST", "nsdbitest query syntax error");
     }
-    query->arg = (char *) sql + rest;
+
+    Tcl_DStringAppendElement(dsPtr, sql + rest);
+    query->arg = dsPtr;
 
     return status;
 }
@@ -220,7 +232,7 @@ Exec(Dbi_Query *query, void *arg)
  * Value --
  *
  *      Fetch the value of the current row and column.
-
+ *
  *      For testing, all values are "v", except the first which is
  *      the original SQL statement with driver specific bind
  *      variable notation substituted.
@@ -237,11 +249,13 @@ Exec(Dbi_Query *query, void *arg)
 static int
 Value(Dbi_Query *query, CONST char **value, int *len, void *arg)
 {
+    Ns_DString *dsPtr = query->arg;
+
     if (query->result.currentRow == 0
         && query->result.currentCol == 0) {
 
-        *value = query->arg;
-        *len = strlen(*value);
+        *value = Ns_DStringValue(dsPtr);
+        *len = Ns_DStringLength(dsPtr);
     } else {
         *value = "v";
         *len = 1;
@@ -299,7 +313,13 @@ Column(Dbi_Query *query, CONST char **column, int *len, void *arg)
 static void
 Flush(Dbi_Query *query, void *arg)
 {
-    query->arg = NULL;
+    Ns_DString *dsPtr = query->arg;
+
+    if (dsPtr != NULL) {
+        Ns_DStringFree(dsPtr);
+        ns_free(dsPtr);
+        query->arg = NULL;
+    }
 }
 
 

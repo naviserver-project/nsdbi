@@ -149,10 +149,6 @@ extern void
 DbiClose(Dbi_Handle *)
     NS_GNUC_NONNULL(1);
 
-extern int
-DbiStatementPrepare(Dbi_Statement *, Dbi_Handle *)
-    NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
-
 extern void DbiInitTclObjTypes(void);
 extern Ns_TclInterpInitProc DbiInitInterp;
 

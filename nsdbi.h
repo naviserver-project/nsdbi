@@ -223,6 +223,10 @@ NS_EXTERN void
 Dbi_StatementFree(Dbi_Statement *)
      NS_GNUC_NONNULL(1);
 
+NS_EXTERN int
+Dbi_StatementPrepare(Dbi_Statement *, Dbi_Handle *)
+    NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
+
 NS_EXTERN CONST char *
 Dbi_StatementBoundSQL(Dbi_Statement *, int *len)
      NS_GNUC_NONNULL(1);

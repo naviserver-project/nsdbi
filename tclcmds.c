@@ -48,7 +48,7 @@ GetPool(ClientData arg, Tcl_Interp *interp, Tcl_Obj *poolObj)
     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
 
 static int
-BindVars(Tcl_Interp *interp, Dbi_Query *query, char *array, char *set)
+BindVars(Tcl_Interp *interp, Dbi_Query *query, char *array, char *setid)
     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
 
 static int
@@ -182,7 +182,7 @@ TclDbiCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
     Dbi_Query      query;
     Ns_DString     ds;
     Ns_Conn       *conn = NULL;
-    char          *array = NULL, *set = NULL;
+    char          *array = NULL, *setid = NULL;
     Tcl_Obj       *stmtObj, *poolObj = NULL;
     int            cmd, n, timeout = -1, status = TCL_OK;
 
@@ -190,7 +190,7 @@ TclDbiCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
         {"-pool",      Ns_ObjvObj,    &poolObj,  NULL},
         {"-timeout",   Ns_ObjvInt,    &timeout,  NULL},
         {"-bindarray", Ns_ObjvString, &array,    NULL},
-        {"-bindset",   Ns_ObjvString, &set,      NULL},
+        {"-bindset",   Ns_ObjvString, &setid,      NULL},
         {"--",         Ns_ObjvBreak,  NULL,      NULL},
         {NULL, NULL, NULL, NULL}
     };
@@ -309,11 +309,22 @@ TclDbiCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
         }
 
         /*
+         * Prepare the statement.
+         */
+
+        if (Dbi_StatementPrepare(query.stmt, query.handle) != NS_OK) {
+            status = Exception(interp, Dbi_ExceptionCode(query.handle),
+                               Dbi_ExceptionMsg(query.handle));
+            goto done;
+        }
+
+        /*
          * Bind variables to statement if required.
          */
 
-        if (BindVars(interp, &query, array, set) != TCL_OK) {
-            return TCL_ERROR;
+        status = BindVars(interp, &query, array, setid);
+        if (status != TCL_OK) {
+            goto done;
         }
 
         /*
@@ -324,8 +335,7 @@ TclDbiCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
         if (status == NS_ERROR) {
             status = Exception(interp, Dbi_ExceptionCode(query.handle),
                                Dbi_ExceptionMsg(query.handle));
-            Dbi_PutHandle(query.handle);
-            return TCL_ERROR;
+            goto done;
         }
 
         /*
@@ -377,11 +387,14 @@ TclDbiCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
          * active to cache it in.
          */
 
+    done:
+        Dbi_Flush(&query);
         if (conn != NULL) {
             Dbi_ResetHandle(query.handle);
         } else {
             Dbi_PutHandle(query.handle);
         }
+
         break;
     }
 
@@ -454,24 +467,24 @@ GetPool(ClientData arg, Tcl_Interp *interp, Tcl_Obj *poolObj)
  */
 
 static int
-BindVars(Tcl_Interp *interp, Dbi_Query *query, char *array, char *set)
+BindVars(Tcl_Interp *interp, Dbi_Query *query, char *array, char *setid)
 {
-    Ns_Set         *bindSet;
+    Ns_Set         *set = NULL;
     Tcl_Obj        *valObjPtr;
     CONST char     *key, *value;
     int             len, idx = 0;
 
-    if (set != NULL) {
-        if (Ns_TclGetSet2(interp, set, &bindSet) != TCL_OK) {
+    if (setid != NULL) {
+        if (Ns_TclGetSet2(interp, setid, &set) != TCL_OK) {
             return TCL_ERROR;
         }
     }
 
-    while (Dbi_StatementGetBindVar(query->stmt, idx++, &key) == NS_OK) {
+    while (Dbi_StatementGetBindVar(query->stmt, idx, &key) == NS_OK) {
         value = NULL;
 
-        if (bindSet != NULL) {
-            if ((value = Ns_SetGet(bindSet, key)) != NULL) {
+        if (set != NULL) {
+            if ((value = Ns_SetGet(set, key)) != NULL) {
                 len = strlen(value);
             }
         } else {
@@ -488,6 +501,7 @@ BindVars(Tcl_Interp *interp, Dbi_Query *query, char *array, char *set)
         }
 
         Dbi_QuerySetBindValue(query, idx, value, len);
+        idx++;
     }
 
     return TCL_OK;

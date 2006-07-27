@@ -136,6 +136,48 @@ Dbi_StatementFree(Dbi_Statement *stmt)
 /*
  *----------------------------------------------------------------------
  *
+ * Dbi_StatementPrepare --
+ *
+ *      Prepare a statement for execution with the given handle.
+ *
+ * Results:
+ *      NS_ERROR if max bind variables exceeded.
+ *
+ * Side effects:
+ *      Statement is parsed by driver callback and any bind variables
+ *      are converted to driver specific notation. Statement may
+ *      be reparsed if previously prepared for a handle from
+ *      a different pool.
+ *
+ *----------------------------------------------------------------------
+ */
+
+int
+Dbi_StatementPrepare(Dbi_Statement *stmt, Dbi_Handle *handle)
+{
+    Statement *stmtPtr = (Statement *) stmt;
+    int        status  = NS_OK;
+
+    if (stmtPtr->pool == NULL
+        || stmtPtr->pool != handle->pool) {
+
+        stmtPtr->pool = handle->pool;
+        if (ParseBindVars(stmtPtr) != NS_OK) {
+            Dbi_SetException(handle, "DBI",
+                             "max bind variables exceeded: %d",
+                             DBI_MAX_BIND);
+            stmtPtr->pool = NULL;
+            status = NS_ERROR;
+        }
+    }
+
+    return status;
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
  * Dbi_StatementBoundSQL --
  *
  *      Return the SQL statement with driver specific bind variable
@@ -273,57 +315,20 @@ Dbi_QueryGetBindValue(Dbi_Query *query, int idx,
 int
 Dbi_QuerySetBindValue(Dbi_Query *query, int idx, CONST char *value, int len)
 {
-    if (idx < 0 || idx >= query->nbound) {
+    Statement *stmtPtr = (Statement *) query->stmt;
+
+    assert(stmtPtr != NULL);
+
+    if (idx < 0 || idx >= stmtPtr->bind.nbound) {
         Ns_Log(Bug, "nsdbi: Dbi_QuerySetBindValue: bad index: %d, nbound: %d",
                idx, query->nbound);
         return NS_ERROR;
     }
     query->bind[idx].value = value;
     query->bind[idx].len = len;
+    query->nbound++;
 
     return NS_OK;
-}
-
-
-/*
- *----------------------------------------------------------------------
- *
- * DbiStatementPrepare --
- *
- *      Prepare a statement for execution with the given handle.
- *
- * Results:
- *      NS_ERROR if max bind variables exceeded.
- *
- * Side effects:
- *      Statement is parsed by driver callback and any bind variables
- *      are converted to driver specific notation. Statement may
- *      be reparsed if previously prepared for a handle from
- *      a different pool.
- *
- *----------------------------------------------------------------------
- */
-
-int
-DbiStatementPrepare(Dbi_Statement *stmt, Dbi_Handle *handle)
-{
-    Statement *stmtPtr = (Statement *) stmt;
-    int        status  = NS_OK;
-
-    if (stmtPtr->pool == NULL
-        || stmtPtr->pool != handle->pool) {
-
-        stmtPtr->pool = handle->pool;
-        if (ParseBindVars(stmtPtr) != NS_OK) {
-            Dbi_SetException(handle, "DBI",
-                             "max bind variables exceeded: %d",
-                             DBI_MAX_BIND);
-            stmtPtr->pool = NULL;
-            status = NS_ERROR;
-        }
-    }
-
-    return status;
 }
 
 
@@ -368,7 +373,7 @@ ParseBindVars(Statement *stmtPtr)
     for (p = chunk = sql, bind = NULL; len > 0; ++p, --len) {
         if (*p == ':' && !quote && !nexteq(':') && !preveq(':') && !preveq('\\')) {
             bind = p;
-        } else if (*p == '\'') {
+        } else if (*p == '\'' && bind == NULL) {
             if (p == sql || !preveq('\\')) {
                 quote = !quote;
             }

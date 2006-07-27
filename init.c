@@ -426,7 +426,7 @@ Dbi_GetHandle(Dbi_Handle **handlePtrPtr, Dbi_Pool *pool, Ns_Conn *conn, int wait
  *      None.
  *
  * Side effects:
- *      Handle is flushed, reset, and possibly closed as required.
+ *      Handle is reset and possibly closed as required.
  *
  *----------------------------------------------------------------------
  */
@@ -474,7 +474,7 @@ Dbi_PutHandle(Dbi_Handle *handle)
  *
  * Dbi_ReleaseConnHandles --
  *
- *      Return any cached handles for the given conn back to they're
+ *      Return any cached handles for the given conn back to their
  *      pools.
  *
  * Results:

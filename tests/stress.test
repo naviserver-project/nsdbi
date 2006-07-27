@@ -1,0 +1,38 @@
+#
+# Hammer on the db routines.
+#
+
+
+package require tcltest 2.2
+namespace import -force ::tcltest::*
+
+eval ::tcltest::configure $argv
+
+
+
+test dbi-stress-1 {stability...} -constraints stress -body {
+
+    for {set i 0} {$i < 50000} {incr i} {
+
+        set x $i
+        set y [expr $i + 1]
+
+        set query {ROWS 5 50 :x :y}
+
+        dbi rows $query
+
+        if {[expr $i % 2]} {
+            append query " "
+            set query [string trim $query]
+        }
+    }
+
+    1
+
+} -cleanup {
+    unset -nocomplain x y query
+} -result 1
+
+
+
+cleanupTests
