@@ -64,6 +64,11 @@ when?  e.g. round-robin requests between 3 databases?
         (:x, :y, :z)
     }
 
+    # MySQL has this native. Others could wrap in transaction:
+
+    dbi insertorupdate tablex $a
+
+
 
 *) Predefined schema queries for drivers. i.e. you want to know which tables
  are defined, or how many columns a table has.  Drivers supply a string of SQL
@@ -77,15 +82,39 @@ when?  e.g. round-robin requests between 3 databases?
 *) Dynamically change pool config.
 
     dbi pool maxconnections
-    5
+    5 ;# current handles
     dbi pool maxconnections 10
+    5 ;# old handles
+    dbi pool maxconnection
+    10 ;# current handles
 
 
-*) Transparent support for various keyed data structures: Ns_Sets, arrays,
- Tclx keyed lists, Tcl8.5 dicts.
+*) Transparent support for various keyed data structures: sets, arrays,
+ TclX keyed lists, Tcl8.5 dicts:
 
     # Figure out what $x is and do the right thing.
     dbi rows -bind $x {query ...}
+
+
+*) Array opperations (Oracle array DML etc.) with native driver support:
+
+    # 3 inserts in single transation, efficiently:
+    dbi dml {
+        insert into tablex (x) values (:x)
+    } a b c
+
+
+*) Add a Tcl 'format' command to turn a result into a useable string without
+ first creating a list:
+
+    ns_return 200 text/plain \
+        [dbi format {select x, y from table} {row: {x} {y}\n}]
+
+    # Result would be:
+
+    row: a b
+    row: d e
+    ...
 
 
 *) Add prepared statement support to the driver API.
