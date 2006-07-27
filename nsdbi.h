@@ -242,7 +242,7 @@ Dbi_StatementGetBindVar(Dbi_Statement *, int idx, CONST char **key)
 NS_EXTERN int
 Dbi_QueryGetBindValue(Dbi_Query *, int idx,
                       CONST char **value, int *len)
-    NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(3) NS_GNUC_NONNULL(4);
+    NS_GNUC_NONNULL(1);
 
 NS_EXTERN int
 Dbi_QuerySetBindValue(Dbi_Query *, int idx, CONST char *value, int len)

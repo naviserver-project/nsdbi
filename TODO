@@ -1,4 +1,10 @@
 
+*) Make sure results are utf8 encoded.
+
+
+*) Handle disconnections and fatal backend errors.
+
+
 *) Handle caching is mostly transparent, but requires some ugliness to auto
 release handles before conn IO. A cleaner, although less transparent way to
 handle this might be:

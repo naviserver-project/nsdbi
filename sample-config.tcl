@@ -42,3 +42,11 @@ ns_param   maxidle        0    ;# Handle closed after maxidle seconds if unused.
 ns_param   maxopen        0    ;# Handle closed after maxopen seconds, regardles of use.
 ns_param   maxqueries     0    ;# Handle closed after maxqueries sql queries.
 ns_param   checkinterval  600  ;# Check for stale handles every 15 seconds.
+#
+# The following depend on which driver is being used, but you can
+# expect user, password, database.
+#
+ns_param   user           test
+ns_param   password       secret
+ns_param   database       testdb
+
