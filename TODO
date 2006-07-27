@@ -1,0 +1,97 @@
+
+*) Handle caching is mostly transparent, but requires some ugliness to auto
+release handles before conn IO. A cleaner, although less transparent way to
+handle this might be:
+
+    dbi withhandle -pool x {
+        dbi 1row {query...}
+        dbi 1row {query...}
+    }
+
+
+*) Result caching: Caching the results from a db query is easy, but flushing
+is complicated. You often want to flush a whole class of cached results
+because they depend upon the values in some other table which was just
+updated. Perhaps results can be cached with multiple keys:
+
+    # All 'it' results flushed atomically.
+    dbi dml -cachekey it$id -cachekey it {update ...}
+
+    # Return cached result for key it$id if available.
+    dbi rows -cachekey it$id {select ... :id ...}
+
+    # Flush every 'it'.
+    dbi flush -cachekey it
+
+
+*) Limits for pools?  Set max handles, default pool etc. per urlspecific
+data. So: dbi commands run from pages under /foo/bar would by default get a
+handle from pool x if none specified.  If there are 6 concurrent pages running
+under /foo/bar and there are 10 handles in pool x but the limit says 6, the
+next page will have to wiat.
+
+The goal is to abstract pool names from code.  Pool names can change -- they
+should be in a config file.  e.g. a site grows large and partitions user data
+into two databases: usernames a-m -> pool1, usernames n-z pool1.
+
+
+*) Add Url2Pool callbacks (See url2file) to determine which handle to use
+when?  e.g. round-robin requests between 3 databases?
+
+
+*) Add higher level Tcl commands 'update', 'insert' etc.
+
+    set a(x) 1; set a(y) 2; set a(z) 3
+
+    dbi update tablex $a
+
+    # Translates to:
+
+    dbi dml -bindarray a -- {
+        update tablex set x = :x, y = :y, z = :z
+    }
+
+    # And:
+
+    dbi insert tablex $a
+
+    # Translates to:
+
+    dbi dml -bindarray a -- {
+        insert into tablex
+        (x, y, z)
+        values
+        (:x, :y, :z)
+    }
+
+
+*) Predefined schema queries for drivers. i.e. you want to know which tables
+ are defined, or how many columns a table has.  Drivers supply a string of SQL
+ which returns the correct answer. Can overide in config file for weird db
+ setups.
+
+    dbi tables
+    dbi columns tablex
+
+
+*) Dynamically change pool config.
+
+    dbi pool maxconnections
+    5
+    dbi pool maxconnections 10
+
+
+*) Transparent support for various keyed data structures: Ns_Sets, arrays,
+ Tclx keyed lists, Tcl8.5 dicts.
+
+    # Figure out what $x is and do the right thing.
+    dbi rows -bind $x {query ...}
+
+
+*) Add prepared statement support to the driver API.
+
+
+*) Does it make sense to extend the C API with new features when there are
+already so many db C APIs out there? Perhaps we should just use one of them?
+
+
