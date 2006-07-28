@@ -284,7 +284,7 @@ Dbi_ExceptionCode(Dbi_Handle *handle)
  *      The current exception message for the given handle.
  *
  * Results:
- *      cstring.
+ *      Pointer to cstring or NULL if there is no message.
  *
  * Side effects:
  *      None.
@@ -297,7 +297,10 @@ Dbi_ExceptionMsg(Dbi_Handle *handle)
 {
     Handle *handlePtr = (Handle *) handle;
 
-    return Ns_DStringValue(&handlePtr->dsExceptionMsg);
+    if (Ns_DStringLength(&handlePtr->dsExceptionMsg)) {
+        return Ns_DStringValue(&handlePtr->dsExceptionMsg);
+    }
+    return NULL;
 }
 
 

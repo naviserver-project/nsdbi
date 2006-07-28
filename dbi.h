@@ -117,15 +117,17 @@ typedef struct ServerData {
  * The following are some convenience macros to access structures etc.
  */
 
-#define DbiPoolForHandle(handle)     (((Handle *) handle)->poolPtr)
-#define DbiDriverForHandle(handle)   (((Handle *) handle)->poolPtr->driver)
-#define DbiDriverForPool(pool)       (((Pool *) pool)->driver)
+#define DbiPoolForHandle(handle)       (((Handle *) handle)->poolPtr)
+#define DbiDriverForHandle(handle)     (((Handle *) handle)->poolPtr->driver)
+#define DbiDriverNameForHandle(handle) (DbiDriverForHandle((handle))->name)
+#define DbiDriverForPool(pool)         (((Pool *) pool)->driver)
 
-#define DbiPoolName(pool)            (((Pool *) pool)->name)
-#define DbiPoolNameForHandle(handle) (((Handle *) handle)->poolPtr->name)
+#define DbiPoolName(pool)              (((Pool *) pool)->name)
+#define DbiPoolNameForHandle(handle)   (((Handle *) handle)->poolPtr->name)
 
 #define DbiLog(handle,level,msg,...)                   \
-    Ns_Log(level, "nsdbi[%s]: " msg,                   \
+    Ns_Log(level, "nsdbi[%s:%s]: " msg,                \
+           DbiDriverNameForHandle(handle),             \
            DbiPoolNameForHandle(handle), __VA_ARGS__)
 
 
@@ -136,18 +138,6 @@ DbiGetPool(ServerData *sdataPtr, CONST char *poolname)
 
 extern ServerData *
 DbiGetServer(CONST char *server)
-    NS_GNUC_NONNULL(1);
-
-extern int
-DbiConnected(Dbi_Handle *)
-    NS_GNUC_NONNULL(1);
-
-extern int
-DbiOpen(Dbi_Handle *)
-    NS_GNUC_NONNULL(1);
-
-extern void
-DbiClose(Dbi_Handle *)
     NS_GNUC_NONNULL(1);
 
 extern void DbiInitTclObjTypes(void);

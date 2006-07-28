@@ -112,17 +112,17 @@ typedef struct Dbi_Query {
  * drivers must implement.
  */
 
-typedef int         (Dbi_OpenProc)     (Dbi_Handle *, void *arg);
-typedef void        (Dbi_CloseProc)    (Dbi_Handle *, void *arg);
-typedef int         (Dbi_ConnectedProc)(Dbi_Handle *, void *arg);
-typedef void        (Dbi_BindVarProc)  (Ns_DString *, CONST char *name, int bindIdx, void *arg);
-typedef int         (Dbi_ExecProc)     (Dbi_Query *, void *arg);
-typedef int         (Dbi_ValueProc)    (Dbi_Query *, CONST char **value, int *len,
-                                        void *arg);
-typedef int         (Dbi_ColumnProc)   (Dbi_Query *, CONST char **column, int *len,
-                                        void *arg);
-typedef void        (Dbi_FlushProc)    (Dbi_Query *, void *arg);
-typedef int         (Dbi_ResetProc)    (Dbi_Handle *, void *arg);
+typedef int   (Dbi_OpenProc)     (Dbi_Handle *, void *arg);
+typedef void  (Dbi_CloseProc)    (Dbi_Handle *, void *arg);
+typedef int   (Dbi_ConnectedProc)(Dbi_Handle *, void *arg);
+typedef void  (Dbi_BindVarProc)  (Ns_DString *, CONST char *name, int bindIdx, void *arg);
+typedef int   (Dbi_ExecProc)     (Dbi_Query *, void *arg);
+typedef int   (Dbi_ValueProc)    (Dbi_Query *, CONST char **value, int *len,
+                                  void *arg);
+typedef int   (Dbi_ColumnProc)   (Dbi_Query *, CONST char **column, int *len,
+                                  void *arg);
+typedef void  (Dbi_FlushProc)    (Dbi_Query *, void *arg);
+typedef int   (Dbi_ResetProc)    (Dbi_Handle *, void *arg);
 
 /*
  * The following structure specifies the driver-specific functions
@@ -146,40 +146,12 @@ typedef struct Dbi_Driver {
 
 
 /*
- * drv.c:
+ * init.c:
  */
 
 NS_EXTERN int
 Dbi_RegisterDriver(CONST char *server, CONST char *module, Dbi_Driver *driver)
     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2) NS_GNUC_NONNULL(3);
-
-NS_EXTERN CONST char *
-Dbi_DriverName(Dbi_Pool *)
-    NS_GNUC_NONNULL(1);
-
-NS_EXTERN CONST char *
-Dbi_DatabaseName(Dbi_Pool *)
-    NS_GNUC_NONNULL(1);
-
-NS_EXTERN int
-Dbi_Exec(Dbi_Query *)
-    NS_GNUC_NONNULL(1);
-
-NS_EXTERN int
-Dbi_NextValue(Dbi_Query *, CONST char **, int *, CONST char **, int *)
-    NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2) NS_GNUC_NONNULL(3);
-
-NS_EXTERN void
-Dbi_Flush(Dbi_Query *)
-    NS_GNUC_NONNULL(1);
-
-NS_EXTERN int
-Dbi_ResetHandle(Dbi_Handle *)
-    NS_GNUC_NONNULL(1);
-
-/*
- * init.c:
- */
 
 NS_EXTERN Dbi_Pool *
 Dbi_GetPool(CONST char *server, CONST char *poolname)
@@ -205,6 +177,22 @@ NS_EXTERN int
 Dbi_ReleaseConnHandles(Ns_Conn *conn)
     NS_GNUC_NONNULL(1);
 
+NS_EXTERN int
+Dbi_Exec(Dbi_Query *)
+    NS_GNUC_NONNULL(1);
+
+NS_EXTERN int
+Dbi_NextValue(Dbi_Query *, CONST char **, int *, CONST char **, int *)
+    NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2) NS_GNUC_NONNULL(3);
+
+NS_EXTERN void
+Dbi_Flush(Dbi_Query *)
+    NS_GNUC_NONNULL(1);
+
+NS_EXTERN int
+Dbi_ResetHandle(Dbi_Handle *)
+    NS_GNUC_NONNULL(1);
+
 NS_EXTERN void
 Dbi_BouncePool(Dbi_Pool *pool)
     NS_GNUC_NONNULL(1);
@@ -212,6 +200,14 @@ Dbi_BouncePool(Dbi_Pool *pool)
 NS_EXTERN char *
 Dbi_Stats(Ns_DString *ds, Dbi_Pool *poolPtr)
     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
+
+NS_EXTERN CONST char *
+Dbi_DriverName(Dbi_Pool *)
+    NS_GNUC_NONNULL(1);
+
+NS_EXTERN CONST char *
+Dbi_DatabaseName(Dbi_Pool *)
+    NS_GNUC_NONNULL(1);
 
 /*
  * stmt.c

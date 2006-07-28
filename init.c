@@ -56,6 +56,10 @@ static int
 Connect(Handle *)
     NS_GNUC_NONNULL(1);
 
+static int
+Connected(Handle *handlePtr)
+    NS_GNUC_NONNULL(1);
+
 static void
 CheckPool(Pool *poolPtr, int stale);
 
@@ -390,7 +394,7 @@ Dbi_GetHandle(Dbi_Handle **handlePtrPtr, Dbi_Pool *pool, Ns_Conn *conn, int wait
      * If we got a handle, make sure its connected, otherwise return it.
      */
 
-    if (handlePtr != NULL && !DbiConnected((Dbi_Handle *) handlePtr)) {
+    if (handlePtr != NULL && !Connected(handlePtr)) {
         if (Connect(handlePtr) != NS_OK) {
             Ns_MutexLock(&poolPtr->lock);
             ReturnHandle(handlePtr);
@@ -504,6 +508,175 @@ Dbi_ReleaseConnHandles(Ns_Conn *conn)
 /*
  *----------------------------------------------------------------------
  *
+ * Dbi_Exec --
+ *
+ *      Execute an SQL statement.
+ *
+ * Results:
+ *      DBI_DML, DBI_ROWS, or NS_ERROR.
+ *
+ * Side effects:
+ *      SQL is sent to database for evaluation.
+ *
+ *----------------------------------------------------------------------
+ */
+
+int
+Dbi_Exec(Dbi_Query *query)
+{
+    Dbi_Handle  *handle    = query->handle;
+    Handle      *handlePtr = (Handle *) query->handle;
+    Dbi_Driver  *driver;
+    int          status;
+
+    if (handle == NULL || query->stmt == NULL) {
+        Ns_Log(Bug, "nsdbi: Dbi_Exec: null handle or statement for query.");
+        return NS_ERROR;
+    }
+    driver = DbiDriverForHandle(handle);
+    Dbi_ResetException(handle);
+
+    status = (*driver->execProc)(query, driver->arg);
+    handlePtr->stats.queries++;
+
+    if (status == DBI_ROWS) {
+        if (!query->result.numCols) {
+            Dbi_SetException(handle, "DBI",
+                             "bug: driver failed to set number of columns");
+            return NS_ERROR;
+        }
+        query->result.fetchingRows = NS_TRUE;
+    }
+
+    DbiLog(handle, Debug, "%s",
+           Dbi_StatementBoundSQL(query->stmt, NULL));
+
+    return status;
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * Dbi_NextValue --
+ *
+ *      Fetch the result from the next column index of the next row. If
+ *      column is not null, set the column name also.
+ *      This routine is normally called repeatedly after a Dbi_Exec or
+ *      a series of Dbi_GetColumn calls.
+ *
+ * Results:
+ *      NS_OK:        the next result value was successfully retrieved
+ *      DBI_LAST_COL: the result of the last column in current row
+ *      DBI_END_DATA: the result of the last column in the last row
+ *      NS_ERROR:     an error occurred retrieving the result
+ *
+ * Side effects:
+ *      The given handles currentCol and currentRow are maintained.
+ *
+ *----------------------------------------------------------------------
+ */
+
+int
+Dbi_NextValue(Dbi_Query *query, CONST char **value, int *vLen, CONST char **column, int *cLen)
+{
+    Dbi_Driver *driver;
+    int         status;
+
+    if (query->handle == NULL || query->result.fetchingRows == NS_FALSE) {
+        Ns_Log(Bug, "nsdbi: Dbi_NextValue: null handle or no rows to fetch.");
+        return NS_ERROR;
+    }
+    if (query->result.currentCol == query->result.numCols) {
+        query->result.currentCol = 0; /* Reset for next row. */
+    }
+
+    driver = DbiDriverForHandle(query->handle);
+    status = (*driver->valueProc)(query, value, vLen, driver->arg);
+    if (status == NS_ERROR) {
+        return NS_ERROR;
+    }
+    if (column != NULL && cLen != NULL) {
+        status = (*driver->columnProc)(query, column, cLen, driver->arg);
+        if (status == NS_ERROR) {
+            return NS_ERROR;
+        }
+    }
+    query->result.currentCol++;
+    if (query->result.currentCol == query->result.numCols) {
+        if (query->result.currentRow == (query->result.numRows - 1)) {
+            query->result.fetchingRows = NS_FALSE;
+            status = DBI_END_DATA;
+        } else {
+            query->result.currentRow++;
+            status = DBI_LAST_COL;
+        }
+    }
+
+    return status;
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * Dbi_Flush --
+ *
+ *      Flush rows pending in a result set.
+ *
+ * Results:
+ *      NS_OK or NS_ERROR.
+ *
+ * Side effects:
+ *      Rows waiting in the result set are dumped, perhaps by simply
+ *      fetching them over one by one -- depends on driver.
+ *
+ *----------------------------------------------------------------------
+ */
+
+void
+Dbi_Flush(Dbi_Query  *query)
+{
+    Dbi_Driver *driver = DbiDriverForHandle(query->handle);
+
+    (*driver->flushProc)(query, driver->arg);
+    memset(&query->result, 0, sizeof(query->result));
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * Dbi_ResetHandle --
+ *
+ *      Reset a handle.
+ *
+ * Results:
+ *      NS_OK if handle reset, NS_ERROR if reset failed and handle
+ *      should be returned to pool.
+ *
+ * Side effects:
+ *      Depends on driver.
+ *
+ *----------------------------------------------------------------------
+ */
+
+int
+Dbi_ResetHandle(Dbi_Handle *handle)
+{
+    Dbi_Driver *driver = DbiDriverForHandle(handle);
+    int         status;
+
+    status = (*driver->resetProc)(handle, driver->arg);
+    Dbi_ResetException(handle);
+
+    return status;
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
  * Dbi_BouncePool --
  *
  *      Close all handles in the pool.
@@ -568,6 +741,35 @@ Dbi_Stats(Ns_DString *dest, Dbi_Pool *pool)
 /*
  *----------------------------------------------------------------------
  *
+ * Dbi_DriverName, Dbi_DatabaseName --
+ *
+ *      Return the string name of the driver or the database type.
+ *
+ * Results:
+ *      String name.
+ *
+ * Side effects:
+ *      None.
+ *
+ *----------------------------------------------------------------------
+ */
+
+CONST char *
+Dbi_DriverName(Dbi_Pool *pool)
+{
+    return DbiDriverForPool(pool)->name;
+}
+
+CONST char *
+Dbi_DatabaseName(Dbi_Pool *pool)
+{
+    return DbiDriverForPool(pool)->database;
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
  * DbiGetServer --
  *
  *      Get per-server data.
@@ -618,7 +820,7 @@ ReturnHandle(Handle *handlePtr)
     if (poolPtr->firstPtr == NULL) {
         poolPtr->firstPtr = poolPtr->lastPtr = handlePtr;
         handlePtr->nextPtr = NULL;
-    } else if (DbiConnected((Dbi_Handle *) handlePtr)) {
+    } else if (Connected(handlePtr)) {
         handlePtr->nextPtr = poolPtr->firstPtr;
         poolPtr->firstPtr = handlePtr;
     } else {
@@ -649,11 +851,12 @@ ReturnHandle(Handle *handlePtr)
 static int
 CloseIfStale(Handle *handlePtr, time_t now)
 {
-    Pool *poolPtr = handlePtr->poolPtr;
+    Dbi_Handle *handle = (Dbi_Handle *) handlePtr;
+    Pool       *poolPtr = handlePtr->poolPtr;
+    Dbi_Driver *driver = DbiDriverForHandle(handlePtr);
+    char       *reason  = NULL;
 
-    char *reason  = NULL;
-
-    if (DbiConnected((Dbi_Handle *) handlePtr)) {
+    if (Connected(handlePtr)) {
         if (poolPtr->stale_on_close > handlePtr->stale_on_close) {
             reason = "bounced";
         } else if (poolPtr->maxopen && (handlePtr->otime < (now - poolPtr->maxopen))) {
@@ -666,9 +869,12 @@ CloseIfStale(Handle *handlePtr, time_t now)
             poolPtr->stats.querycloses++;
         }
         if (reason) {
-            DbiLog((Dbi_Handle *) handlePtr, Notice, "closing %s handle, %d queries",
+
+            DbiLog(handle, Notice, "closing %s handle, %d queries",
                    reason, handlePtr->stats.queries);
-            DbiClose((Dbi_Handle *) handlePtr);
+
+            (*driver->closeProc)(handle, driver->arg);
+            handle->arg = NULL;
             handlePtr->atime = handlePtr->otime = 0;
             poolPtr->stats.queries += handlePtr->stats.queries;
             handlePtr->stats.queries = 0;
@@ -838,22 +1044,55 @@ Connect(Handle *handlePtr)
 {
     Dbi_Handle *handle  = (Dbi_Handle *) handlePtr;
     Pool       *poolPtr = handlePtr->poolPtr;
+    Dbi_Driver *driver  = DbiDriverForHandle(handlePtr);
+    char       *msg;
     int         status  = NS_ERROR;
 
     if (!poolPtr->stopping) {
         poolPtr->stats.handleopens++;
-        status = DbiOpen(handle);
+        status = (*driver->openProc)(handle, driver->arg);
         if (status != NS_OK) {
             poolPtr->stats.handlefailures++;
             handlePtr->atime = handlePtr->otime = 0;
-            DbiLog(handle, Error, "handle connection failed (%d)",
-                   poolPtr->stats.handlefailures);
+            DbiLog(handle, Error, "handle connection failed (%d): "
+                   "code: '%s' msg: '%s'",
+                   poolPtr->stats.handlefailures,
+                   Dbi_ExceptionCode(handle), Dbi_ExceptionMsg(handle));
         } else {
             handlePtr->atime = handlePtr->otime = time(NULL);
-            DbiLog(handle, Notice, "opened handle %d/%d",
-                   handlePtr->n, poolPtr->nhandles);
+            msg = Dbi_ExceptionMsg(handle);
+            DbiLog(handle, Notice, "opened handle %d/%d%s%s",
+                   handlePtr->n, poolPtr->nhandles,
+                   msg ? ": " : "", msg ? msg : "");
+            Dbi_ResetException(handle);
         }
     }
 
     return status;
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * Connected --
+ *
+ *      Is the given database handle currently connected?
+ *
+ * Results:
+ *      NS_TRUE or NS_FALSE.
+ *
+ * Side effects:
+ *      None.
+ *
+ *----------------------------------------------------------------------
+ */
+
+int
+Connected(Handle *handlePtr)
+{
+    Dbi_Handle *handle = (Dbi_Handle *) handlePtr;
+    Dbi_Driver *driver = DbiDriverForHandle(handlePtr);
+
+    return (*driver->connectedProc)(handle, driver->arg);
 }
