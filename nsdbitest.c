@@ -48,6 +48,7 @@ NS_EXPORT int Ns_ModuleVersion = 1;
 
 static Dbi_OpenProc         Open;
 static Dbi_CloseProc        Close;
+static Dbi_ConnectedProc    Connected;
 static Dbi_BindVarProc      Bind;
 static Dbi_ExecProc         Exec;
 static Dbi_ValueProc        Value;
@@ -85,6 +86,7 @@ Ns_ModuleInit(CONST char *server, CONST char *module)
     driver->database      = database;
     driver->openProc      = Open;
     driver->closeProc     = Close;
+    driver->connectedProc = Connected;
     driver->bindVarProc   = Bind;
     driver->execProc      = Exec;
     driver->valueProc     = Value;
@@ -141,6 +143,29 @@ static void
 Close(Dbi_Handle *handle, void *arg)
 {
     handle->arg = NULL;
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * Connected --
+ *
+ *      Is the gien handle currently connected?
+ *
+ * Results:
+ *      NS_TRUE.
+ *
+ * Side effects:
+ *      None.
+ *
+ *----------------------------------------------------------------------
+ */
+
+static int
+Connected(Dbi_Handle *handle, void *arg)
+{
+    return NS_TRUE;
 }
 
 

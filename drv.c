@@ -107,7 +107,7 @@ Dbi_Exec(Dbi_Query *query)
 {
     Handle        *handlePtr;
     Dbi_Driver    *driver;
-    int            status  = NS_ERROR;
+    int            retries = 1, status  = NS_ERROR;
 
     if (query->handle == NULL || query->stmt == NULL) {
         Ns_Log(Error, "nsdbi: Dbi_Exec: null handle or statement for query.");
@@ -118,8 +118,9 @@ Dbi_Exec(Dbi_Query *query)
 
     Dbi_ResetException(query->handle);
 
-    if (driver->execProc != NULL && DbiConnected(handlePtr)) {
+    if (driver->execProc != NULL) {
 
+    exec:
         status = (*driver->execProc)(query, driver->arg);
         handlePtr->stats.queries++;
 
@@ -132,7 +133,16 @@ Dbi_Exec(Dbi_Query *query)
             query->result.fetchingRows = NS_TRUE;
             query->result.currentRow = 0;
             query->result.currentCol = 0;
+
+        } else if (status == NS_ERROR && !DbiConnected(query->handle) && retries--) {
+            /*
+             * Retry once on a broken connection.
+             */
+            if (DbiOpen(query->handle) == NS_OK) {
+                goto exec;
+            }
         }
+
         DbiLog(query->handle, Debug, "%s",
                Dbi_StatementBoundSQL(query->stmt, NULL));
     }
@@ -230,7 +240,7 @@ Dbi_Flush(Dbi_Query  *query)
 {
     Dbi_Driver *driver = DbiDriverForHandle(query->handle);
 
-    if (driver->flushProc != NULL && DbiConnected(query->handle)) {
+    if (driver->flushProc != NULL) {
         (*driver->flushProc)(query, driver->arg);
     }
     query->arg = NULL;
@@ -260,12 +270,41 @@ Dbi_ResetHandle(Dbi_Handle *handle)
     Dbi_Driver *driver = DbiDriverForHandle(handle);
     int         status = NS_ERROR;
 
-    if (driver->resetProc != NULL && DbiConnected(handle)) {
+    if (driver->resetProc != NULL) {
         status = (*driver->resetProc)(handle, driver->arg);
+        assert(status == NS_OK || handle->arg == NULL);
     }
     Dbi_ResetException(handle);
 
     return status;
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * DbiConnected --
+ *
+ *      Is the given database handle currently connected?
+ *
+ * Results:
+ *      NS_TRUE or NS_FALSE.
+ *
+ * Side effects:
+ *      None.
+ *
+ *----------------------------------------------------------------------
+ */
+
+int
+DbiConnected(Dbi_Handle *handle)
+{
+    Dbi_Driver *driver = DbiDriverForHandle(handle);
+
+    if (driver->connectedProc != NULL && handle->arg != NULL) {
+        return (*driver->connectedProc)(handle, driver->arg);
+    }
+    return NS_FALSE;
 }
 
 
@@ -296,9 +335,9 @@ DbiOpen(Dbi_Handle *handle)
 
         DbiLog(handle, Error, "failed to open handle: code: '%s' msg:: %s",
                Dbi_ExceptionCode(handle), Dbi_ExceptionMsg(handle));
-        return NS_ERROR;
+ 
+       return NS_ERROR;
     }
-
     return NS_OK;
 }
 
@@ -328,4 +367,5 @@ DbiClose(Dbi_Handle *handle)
     if (driver->closeProc != NULL && DbiConnected(handle)) {
         (*driver->closeProc)(handle, driver->arg);
     }
+    handle->arg = NULL;
 }

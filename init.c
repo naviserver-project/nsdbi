@@ -390,7 +390,7 @@ Dbi_GetHandle(Dbi_Handle **handlePtrPtr, Dbi_Pool *pool, Ns_Conn *conn, int wait
      * If we got a handle, make sure its connected, otherwise return it.
      */
 
-    if (handlePtr != NULL && !DbiConnected(handlePtr)) {
+    if (handlePtr != NULL && !DbiConnected((Dbi_Handle *) handlePtr)) {
         if (Connect(handlePtr) != NS_OK) {
             Ns_MutexLock(&poolPtr->lock);
             ReturnHandle(handlePtr);
@@ -618,7 +618,7 @@ ReturnHandle(Handle *handlePtr)
     if (poolPtr->firstPtr == NULL) {
         poolPtr->firstPtr = poolPtr->lastPtr = handlePtr;
         handlePtr->nextPtr = NULL;
-    } else if (DbiConnected(handlePtr)) {
+    } else if (DbiConnected((Dbi_Handle *) handlePtr)) {
         handlePtr->nextPtr = poolPtr->firstPtr;
         poolPtr->firstPtr = handlePtr;
     } else {
@@ -653,7 +653,7 @@ CloseIfStale(Handle *handlePtr, time_t now)
 
     char *reason  = NULL;
 
-    if (DbiConnected(handlePtr)) {
+    if (DbiConnected((Dbi_Handle *) handlePtr)) {
         if (poolPtr->stale_on_close > handlePtr->stale_on_close) {
             reason = "bounced";
         } else if (poolPtr->maxopen && (handlePtr->otime < (now - poolPtr->maxopen))) {
@@ -669,8 +669,6 @@ CloseIfStale(Handle *handlePtr, time_t now)
             DbiLog((Dbi_Handle *) handlePtr, Notice, "closing %s handle, %d queries",
                    reason, handlePtr->stats.queries);
             DbiClose((Dbi_Handle *) handlePtr);
-            handlePtr->connected = NS_FALSE;
-            handlePtr->arg = NULL;
             handlePtr->atime = handlePtr->otime = 0;
             poolPtr->stats.queries += handlePtr->stats.queries;
             handlePtr->stats.queries = 0;
@@ -851,7 +849,6 @@ Connect(Handle *handlePtr)
             DbiLog(handle, Error, "handle connection failed (%d)",
                    poolPtr->stats.handlefailures);
         } else {
-            handlePtr->connected = NS_TRUE;
             handlePtr->atime = handlePtr->otime = time(NULL);
             DbiLog(handle, Notice, "opened handle %d/%d",
                    handlePtr->n, poolPtr->nhandles);

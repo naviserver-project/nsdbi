@@ -89,7 +89,6 @@ typedef struct Handle {
     Ns_Conn          *conn;         /* Conn that handle is cached for, if any. */
     char              cExceptionCode[6];
     Ns_DString        dsExceptionMsg;
-    int               connected;    /* Is handle currently connected. */
     time_t            otime;        /* Time when handle was connected to db. */
     time_t            atime;        /* Time when handle was last used. */
     int               n;            /* Handle n of nhandles when acquired. */
@@ -125,8 +124,6 @@ typedef struct ServerData {
 #define DbiPoolName(pool)            (((Pool *) pool)->name)
 #define DbiPoolNameForHandle(handle) (((Handle *) handle)->poolPtr->name)
 
-#define DbiConnected(handle)         (((Handle *) handle)->connected)
-
 #define DbiLog(handle,level,msg,...)                   \
     Ns_Log(level, "nsdbi[%s]: " msg,                   \
            DbiPoolNameForHandle(handle), __VA_ARGS__)
@@ -139,6 +136,10 @@ DbiGetPool(ServerData *sdataPtr, CONST char *poolname)
 
 extern ServerData *
 DbiGetServer(CONST char *server)
+    NS_GNUC_NONNULL(1);
+
+extern int
+DbiConnected(Dbi_Handle *)
     NS_GNUC_NONNULL(1);
 
 extern int

@@ -112,16 +112,17 @@ typedef struct Dbi_Query {
  * drivers must implement.
  */
 
-typedef int         (Dbi_OpenProc)    (Dbi_Handle *, void *arg);
-typedef void        (Dbi_CloseProc)   (Dbi_Handle *, void *arg);
-typedef void        (Dbi_BindVarProc) (Ns_DString *, CONST char *name, int bindIdx, void *arg);
-typedef int         (Dbi_ExecProc)    (Dbi_Query *, void *arg);
-typedef int         (Dbi_ValueProc)   (Dbi_Query *, CONST char **value, int *len,
-                                       void *arg);
-typedef int         (Dbi_ColumnProc)  (Dbi_Query *, CONST char **column, int *len,
-                                       void *arg);
-typedef void        (Dbi_FlushProc)   (Dbi_Query *, void *arg);
-typedef int         (Dbi_ResetProc)   (Dbi_Handle *, void *arg);
+typedef int         (Dbi_OpenProc)     (Dbi_Handle *, void *arg);
+typedef void        (Dbi_CloseProc)    (Dbi_Handle *, void *arg);
+typedef int         (Dbi_ConnectedProc)(Dbi_Handle *, void *arg);
+typedef void        (Dbi_BindVarProc)  (Ns_DString *, CONST char *name, int bindIdx, void *arg);
+typedef int         (Dbi_ExecProc)     (Dbi_Query *, void *arg);
+typedef int         (Dbi_ValueProc)    (Dbi_Query *, CONST char **value, int *len,
+                                        void *arg);
+typedef int         (Dbi_ColumnProc)   (Dbi_Query *, CONST char **column, int *len,
+                                        void *arg);
+typedef void        (Dbi_FlushProc)    (Dbi_Query *, void *arg);
+typedef int         (Dbi_ResetProc)    (Dbi_Handle *, void *arg);
 
 /*
  * The following structure specifies the driver-specific functions
@@ -133,6 +134,7 @@ typedef struct Dbi_Driver {
     CONST char           *database;
     Dbi_OpenProc         *openProc;
     Dbi_CloseProc        *closeProc;
+    Dbi_ConnectedProc    *connectedProc;
     Dbi_BindVarProc      *bindVarProc;
     Dbi_ExecProc         *execProc;
     Dbi_ValueProc        *valueProc;
