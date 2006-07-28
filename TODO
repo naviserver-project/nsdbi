@@ -1,8 +1,23 @@
 
-*) Make sure results are utf8 encoded.
+*) Make sure results are utf8 encoded. Contract is: drivers always return data
+ as utf-8 strings, no matter what the db uses internaly.
+
+Other rules: what about default date format, timezone?
 
 
-*) Handle disconnections and fatal backend errors.
+*) How to send/recieve binary data between database? Could check bound
+ variables type: if bytearray, use Tcl_GetByteArray* instead of
+ Tcl_GetString*. But what about data coming back? Maybe need an extra switch:
+
+    # The 2nd and 3rd columns are binary.
+    dbi rows -binary {2 3} {select a, b, c from x}
+
+Will need driver support.
+
+
+*) A standard scheme for common database errors such as 'duplicate row' when
+ inserting a new row with a primary key which is already taken. Turn these
+ into exceptions so that Tcl code can catch them.
 
 
 *) Handle caching is mostly transparent, but requires some ugliness to auto
@@ -13,6 +28,17 @@ handle this might be:
         dbi 1row {query...}
         dbi 1row {query...}
     }
+
+
+*) Do we also need to handle transactions in Tcl code:
+
+    dbi transaction -pool x {
+        dbi ...
+        dbi ...
+    }
+
+If it's not absolutely necessary it would be nice to skip this. Is it better
+to compose reuseable chunks of SQL in Tcl, or to use the db, views etc.?
 
 
 *) Result caching: Caching the results from a db query is easy, but flushing
@@ -75,7 +101,6 @@ when?  e.g. round-robin requests between 3 databases?
     dbi insertorupdate tablex $a
 
 
-
 *) Predefined schema queries for drivers. i.e. you want to know which tables
  are defined, or how many columns a table has.  Drivers supply a string of SQL
  which returns the correct answer. Can overide in config file for weird db
@@ -129,4 +154,15 @@ when?  e.g. round-robin requests between 3 databases?
 *) Does it make sense to extend the C API with new features when there are
 already so many db C APIs out there? Perhaps we should just use one of them?
 
+
+*) Asynchronous API. Send a query to the db, initiate an HTTP request to some
+ outside service, submit an ns_job: *concurrently*.  Wait for all the
+ results to come back.
+
+This could be extended so that multiple db queries are submitted from within
+the driver thread.  A conn thread would only be allocated when notification
+that all query results are ready is recieved. This would prevent conn threads
+sitting idle waiting for db I/O.
+
+The hard part is coming up with a sane API.
 
