@@ -109,7 +109,7 @@ Dbi_RegisterDriver(CONST char *server, CONST char *module, Dbi_Driver *driver)
         DbiInitTclObjTypes();
         Ns_ClsAlloc(&handleCls, (Ns_Callback *) Dbi_PutHandle);
         Tcl_InitHashTable(&serversTable, TCL_STRING_KEYS);
-        Ns_RegisterProcInfo(ScheduledPoolCheck, "nsdbi:check", PoolCheckArgProc);
+        Ns_RegisterProcInfo(ScheduledPoolCheck, "dbi:check", PoolCheckArgProc);
     }
 
     /*
@@ -118,12 +118,12 @@ Dbi_RegisterDriver(CONST char *server, CONST char *module, Dbi_Driver *driver)
 
     path = Ns_ConfigGetPath(server, module, NULL);
     if (path == NULL) {
-        Ns_Log(Error, "nsdbi[%s]: no configuration for pool", module);
+        Ns_Log(Error, "dbi[%s]: no configuration for pool", module);
         return NS_ERROR;
     }
 
     poolPtr = ns_calloc(1, sizeof(Pool));
-    Ns_MutexSetName2(&poolPtr->lock, "nsdbi", module);
+    Ns_MutexSetName2(&poolPtr->lock, "dbi", module);
     Ns_CondInit(&poolPtr->getCond);
     poolPtr->driver = driver;
     poolPtr->name = ns_strdup(module);
@@ -167,7 +167,7 @@ Dbi_RegisterDriver(CONST char *server, CONST char *module, Dbi_Driver *driver)
             Tcl_SetHashValue(hPtr, sdataPtr);
             if (Ns_TclRegisterTrace(server, DbiInitInterp, server,
                                     NS_TCL_TRACE_CREATE) != NS_OK) {
-                Ns_Log(Error, "nsdbi[%s]: error register tcl commands "
+                Ns_Log(Error, "dbi[%s]: error register tcl commands "
                        "for server '%s'", module, server);
                 return NS_ERROR;
             }
@@ -221,15 +221,15 @@ Dbi_GetPool(CONST char *server, CONST char *poolname)
     Dbi_Pool   *pool;
 
     if ((sdataPtr = DbiGetServer(server)) == NULL) {
-        Ns_Log(Error, "nsdbi: invalid server '%s' while getting pool '%s'", server, poolname);
+        Ns_Log(Error, "dbi: invalid server '%s' while getting pool '%s'", server, poolname);
         return NULL;
     }
     pool = DbiGetPool(sdataPtr, poolname);
     if (pool == NULL) {
         if (poolname == NULL) {
-            Ns_Log(Error, "nsdbi: no default pool for server '%s'", server); 
+            Ns_Log(Error, "dbi: no default pool for server '%s'", server); 
         } else {
-            Ns_Log(Error, "nsdbi: invalid pool '%s' for server '%s'", poolname, server);
+            Ns_Log(Error, "dbi: invalid pool '%s' for server '%s'", poolname, server);
         }
     }
     return pool;
@@ -530,7 +530,7 @@ Dbi_Exec(Dbi_Query *query)
     int          status;
 
     if (handle == NULL || query->stmt == NULL) {
-        Ns_Log(Bug, "nsdbi: Dbi_Exec: null handle or statement for query.");
+        Ns_Log(Bug, "dbi: Dbi_Exec: null handle or statement for query.");
         return NS_ERROR;
     }
     driver = DbiDriverForHandle(handle);
@@ -584,7 +584,7 @@ Dbi_NextValue(Dbi_Query *query, CONST char **value, int *vLen, CONST char **colu
     int         status;
 
     if (query->handle == NULL || query->result.fetchingRows == NS_FALSE) {
-        Ns_Log(Bug, "nsdbi: Dbi_NextValue: null handle or no rows to fetch.");
+        Ns_Log(Bug, "dbi: Dbi_NextValue: null handle or no rows to fetch.");
         return NS_ERROR;
     }
     if (query->result.currentCol == query->result.numCols) {
@@ -1016,7 +1016,7 @@ AtShutdown(Ns_Time *toPtr, void *arg)
     } else {
         Ns_DStringInit(&ds);
         Dbi_Stats(&ds, (Dbi_Pool *) poolPtr);
-        Ns_Log(Notice, "nsdbi[%s]: %s", poolPtr->name, ds.string);
+        Ns_Log(Notice, "dbi[%s]: %s", poolPtr->name, ds.string);
         Ns_DStringFree(&ds);
         CheckPool(poolPtr, 1);
     }

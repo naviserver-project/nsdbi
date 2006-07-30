@@ -320,7 +320,7 @@ Dbi_QuerySetBindValue(Dbi_Query *query, int idx, CONST char *value, int len)
     assert(stmtPtr != NULL);
 
     if (idx < 0 || idx >= stmtPtr->bind.nbound) {
-        Ns_Log(Bug, "nsdbi: Dbi_QuerySetBindValue: bad index: %d, nbound: %d",
+        Ns_Log(Bug, "dbi: Dbi_QuerySetBindValue: bad index: %d, nbound: %d",
                idx, query->nbound);
         return NS_ERROR;
     }

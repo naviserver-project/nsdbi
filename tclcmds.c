@@ -72,7 +72,7 @@ static Tcl_SetFromAnyProc      SetStmtFromAny;
  */
 
 static Tcl_ObjType stmtType = {
-    "nsdbi:statement",
+    "dbi:statement",
     FreeStmt,
     DupStmt,
     UpdateStringOfStmt,
@@ -98,7 +98,7 @@ static char *blockingCmds[] = {
  *----------------------------------------------------------------------
  * DbiInitTclObjTypes --
  *
- *      One time initialization of the nsdbi Tcl_Obj types.
+ *      One time initialization of the dbi Tcl_Obj types.
  *
  * Results:
  *      None.
@@ -414,7 +414,7 @@ TclDbiCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
  *      Pointer to pool or NULL if no default pool.
  *
  * Side effects:
- *      The Tcl object may be converted to nsdbi:pool type, and en error
+ *      The Tcl object may be converted to dbi:pool type, and en error
  *      may be left in the interp if conversion fails.
  *
  *----------------------------------------------------------------------
@@ -425,7 +425,7 @@ GetPool(ClientData arg, Tcl_Interp *interp, Tcl_Obj *poolObj)
 {
     ServerData  *sdataPtr = arg;
     Dbi_Pool    *pool;
-    const char  *poolType = "nsdbi:pool";
+    const char  *poolType = "dbi:pool";
 
     if (poolObj == NULL) {
         pool = sdataPtr->defpoolPtr;
@@ -495,7 +495,7 @@ BindVars(Tcl_Interp *interp, Dbi_Query *query, char *array, char *setid)
             }
         }
         if (value == NULL) {
-            Tcl_AddObjErrorInfo(interp, "\nnsdbi: bind variable not found: ", -1);
+            Tcl_AddObjErrorInfo(interp, "\ndbi: bind variable not found: ", -1);
             Tcl_AddObjErrorInfo(interp, key, -1);
             return TCL_ERROR;
         }
@@ -671,7 +671,7 @@ UpdateStringOfStmt(Tcl_Obj *objPtr)
  *----------------------------------------------------------------------
  * SetStmtFromAny --
  *
- *      Attempt to convert a Tcl object to nsdbi:statement type.
+ *      Attempt to convert a Tcl object to dbi:statement type.
  *
  * Results:
  *      Always TCL_OK.
