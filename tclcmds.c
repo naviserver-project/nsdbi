@@ -187,14 +187,15 @@ TclDbiCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
     Ns_Conn       *conn = NULL;
     char          *array = NULL, *setid = NULL;
     Tcl_Obj       *stmtObj, *poolObj = NULL;
-    int            cmd, n, ncols, nrows, timeout = -1, status = TCL_OK;
+    Ns_Time        time, *timeoutPtr = NULL;
+    int            cmd, n, ncols, nrows, status = TCL_OK;
 
     Ns_ObjvSpec opts[] = {
-        {"-pool",      Ns_ObjvObj,    &poolObj, NULL},
-        {"-timeout",   Ns_ObjvInt,    &timeout, NULL},
-        {"-bindarray", Ns_ObjvString, &array,   NULL},
-        {"-bindset",   Ns_ObjvString, &setid,   NULL},
-        {"--",         Ns_ObjvBreak,  NULL,     NULL},
+        {"-pool",      Ns_ObjvObj,    &poolObj,    NULL},
+        {"-timeout",   Ns_ObjvTime,   &timeoutPtr, NULL},
+        {"-bindarray", Ns_ObjvString, &array,      NULL},
+        {"-bindset",   Ns_ObjvString, &setid,      NULL},
+        {"--",         Ns_ObjvBreak,  NULL,        NULL},
         {NULL, NULL, NULL, NULL}
     };
     Ns_ObjvSpec args[] = {
@@ -299,7 +300,10 @@ TclDbiCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
             return TCL_ERROR;
         }
         conn = Ns_TclGetConn(interp);
-        status = Dbi_GetHandle(&handle, pool, conn, timeout);
+        if (timeoutPtr != NULL) {
+            timeoutPtr = Ns_AbsoluteTime(&time, timeoutPtr);
+        }
+        status = Dbi_GetHandle(&handle, pool, conn, timeoutPtr);
         if (status == NS_TIMEOUT) {
             Exception(interp, "NS_TIMEOUT", "wait for database handle timed out");
             return TCL_ERROR;

@@ -284,6 +284,9 @@ Exec(Dbi_Handle *handle, Dbi_Statement *stmt, Dbi_Bind *bind,
                 Tcl_DStringAppendElement(&conn->ds, value);
             }
             status = DBI_ROWS;
+        } else if (STREQ(cmd, "SLEEP")) {
+            sleep(*ncolsPtr);
+            status = DBI_ROWS;
         } else if (STREQ(cmd, "ERROR")) {
             Dbi_SetException(handle, "TEST", "driver error");
         } else {

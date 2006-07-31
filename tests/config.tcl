@@ -67,4 +67,4 @@ ns_param   checkinterval   30          ;# Check for stale handles every 15 secon
 
 ns_section "ns/server/server1/module/pool2"
 ns_param   description     "Pool Two Description"
-ns_param   handles         2
+ns_param   handles         1 ;# Used for timeout test.

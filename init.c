@@ -425,12 +425,13 @@ Dbi_ListPools(Ns_DString *ds, CONST char *server)
  */
 
 int
-Dbi_GetHandle(Dbi_Handle **handlePtrPtr, Dbi_Pool *pool, Ns_Conn *conn, int wait)
+Dbi_GetHandle(Dbi_Handle **handlePtrPtr, Dbi_Pool *pool, Ns_Conn *conn,
+              Ns_Time *timeoutPtr)
 {
     Pool       *poolPtr = (Pool *) pool;
     Handle     *handlePtr;
     Dbi_Handle *handle;
-    Ns_Time     timeout, *timePtr;
+    Ns_Time     time;
     int         status;
 
     /*
@@ -450,9 +451,11 @@ Dbi_GetHandle(Dbi_Handle **handlePtrPtr, Dbi_Pool *pool, Ns_Conn *conn, int wait
      * handles, watching for timeout.
      */
 
-    Ns_GetTime(&timeout);
-    Ns_IncrTime(&timeout, wait >= 0 ? wait : poolPtr->maxwait, 0);
-    timePtr = &timeout;
+    if (timeoutPtr == NULL) {
+        Ns_GetTime(&time);
+        Ns_IncrTime(&time, poolPtr->maxwait, 0);
+        timeoutPtr = &time;
+    }
 
     status = NS_OK;
     Ns_MutexLock(&poolPtr->lock);
@@ -460,7 +463,7 @@ Dbi_GetHandle(Dbi_Handle **handlePtrPtr, Dbi_Pool *pool, Ns_Conn *conn, int wait
     while (status == NS_OK
            && !poolPtr->stopping
            && poolPtr->firstPtr == NULL) {
-        status = Ns_CondTimedWait(&poolPtr->getCond, &poolPtr->lock, timePtr);
+        status = Ns_CondTimedWait(&poolPtr->getCond, &poolPtr->lock, timeoutPtr);
     }
     if (poolPtr->stopping) {
         status = NS_ERROR;

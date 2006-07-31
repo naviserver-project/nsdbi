@@ -48,6 +48,24 @@ test stats.1 {pool stats} -body {
 
 
 
+test timeout-1 {timeout getting handle, relative time} -body {
+    ns_thread begindetached {
+        dbi rows -pool pool2 -- {SLEEP 3 0}
+    }
+    after 1000
+    dbi rows -timeout 1 -pool pool2 -- {ROWS 2 2}
+} -returnCodes error -result {wait for database handle timed out}
+
+test timeout-2 {timeout getting handle, absolute time} -body {
+    ns_thread begindetached {
+        dbi rows -pool pool2 -- {SLEEP 3 0}
+    }
+    after 1000
+    dbi rows -timeout [ns_time incr [ns_time get] 1] -pool pool2 -- {ROWS 2 2}
+} -returnCodes error -result {wait for database handle timed out}
+
+
+
 test dml-1 {dml} -body {
     dbi dml {DML 0 3}
 } -result 3
