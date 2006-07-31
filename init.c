@@ -1126,8 +1126,6 @@ CloseIfStale(Handle *handlePtr, time_t now)
         if (poolPtr->stale_on_close > handlePtr->stale_on_close) {
             reason = "bounced";
         } else if (poolPtr->maxopen && (handlePtr->otime < (now - poolPtr->maxopen))) {
-            Ns_Log(Warning, "CloseIfStale: maxopen: %d, otime: %d",
-                   poolPtr->maxopen, handlePtr->otime);
             reason = "aged";
         } else if (poolPtr->maxidle && (handlePtr->atime < (now - poolPtr->maxidle))) {
             reason = "idle";
@@ -1141,7 +1139,6 @@ CloseIfStale(Handle *handlePtr, time_t now)
             DbiLog(handle, Notice, "closing %s handle, %d queries",
                    reason, handlePtr->stats.queries);
 
-            DbiLog(handle, Debug, "%s", "CloseIfStale: calling driver->closeProc");
             (*driver->closeProc)(handle, driver->arg);
             handle->arg = NULL;
             handlePtr->atime = handlePtr->otime = 0;
