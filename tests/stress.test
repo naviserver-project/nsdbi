@@ -12,26 +12,52 @@ eval ::tcltest::configure $argv
 
 test dbi-stress-1 {stability...} -constraints stress -body {
 
-    for {set i 0} {$i < 50000} {incr i} {
+    # 5 handles in pool1 -- use more to promote handle misses.
 
-        set x $i
-        set y [expr $i + 1]
+    foreach h {0 1 2 3 4 5 6 7 8 9} {
 
-        set query {ROWS 5 50 :x :y}
+        lappend threads [ns_thread begin {
 
-        dbi rows $query
+            ns_log notice thread beginning ...
+            after 1000
 
-        if {[expr $i % 2]} {
-            append query " "
-            set query [string trim $query]
-        }
+            for {set i 0} {$i < 20000} {incr i} {
+
+                set x $i
+                set y [expr $i + 1]
+
+                set query {ROWS 5 10 :x :y}
+
+                # catch handle timeout errors and yield.
+                if {[catch {
+                    dbi rows -timeout 0 -- $query
+                } err]} {
+                    ns_thread yield
+                }
+
+                if {$i > 10000} {
+                    # force the statement to be re-bound.
+                    if {[expr $i % 2]} {
+                        append query " "
+                        set query [string trim $query]
+                    }
+                }
+            }
+
+            ns_log notice thread finnished
+        }]
+
     }
 
-    1
+    foreach t $threads {
+        ns_thread join $t
+    }
+
+    ns_log notice [dbi stats pool1]
 
 } -cleanup {
-    unset -nocomplain x y query
-} -result 1
+    unset -nocomplain x y i h query threads t
+} -result {}
 
 
 
