@@ -357,11 +357,6 @@ ParseBindVars(Statement *stmtPtr)
     char       *sql, *p, *chunk, *bind, save;
     int         len, quote;
 
-    driver = DbiDriverForPool(stmtPtr->pool);
-    if (driver->bindVarProc == NULL) {
-        return NS_ERROR;
-    }
-
 #define preveq(c) (p != sql && *(p-1) == (c))
 #define nexteq(c) (*(p+1) == (c))
 
@@ -410,7 +405,7 @@ ParseBindVars(Statement *stmtPtr)
 static int
 DefineBindVar(Statement *stmtPtr, CONST char *name)
 {
-    Dbi_Driver    *driver = DbiDriverForPool(stmtPtr->pool);
+    Dbi_Driver    *driver = DbiPoolDriver(stmtPtr->pool);
     Tcl_HashEntry *hPtr;
     int            new, index;
 

@@ -34,74 +34,6 @@
 
 
 /*
- * The following structure defines a database pool.
- */
-
-struct Handle;
-
-typedef struct Pool {
-
-    char              *name;
-    int                nhandles;
-    Dbi_Driver        *driver;
-    struct Handle     *firstPtr;
-    struct Handle     *lastPtr;
-    int                npresent;
-    Ns_Mutex           lock;
-    Ns_Cond            getCond;
-
-    int                maxwait;
-    time_t             maxidle;
-    time_t             maxopen;
-    int                maxqueries;
-    int                stale_on_close;
-    int                stopping;
-
-    struct {
-        unsigned int handlegets;
-        unsigned int handlemisses;
-        unsigned int handleopens;
-        unsigned int handlefailures;
-        unsigned int queries;
-        unsigned int otimecloses;
-        unsigned int atimecloses;
-        unsigned int querycloses;
-    } stats;
-
-} Pool;
-
-
-/*
- * The following structure defines the internal
- * state of a database handle.
- */
-
-typedef struct Handle {
-
-    /* Publicly visible in a Dbi_Handle. */
-
-    struct Pool      *poolPtr;      /* The pool this handle belongs to. */
-    void             *arg;          /* Driver private handle context. */
-
-    /* Private to a Handle. */
-
-    struct Handle    *nextPtr;      /* Next handle in the pool. */
-    Ns_Conn          *conn;         /* Conn that handle is cached for, if any. */
-    char              cExceptionCode[6];
-    Ns_DString        dsExceptionMsg;
-    time_t            otime;        /* Time when handle was connected to db. */
-    time_t            atime;        /* Time when handle was last used. */
-    int               n;            /* Handle n of nhandles when acquired. */
-    int               stale_on_close;
-    int               reason;       /* Why the handle is being disconnected. */
-
-    struct {
-        unsigned int queries;       /* Total queries via current connection. */
-    } stats;
-
-} Handle;
-
-/*
  * The following structure tracks which pools are
  * available to a virtual server.
  */
@@ -117,21 +49,6 @@ typedef struct ServerData {
  * The following are some convenience macros to access structures etc.
  */
 
-#define DbiPoolForHandle(handle)       (((Handle *) handle)->poolPtr)
-#define DbiDriverForHandle(handle)     (((Handle *) handle)->poolPtr->driver)
-#define DbiDriverNameForHandle(handle) (DbiDriverForHandle((handle))->name)
-#define DbiDriverForPool(pool)         (((Pool *) pool)->driver)
-
-#define DbiPoolName(pool)              (((Pool *) pool)->name)
-#define DbiPoolNameForHandle(handle)   (((Handle *) handle)->poolPtr->name)
-
-#define DbiLog(handle,level,msg,...)                   \
-    Ns_Log(level, "nsdbi[%s:%s]: " msg,                \
-           DbiDriverNameForHandle(handle),             \
-           DbiPoolNameForHandle(handle), __VA_ARGS__)
-
-
-
 extern Dbi_Pool *
 DbiGetPool(ServerData *sdataPtr, CONST char *poolname)
     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
@@ -139,6 +56,9 @@ DbiGetPool(ServerData *sdataPtr, CONST char *poolname)
 extern ServerData *
 DbiGetServer(CONST char *server)
     NS_GNUC_NONNULL(1);
+
+Dbi_Driver *
+DbiPoolDriver(Dbi_Pool *pool);
 
 extern void DbiInitTclObjTypes(void);
 extern Ns_TclInterpInitProc DbiInitInterp;

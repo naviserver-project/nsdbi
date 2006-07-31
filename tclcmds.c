@@ -221,7 +221,7 @@ TclDbiCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
     case CDefaultCmd:
         pool = Dbi_DefaultPool(server);
         if (pool != NULL) {
-            Tcl_SetStringObj(Tcl_GetObjResult(interp), DbiPoolName(pool), -1);
+            Tcl_SetStringObj(Tcl_GetObjResult(interp), Dbi_PoolName(pool), -1);
         }
         break;
 
@@ -264,9 +264,6 @@ TclDbiCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
             Tcl_AppendElement(interp, Dbi_DriverName(pool));
             Tcl_AppendElement(interp, "database");
             Tcl_AppendElement(interp, Dbi_DatabaseName(pool));
-            Tcl_AppendElement(interp, "connections");
-            Tcl_ListObjAppendElement(interp, Tcl_GetObjResult(interp),
-                                     Tcl_NewIntObj(((Pool *) pool)->nhandles));
         }
         break;
 

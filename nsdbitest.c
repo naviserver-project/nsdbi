@@ -78,8 +78,8 @@ NS_EXPORT int
 Ns_ModuleInit(CONST char *server, CONST char *module)
 {
     Dbi_Driver *driver;
-    CONST char *name     = "drivername";
-    CONST char *database = "dbname";
+    CONST char *name     = "test";
+    CONST char *database = "db";
 
     driver = ns_calloc(1, sizeof(Dbi_Driver));
     driver->name          = name;
@@ -94,7 +94,7 @@ Ns_ModuleInit(CONST char *server, CONST char *module)
     driver->flushProc     = Flush;
     driver->resetProc     = Reset;
 
-    return Dbi_RegisterDriver(server, module, driver);
+    return Dbi_RegisterDriver(server, module, driver, sizeof(Dbi_Driver));
 }
 
 
@@ -165,7 +165,7 @@ Close(Dbi_Handle *handle, void *arg)
 static int
 Connected(Dbi_Handle *handle, void *arg)
 {
-    return NS_TRUE;
+    return handle->arg ? NS_TRUE : NS_FALSE;
 }
 
 

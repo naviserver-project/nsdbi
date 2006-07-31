@@ -130,18 +130,25 @@ typedef int   (Dbi_ResetProc)    (Dbi_Handle *, void *arg);
  */
 
 typedef struct Dbi_Driver {
-    CONST char           *name;
-    CONST char           *database;
-    Dbi_OpenProc         *openProc;
-    Dbi_CloseProc        *closeProc;
-    Dbi_ConnectedProc    *connectedProc;
-    Dbi_BindVarProc      *bindVarProc;
-    Dbi_ExecProc         *execProc;
-    Dbi_ValueProc        *valueProc;
-    Dbi_ColumnProc       *columnProc;
-    Dbi_FlushProc        *flushProc;
-    Dbi_ResetProc        *resetProc;
-    void                 *arg;
+
+    void               *arg;          /* Driver callback data. */
+
+    /*
+     * The following callbacks and data are (so far) all mandatory.
+     */
+
+    CONST char         *name;         /* Driver name. */
+    CONST char         *database;     /* Database name. */
+    Dbi_OpenProc       *openProc;
+    Dbi_CloseProc      *closeProc;
+    Dbi_ConnectedProc  *connectedProc;
+    Dbi_BindVarProc    *bindVarProc;
+    Dbi_ExecProc       *execProc;
+    Dbi_ValueProc      *valueProc;
+    Dbi_ColumnProc     *columnProc;
+    Dbi_FlushProc      *flushProc;
+    Dbi_ResetProc      *resetProc;
+
 } Dbi_Driver;
 
 
@@ -150,7 +157,8 @@ typedef struct Dbi_Driver {
  */
 
 NS_EXTERN int
-Dbi_RegisterDriver(CONST char *server, CONST char *module, Dbi_Driver *driver)
+Dbi_RegisterDriver(CONST char *server, CONST char *module,
+                   Dbi_Driver *driver, int size)
     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2) NS_GNUC_NONNULL(3);
 
 NS_EXTERN Dbi_Pool *
@@ -202,12 +210,36 @@ Dbi_Stats(Ns_DString *ds, Dbi_Pool *poolPtr)
     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
 
 NS_EXTERN CONST char *
+Dbi_PoolName(Dbi_Pool *)
+    NS_GNUC_NONNULL(1);
+
+NS_EXTERN CONST char *
 Dbi_DriverName(Dbi_Pool *)
     NS_GNUC_NONNULL(1);
 
 NS_EXTERN CONST char *
 Dbi_DatabaseName(Dbi_Pool *)
     NS_GNUC_NONNULL(1);
+
+NS_EXTERN void
+Dbi_SetException(Dbi_Handle *handle, CONST char *sqlstate, CONST char *fmt, ...)
+     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2) NS_GNUC_PRINTF(3, 4);
+
+NS_EXTERN void
+Dbi_ResetException(Dbi_Handle *handle)
+     NS_GNUC_NONNULL(1);
+
+NS_EXTERN char *
+Dbi_ExceptionCode(Dbi_Handle *handle)
+     NS_GNUC_NONNULL(1);
+
+NS_EXTERN char *
+Dbi_ExceptionMsg(Dbi_Handle *handle)
+     NS_GNUC_NONNULL(1);
+
+NS_EXTERN int
+Dbi_ExceptionPending(Dbi_Handle *handle)
+     NS_GNUC_NONNULL(1);
 
 /*
  * stmt.c
@@ -266,26 +298,6 @@ Dbi_1Row(Dbi_Query *)
 NS_EXTERN int
 Dbi_DML(Dbi_Query *)
     NS_GNUC_NONNULL(1);
-
-NS_EXTERN void
-Dbi_SetException(Dbi_Handle *handle, CONST char *sqlstate, CONST char *fmt, ...)
-     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2) NS_GNUC_PRINTF(3, 4);
-
-NS_EXTERN void
-Dbi_ResetException(Dbi_Handle *handle)
-     NS_GNUC_NONNULL(1);
-
-NS_EXTERN char *
-Dbi_ExceptionCode(Dbi_Handle *handle)
-     NS_GNUC_NONNULL(1);
-
-NS_EXTERN char *
-Dbi_ExceptionMsg(Dbi_Handle *handle)
-     NS_GNUC_NONNULL(1);
-
-NS_EXTERN int
-Dbi_ExceptionPending(Dbi_Handle *handle)
-     NS_GNUC_NONNULL(1);
 
 
 #endif /* NSDBI_H */
