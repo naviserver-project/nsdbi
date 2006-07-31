@@ -2,7 +2,10 @@
 *) Make sure results are utf8 encoded. Contract is: drivers always return data
    as utf-8 strings, no matter what the db uses internaly.
 
-   Other rules: date format (ISO), timezone (UTC)?
+   Other rules:
+     date format (ISO?)
+     timezone (UTC?)
+     autocommit on/off?
 
 
 *) How to send/recieve binary data between database? Could check bound
@@ -18,6 +21,12 @@
 *) A standard scheme for common database errors such as 'duplicate row' when
    inserting a new row with a primary key which is already taken. Turn these
    into exceptions so that Tcl code can catch them.
+
+
+*) How to pass NULLs to the database?
+
+     set x [dbi null]
+     dbi dml {update ... :x}
 
 
 *) Handle caching is mostly transparent, but requires some ugliness to auto
