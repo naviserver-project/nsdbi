@@ -45,10 +45,17 @@ NS_RCSID("@(#) $Header$");
 
 typedef struct Statement {
 
+    /* Publicly visible in a Dbi_Statement. */
+
+    char               *sql;        /* Pointer to bound SQL. */
+    int                 length;     /* Length of bound SQL. */
+
+    /* Private to a Statement. */
+
     Ns_DString          dsSql;      /* Original SQL statement. */
     Ns_DString          dsBoundSql; /* SQL with bind variable notation. */
 
-    Dbi_Pool           *pool;       /* Pool statement is prepared for. */
+    Dbi_Pool           *pool;       /* Pool that statement is prepared for. */
 
     struct {
         Tcl_HashTable   table;      /* Bind variables by name. */
@@ -153,7 +160,7 @@ Dbi_StatementFree(Dbi_Statement *stmt)
  */
 
 int
-Dbi_StatementPrepare(Dbi_Statement *stmt, Dbi_Handle *handle)
+Dbi_StatementPrepare(Dbi_Handle *handle, Dbi_Statement *stmt)
 {
     Statement *stmtPtr = (Statement *) stmt;
     int        status  = NS_OK;
@@ -162,12 +169,19 @@ Dbi_StatementPrepare(Dbi_Statement *stmt, Dbi_Handle *handle)
         || stmtPtr->pool != handle->pool) {
 
         stmtPtr->pool = handle->pool;
-        if (ParseBindVars(stmtPtr) != NS_OK) {
+        status = ParseBindVars(stmtPtr);
+
+        if (status != NS_OK) {
             Dbi_SetException(handle, "DBI",
                              "max bind variables exceeded: %d",
                              DBI_MAX_BIND);
             stmtPtr->pool = NULL;
-            status = NS_ERROR;
+            Ns_DStringSetLength(&stmtPtr->dsBoundSql, 0);
+            stmtPtr->sql = NULL;
+            stmtPtr->length = 0;
+        } else {
+            stmtPtr->sql    = Ns_DStringValue(&stmtPtr->dsBoundSql);
+            stmtPtr->length = Ns_DStringLength(&stmtPtr->dsBoundSql);
         }
     }
 
@@ -178,38 +192,10 @@ Dbi_StatementPrepare(Dbi_Statement *stmt, Dbi_Handle *handle)
 /*
  *----------------------------------------------------------------------
  *
- * Dbi_StatementBoundSQL --
- *
- *      Return the SQL statement with driver specific bind variable
- *      notation. This is the SQL that a driver executes.
- *
- * Results:
- *      Pointer to cstring, length updated if not NULL.
- *
- * Side effects:
- *      None.
- *
- *----------------------------------------------------------------------
- */
-
-CONST char *
-Dbi_StatementBoundSQL(Dbi_Statement *stmt, int *length)
-{
-    Statement *stmtPtr = (Statement *) stmt;
-
-    if (length != NULL) {
-        *length = Ns_DStringLength(&stmtPtr->dsSql);
-    }
-    return (CONST char *) Ns_DStringValue(&stmtPtr->dsBoundSql);
-}
-
-
-/*
- *----------------------------------------------------------------------
- *
  * Dbi_StatementSQL --
  *
- *      Return the original SQL statement.
+ *      Return the original SQL statement, pre bind variable
+ *      substitution.
  *
  * Results:
  *      Pointer to cstring, length updated if not NULL.
@@ -235,7 +221,7 @@ Dbi_StatementSQL(Dbi_Statement *stmt, int *length)
 /*
  *----------------------------------------------------------------------
  *
- * Dbi_StatementGetBindVar --
+ * Dbi_GetBindVariable --
  *
  *      Get the name of the bind variable at the given index.
  *
@@ -249,14 +235,14 @@ Dbi_StatementSQL(Dbi_Statement *stmt, int *length)
  */
 
 int
-Dbi_StatementGetBindVar(Dbi_Statement *stmt, int idx, CONST char **name)
+Dbi_GetBindVariable(Dbi_Statement *stmt, int idx, CONST char **namePtr)
 {
     Statement *stmtPtr = (Statement *) stmt;
 
     if (idx < 0 || idx >= stmtPtr->bind.nbound) {
         return NS_ERROR;
     }
-    *name = stmtPtr->bind.vars[idx].name;
+    *namePtr = stmtPtr->bind.vars[idx].name;
 
     return NS_OK;
 }
@@ -265,41 +251,7 @@ Dbi_StatementGetBindVar(Dbi_Statement *stmt, int idx, CONST char **name)
 /*
  *----------------------------------------------------------------------
  *
- * Dbi_QueryGetBindValue --
- *
- *      Get the value of the bind variable at the given index.
- *
- * Results:
- *      NS_OK if exists, NS_ERROR otherwise.
- *
- * Side effects:
- *      None.
- *
- *----------------------------------------------------------------------
- */
-
-int
-Dbi_QueryGetBindValue(Dbi_Query *query, int idx,
-                      CONST char **value, int *len)
-{
-    if (idx < 0 || idx >= query->nbound) {
-        return NS_ERROR;
-    }
-    if (value != NULL) {
-        *value = query->bind[idx].value;
-    }
-    if (len != NULL) {
-        *len = query->bind[idx].len;
-    }
-
-    return NS_OK;
-}
-
-
-/*
- *----------------------------------------------------------------------
- *
- * Dbi_QuerySetBindValue --
+ * Dbi_SetBindValue --
  *
  *      Set the value of the bind variable at the given index.
  *
@@ -313,20 +265,50 @@ Dbi_QueryGetBindValue(Dbi_Query *query, int idx,
  */
 
 int
-Dbi_QuerySetBindValue(Dbi_Query *query, int idx, CONST char *value, int len)
+Dbi_SetBindValue(Dbi_Bind *bind, int idx, CONST char *value, int length)
 {
-    Statement *stmtPtr = (Statement *) query->stmt;
-
-    assert(stmtPtr != NULL);
-
-    if (idx < 0 || idx >= stmtPtr->bind.nbound) {
-        Ns_Log(Bug, "dbi: Dbi_QuerySetBindValue: bad index: %d, nbound: %d",
-               idx, query->nbound);
+    if (idx < 0 || idx >= DBI_MAX_BIND) {
+        Ns_Log(Bug, "dbi: Dbi_SetBindValue: bad index: %d, nbound: %d",
+               idx, bind->nbound);
         return NS_ERROR;
     }
-    query->bind[idx].value = value;
-    query->bind[idx].len = len;
-    query->nbound++;
+    bind->vals[idx].value  = value;
+    bind->vals[idx].length = length;
+    bind->nbound++;
+
+    return NS_OK;
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * Dbi_GetBindValue --
+ *
+ *      Get the value of the bind variable at the given index.
+ *
+ * Results:
+ *      NS_OK if exists, NS_ERROR otherwise.
+ *
+ * Side effects:
+ *      None.
+ *
+ *----------------------------------------------------------------------
+ */
+
+int
+Dbi_GetBindValue(Dbi_Bind *bind, int idx,
+                 CONST char **valuePtr, int *lengthPtr)
+{
+    if (idx < 0 || idx >= bind->nbound) {
+        return NS_ERROR;
+    }
+    if (valuePtr != NULL) {
+        *valuePtr = bind->vals[idx].value;
+    }
+    if (lengthPtr != NULL) {
+        *lengthPtr = bind->vals[idx].length;
+    }
 
     return NS_OK;
 }
@@ -353,9 +335,8 @@ Dbi_QuerySetBindValue(Dbi_Query *query, int idx, CONST char *value, int len)
 static int
 ParseBindVars(Statement *stmtPtr)
 {
-    Dbi_Driver *driver;
-    char       *sql, *p, *chunk, *bind, save;
-    int         len, quote;
+    char  *sql, *p, *chunk, *bind, save;
+    int    len, quote;
 
 #define preveq(c) (p != sql && *(p-1) == (c))
 #define nexteq(c) (*(p+1) == (c))

@@ -43,6 +43,17 @@ NS_EXPORT int Ns_ModuleVersion = 1;
 
 
 /*
+ * The following struct manages a handle connection and
+ * single result.
+ */
+
+typedef struct Connection {
+    int        connected;
+    Ns_DString ds;
+} Connection;
+
+
+/*
  * Static functions defined in this file.
  */
 
@@ -82,6 +93,7 @@ Ns_ModuleInit(CONST char *server, CONST char *module)
     CONST char *database = "db";
 
     driver = ns_calloc(1, sizeof(Dbi_Driver));
+    driver->arg           = "driver context";
     driver->name          = name;
     driver->database      = database;
     driver->openProc      = Open;
@@ -117,7 +129,17 @@ Ns_ModuleInit(CONST char *server, CONST char *module)
 static int
 Open(Dbi_Handle *handle, void *arg)
 {
-    handle->arg = (void *) NS_TRUE;
+    Connection *conn;
+
+    assert(STREQ((char *) arg, "driver context"));
+    assert(handle->arg == NULL);
+
+    conn = ns_malloc(sizeof(Connection));
+    conn->connected = NS_TRUE;
+    Ns_DStringInit(&conn->ds);
+    handle->arg = conn;
+
+    Dbi_SetException(handle, "TEST", "extra driver connection info");
 
     return NS_OK;
 }
@@ -142,7 +164,15 @@ Open(Dbi_Handle *handle, void *arg)
 static void
 Close(Dbi_Handle *handle, void *arg)
 {
-    handle->arg = NULL;
+    Connection *conn = handle->arg;
+
+    assert(STREQ((char *) arg, "driver context"));
+    assert(conn != NULL);
+
+    Ns_DStringFree(&conn->ds);
+    ns_free(conn);
+
+    /* handle->arg = NULL;  Let dbi do this so we can check. */
 }
 
 
@@ -165,7 +195,11 @@ Close(Dbi_Handle *handle, void *arg)
 static int
 Connected(Dbi_Handle *handle, void *arg)
 {
-    return handle->arg ? NS_TRUE : NS_FALSE;
+    Connection *conn = handle->arg;
+
+    assert(STREQ((char *) arg, "driver context"));
+
+    return conn ? conn->connected : NS_FALSE;
 }
 
 
@@ -188,6 +222,13 @@ Connected(Dbi_Handle *handle, void *arg)
 static void
 Bind(Ns_DString *ds, CONST char *name, int bindIdx, void *arg)
 {
+    assert(STREQ((char *) arg, "driver context"));
+
+    assert(ds != NULL);
+    assert(*name != '\0');
+    assert(bindIdx >= 0);
+    assert(bindIdx <= DBI_MAX_BIND);
+
     Ns_DStringPrintf(ds, "%d:%s", bindIdx, name);
 }
 
@@ -209,43 +250,50 @@ Bind(Ns_DString *ds, CONST char *name, int bindIdx, void *arg)
  */
 
 static int
-Exec(Dbi_Query *query, void *arg)
+Exec(Dbi_Handle *handle, Dbi_Statement *stmt, Dbi_Bind *bind,
+     int *ncolsPtr, int *nrowsPtr, void *arg)
 {
-    Ns_DString *dsPtr;
-    CONST char *sql, *value;
+    Connection *conn = handle->arg;
+    CONST char *value;
     char        cmd[64];
-    int         n, i, rest = 0, status = NS_ERROR;
+    int         n, i, length, rest = 0, status = NS_ERROR;
 
-    assert(query->arg == NULL);
+    assert(STREQ((char *) arg, "driver context"));
 
-    sql = Dbi_StatementBoundSQL(query->stmt, NULL);
-    n = sscanf(sql, "%s %d %d %n", cmd,
-               &query->result.numRows, &query->result.numCols, &rest);
+    assert(conn != NULL);
+    assert(conn->connected == NS_TRUE);
+    assert(Ns_DStringLength(&conn->ds) == 0);
 
-    dsPtr = ns_malloc(sizeof(Ns_DString));
-    Ns_DStringInit(dsPtr);
+    assert(bind->nbound >= 0 && bind->nbound <= DBI_MAX_BIND);
+    assert((bind->nbound == 0 && bind->vals[0].value == NULL)
+           || bind->nbound > 0);
+
+    assert(ncolsPtr != NULL);
+    assert(nrowsPtr != NULL);
+
+    n = sscanf(stmt->sql, "%s %d %d %n", cmd, ncolsPtr, nrowsPtr, &rest);
 
     if (n >= 1) {
         if (STREQ(cmd, "DML")) {
             status = DBI_DML;
         } else if (STREQ(cmd, "ROWS")) {
-            i = 0;
-            while (Dbi_QueryGetBindValue(query, i++, &value, NULL) == NS_OK) {
-                Tcl_DStringAppendElement(dsPtr, value);
+            for (i = 0; i < bind->nbound; i++) {
+                if (Dbi_GetBindValue(bind, i, &value, &length) != NS_OK) {
+                    return NS_ERROR;
+                }
+                Tcl_DStringAppendElement(&conn->ds, value);
             }
             status = DBI_ROWS;
         } else if (STREQ(cmd, "ERROR")) {
-            Dbi_SetException(query->handle, "TEST", "driver error");
+            Dbi_SetException(handle, "TEST", "driver error");
         } else {
             goto error;
         }
     } else {
     error:
-        Dbi_SetException(query->handle, "TEST", "nsdbitest query syntax error");
+        Dbi_SetException(handle, "TEST", "nsdbitest query syntax error");
     }
-
-    Tcl_DStringAppendElement(dsPtr, sql + rest);
-    query->arg = dsPtr;
+    Tcl_DStringAppendElement(&conn->ds, stmt->sql + rest);
 
     return status;
 }
@@ -256,7 +304,7 @@ Exec(Dbi_Query *query, void *arg)
  *
  * Value --
  *
- *      Fetch the value of the current row and column.
+ *      Fetch the value of the given row and column.
  *
  *      For testing, all values are "v", except the first which is
  *      the original SQL statement with driver specific bind
@@ -272,18 +320,26 @@ Exec(Dbi_Query *query, void *arg)
  */
 
 static int
-Value(Dbi_Query *query, CONST char **value, int *len, void *arg)
+Value(Dbi_Handle *handle, int col, int row,
+      CONST char **valuePtr, int *lengthPtr, void *arg)
 {
-    Ns_DString *dsPtr = query->arg;
+    Connection *conn = handle->arg;
 
-    if (query->result.currentRow == 0
-        && query->result.currentCol == 0) {
+    assert(STREQ((char *) arg, "driver context"));
 
-        *value = Ns_DStringValue(dsPtr);
-        *len = Ns_DStringLength(dsPtr);
+    assert(conn != NULL);
+    assert(conn->connected == NS_TRUE);
+    assert(Ns_DStringLength(&conn->ds) > 0);
+
+    assert(valuePtr != NULL);
+    assert(lengthPtr != NULL);
+
+    if (row == 0 && col == 0) {
+        *valuePtr  = Ns_DStringValue(&conn->ds);
+        *lengthPtr = Ns_DStringLength(&conn->ds);
     } else {
-        *value = "v";
-        *len = 1;
+        *valuePtr  = "v";
+        *lengthPtr = 1;
     }
 
     return NS_OK;
@@ -295,7 +351,7 @@ Value(Dbi_Query *query, CONST char **value, int *len, void *arg)
  *
  * Column --
  *
- *      Fetch the name of the current column.
+ *      Fetch the name of the given column.
  *
  *      For testing, all columns are named "c".
  *
@@ -309,10 +365,22 @@ Value(Dbi_Query *query, CONST char **value, int *len, void *arg)
  */
 
 static int
-Column(Dbi_Query *query, CONST char **column, int *len, void *arg)
+Column(Dbi_Handle *handle, int col,
+       CONST char **columnPtr, int *lengthPtr, void *arg)
 {
-    *column = "c";
-    *len = 1;
+    Connection *conn = handle->arg;
+
+    assert(STREQ((char *) arg, "driver context"));
+
+    assert(conn != NULL);
+    assert(conn->connected == NS_TRUE);
+    assert(Ns_DStringLength(&conn->ds) > 0);
+
+    assert(columnPtr != NULL);
+    assert(lengthPtr != NULL);
+
+    *columnPtr = "c";
+    *lengthPtr = 1;
 
     return NS_OK;
 }
@@ -323,7 +391,7 @@ Column(Dbi_Query *query, CONST char **column, int *len, void *arg)
  *
  * Flush --
  *
- *      Clear the current query result, which should discards any
+ *      Clear the current result, which should discard any
  *      pending rows.
  *
  * Results:
@@ -336,15 +404,14 @@ Column(Dbi_Query *query, CONST char **column, int *len, void *arg)
  */
 
 static void
-Flush(Dbi_Query *query, void *arg)
+Flush(Dbi_Handle *handle, void *arg)
 {
-    Ns_DString *dsPtr = query->arg;
+    Connection *conn = handle->arg;
 
-    if (dsPtr != NULL) {
-        Ns_DStringFree(dsPtr);
-        ns_free(dsPtr);
-        query->arg = NULL;
-    }
+    assert(STREQ((char *) arg, "driver context"));
+    assert(conn != NULL);
+
+    Ns_DStringTrunc(&conn->ds, 0);
 }
 
 
@@ -353,7 +420,8 @@ Flush(Dbi_Query *query, void *arg)
  *
  * Reset --
  *
- *      Currently does nothing. What should it do?
+ *      Reset the db handle. For testing, ensure the handle arg, which
+ *      we use here only to store the current result, is NULL.
  *
  * Results:
  *      Always NS_OK.
@@ -367,5 +435,11 @@ Flush(Dbi_Query *query, void *arg)
 static int
 Reset(Dbi_Handle *handle, void *arg)
 {
+    Connection *conn = handle->arg;
+
+    assert(STREQ((char *) arg, "driver context"));
+    assert(conn != NULL);
+    assert(Ns_DStringLength(&conn->ds) == 0);
+
     return NS_OK;
 }

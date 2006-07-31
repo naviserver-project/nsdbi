@@ -100,6 +100,14 @@ typedef struct Handle {
     int               stale_on_close;
     int               reason;       /* Why the handle is being disconnected. */
 
+    /* Result status. */
+
+    int               fetchingRows; /* Is there a pending result set? */
+    int               numCols;      /* Number of columns in penfing result. */
+    int               numRows;      /* Number of rows in pending result. */
+    int               currentCol;   /* The current column index. */
+    int               currentRow;   /* The current row index. */
+
     struct {
         unsigned int queries;       /* Total queries via current connection. */
     } stats;
@@ -111,31 +119,16 @@ typedef struct Handle {
  * Local functions defined in this file
  */
 
-#define DbiPoolForHandle(handle) (((Handle *) handle)->poolPtr)
+#define DbiLog(handle,level,msg,...)                            \
+    Ns_Log(level, "dbi[%s:%s]: " msg,                           \
+           ((Handle *) handle)->poolPtr->driver->name,          \
+           ((Handle *) handle)->poolPtr->module, __VA_ARGS__)
 
-#define DbiLog(handle,level,msg,...)                      \
-    Ns_Log(level, "dbi[%s:%s]: " msg,                     \
-           DbiPoolForHandle(handle)->driver->name,        \
-           DbiPoolForHandle(handle)->module, __VA_ARGS__)
-
-static void
-ReturnHandle(Handle * handle)
-    NS_GNUC_NONNULL(1);
-
-static int
-CloseIfStale(Handle *, time_t now)
-    NS_GNUC_NONNULL(1);
-
-static int
-Connect(Handle *)
-    NS_GNUC_NONNULL(1);
-
-static int
-Connected(Handle *handlePtr)
-    NS_GNUC_NONNULL(1);
-
-static void
-CheckPool(Pool *poolPtr, int stale);
+static void ReturnHandle(Handle * handle) NS_GNUC_NONNULL(1);
+static int CloseIfStale(Handle *, time_t now) NS_GNUC_NONNULL(1);
+static int Connect(Handle *) NS_GNUC_NONNULL(1);
+static int Connected(Handle *handlePtr) NS_GNUC_NONNULL(1);
+static void CheckPool(Pool *poolPtr, int stale) NS_GNUC_NONNULL(1);
 
 static Ns_Callback     ScheduledPoolCheck;
 static Ns_ArgProc      PoolCheckArgProc;
@@ -181,7 +174,7 @@ Dbi_RegisterDriver(CONST char *server, CONST char *module,
     static int       once = 0;
 
     /*
-     * Validate the callbacks.
+     * Ensure all callbacks are present.
      */
 
     if (sizeof(Dbi_Driver) < size || size <= 0) {
@@ -195,17 +188,17 @@ Dbi_RegisterDriver(CONST char *server, CONST char *module,
         }
     }
 
+    /*
+     * Initialise the nsdbi library. Gather list of servers now for
+     * the benfit of global modules.
+     */
+
     if (!once) {
         once = 1;
 
         DbiInitTclObjTypes();
         Ns_ClsAlloc(&handleCls, (Ns_Callback *) Dbi_PutHandle);
         Ns_RegisterProcInfo(ScheduledPoolCheck, "dbi:check", PoolCheckArgProc);
-
-        /*
-         * Initialise the list of servers now for the benfit
-         * of global modules.
-         */
 
         Tcl_InitHashTable(&serversTable, TCL_STRING_KEYS);
 
@@ -226,7 +219,7 @@ Dbi_RegisterDriver(CONST char *server, CONST char *module,
     }
 
     /*
-     * Configure the pool.
+     * Configure this pool.
      */
 
     path = Ns_ConfigGetPath(server, module, NULL);
@@ -240,11 +233,11 @@ Dbi_RegisterDriver(CONST char *server, CONST char *module,
     Ns_CondInit(&poolPtr->getCond);
     poolPtr->driver = driver;
     poolPtr->module = ns_strdup(module);
-    poolPtr->nhandles = Ns_ConfigIntRange(path, "handles", 2, 1, INT_MAX);
-    poolPtr->maxwait = Ns_ConfigIntRange(path, "maxwait", 10, 0, INT_MAX);
-    poolPtr->maxidle = Ns_ConfigIntRange(path, "maxidle", 0, 0, INT_MAX);
-    poolPtr->maxopen = Ns_ConfigIntRange(path, "maxopen", 0, 0, INT_MAX);
-    poolPtr->maxqueries = Ns_ConfigIntRange(path, "maxqueries", 0, 0, INT_MAX);
+    poolPtr->nhandles   = Ns_ConfigIntRange(path, "handles",    2,  1, INT_MAX);
+    poolPtr->maxwait    = Ns_ConfigIntRange(path, "maxwait",    10, 0, INT_MAX);
+    poolPtr->maxidle    = Ns_ConfigIntRange(path, "maxidle",    0,  0, INT_MAX);
+    poolPtr->maxopen    = Ns_ConfigIntRange(path, "maxopen",    0,  0, INT_MAX);
+    poolPtr->maxqueries = Ns_ConfigIntRange(path, "maxqueries", 0,  0, INT_MAX);
     if (poolPtr->maxidle || poolPtr->maxopen) {
         Ns_ScheduleProc(ScheduledPoolCheck, poolPtr, 0,
                         Ns_ConfigIntRange(path, "checkinterval", 600, 30, INT_MAX));
@@ -611,7 +604,7 @@ Dbi_ReleaseConnHandles(Ns_Conn *conn)
  *      Execute an SQL statement.
  *
  * Results:
- *      DBI_DML, DBI_ROWS, or NS_ERROR.
+ *      DBI_DML, DBI_ROWS, or NS_ERROR. ncolsPtr, nrowsPtr updated.
  *
  * Side effects:
  *      SQL is sent to database for evaluation.
@@ -620,34 +613,30 @@ Dbi_ReleaseConnHandles(Ns_Conn *conn)
  */
 
 int
-Dbi_Exec(Dbi_Query *query)
+Dbi_Exec(Dbi_Handle *handle, Dbi_Statement *stmt, Dbi_Bind *bind,
+         int *ncolsPtr, int *nrowsPtr)
 {
-    Dbi_Handle  *handle    = query->handle;
     Handle      *handlePtr = (Handle *) handle;
-    Dbi_Driver  *driver;
+    Dbi_Driver  *driver    = handlePtr->poolPtr->driver;
     int          status;
 
-    if (handle == NULL || query->stmt == NULL) {
-        Ns_Log(Bug, "dbi: Dbi_Exec: null handle or statement for query.");
-        return NS_ERROR;
-    }
+    DbiLog(handle, Debug, "Dbi_Exec: calling Dbi_ExecProc: bound: %d sql: %s",
+           bind->nbound, stmt->sql);
 
-    driver = handlePtr->poolPtr->driver;
-    DbiLog(handle, Debug, "%s", "Dbi_Exec: calling driver->execProc");
-    status = (*driver->execProc)(query, driver->arg);
+    status = (*driver->execProc)(handle, stmt, bind,
+                                 ncolsPtr, nrowsPtr, driver->arg);
+    handlePtr->numCols = *ncolsPtr;
+    handlePtr->numRows = *nrowsPtr;
     handlePtr->stats.queries++;
 
     if (status == DBI_ROWS) {
-        if (!query->result.numCols) {
+        handlePtr->fetchingRows = NS_TRUE;
+        if (!*ncolsPtr) {
             Dbi_SetException(handle, "DBI",
-                             "bug: driver failed to set number of columns");
+                "bug: driver returned rows but failed to set number of columns");
             return NS_ERROR;
         }
-        query->result.fetchingRows = NS_TRUE;
     }
-
-    DbiLog(handle, Debug, "%s",
-           Dbi_StatementBoundSQL(query->stmt, NULL));
 
     return status;
 }
@@ -658,10 +647,9 @@ Dbi_Exec(Dbi_Query *query)
  *
  * Dbi_NextValue --
  *
- *      Fetch the result from the next column index of the next row. If
- *      column is not null, set the column name also.
- *      This routine is normally called repeatedly after a Dbi_Exec or
- *      a series of Dbi_GetColumn calls.
+ *      Fetch the result from the next column index of the next row.
+ *      If columnPtr is not null, set the column name also.
+ *      This routine is normally called repeatedly after a Dbi_Exec.
  *
  * Results:
  *      NS_OK:        the next result value was successfully retrieved
@@ -670,46 +658,54 @@ Dbi_Exec(Dbi_Query *query)
  *      NS_ERROR:     an error occurred retrieving the result
  *
  * Side effects:
- *      The given handles currentCol and currentRow are maintained.
+ *      The current column/row counter is advanced.
  *
  *----------------------------------------------------------------------
  */
 
 int
-Dbi_NextValue(Dbi_Query *query, CONST char **value, int *vLen, CONST char **column, int *cLen)
+Dbi_NextValue(Dbi_Handle *handle, CONST char **valuePtr, int *vlengthPtr,
+              CONST char **columnPtr, int *clengthPtr)
 {
-    Handle     *handlePtr = (Handle *) query->handle;
-    Dbi_Driver *driver;
+    Handle     *handlePtr = (Handle *) handle;
+    Dbi_Driver *driver    = handlePtr->poolPtr->driver;
     int         status;
 
-    if (handlePtr == NULL || query->result.fetchingRows == NS_FALSE) {
-        Ns_Log(Bug, "dbi: Dbi_NextValue: null handle or no rows to fetch.");
+    if (handlePtr->fetchingRows == NS_FALSE) {
+        Ns_Log(Bug, "dbi: Dbi_NextValue: no pending rows");
         return NS_ERROR;
     }
-    if (query->result.currentCol == query->result.numCols) {
-        query->result.currentCol = 0; /* Reset for next row. */
-    }
 
-    driver = handlePtr->poolPtr->driver;
-    DbiLog(handlePtr, Debug, "%s", "Dbi_NextValue: calling driver->valueProc");
-    status = (*driver->valueProc)(query, value, vLen, driver->arg);
+    DbiLog(handlePtr, Debug, "Dbi_NextValue: calling Dbi_ValueProc: "
+           "ncols: %d nrows: %d column index: %d row index: %d",
+           handlePtr->numCols, handlePtr->numRows,
+           handlePtr->currentCol, handlePtr->currentRow);
+
+    status = (*driver->valueProc)(handle, handlePtr->currentCol, handlePtr->currentRow,
+                                  valuePtr, vlengthPtr, driver->arg);
     if (status == NS_ERROR) {
         return NS_ERROR;
     }
-    if (column != NULL && cLen != NULL) {
-        DbiLog(handlePtr, Debug, "%s", "Dbi_NextValue: calling driver->columnProc");
-        status = (*driver->columnProc)(query, column, cLen, driver->arg);
+
+    if (columnPtr != NULL && clengthPtr != NULL) {
+        DbiLog(handlePtr, Debug, "Dbi_NextValue: calling Dbi_ColumnProc: "
+               "column index: %d row index: %d",
+               handlePtr->currentCol, handlePtr->currentRow);
+        status = (*driver->columnProc)(handle, handlePtr->currentCol,
+                                       columnPtr, clengthPtr, driver->arg);
         if (status == NS_ERROR) {
             return NS_ERROR;
         }
     }
-    query->result.currentCol++;
-    if (query->result.currentCol == query->result.numCols) {
-        if (query->result.currentRow == (query->result.numRows - 1)) {
-            query->result.fetchingRows = NS_FALSE;
+
+    if (handlePtr->currentCol++ == handlePtr->numCols - 1) {
+        handlePtr->currentCol = 0; /* Reset for next row. */
+
+        if (handlePtr->currentRow == handlePtr->numRows - 1) {
+            handlePtr->fetchingRows = NS_FALSE;
             status = DBI_END_DATA;
         } else {
-            query->result.currentRow++;
+            handlePtr->currentRow++;
             status = DBI_LAST_COL;
         }
     }
@@ -723,7 +719,7 @@ Dbi_NextValue(Dbi_Query *query, CONST char **value, int *vLen, CONST char **colu
  *
  * Dbi_Flush --
  *
- *      Flush rows pending in a result set.
+ *      Flush any pending rows.
  *
  * Results:
  *      NS_OK or NS_ERROR.
@@ -736,14 +732,21 @@ Dbi_NextValue(Dbi_Query *query, CONST char **value, int *vLen, CONST char **colu
  */
 
 void
-Dbi_Flush(Dbi_Query  *query)
+Dbi_Flush(Dbi_Handle  *handle)
 {
-    Handle     *handlePtr = (Handle *) query->handle;
+    Handle     *handlePtr = (Handle *) handle;
     Dbi_Driver *driver    = handlePtr->poolPtr->driver;
 
-    DbiLog(query->handle, Debug, "%s", "Dbi_Flush: calling driver->flushProc");
-    (*driver->flushProc)(query, driver->arg);
-    memset(&query->result, 0, sizeof(query->result));
+    DbiLog(handlePtr, Debug, "Dbi_Flush: calling Dbi_FlushProc:"
+           "fetching rows: %d cols: %d rows: %d currentCol: %d currentRow: %d",
+           handlePtr->fetchingRows, handlePtr->numCols, handlePtr->numRows,
+           handlePtr->currentCol, handlePtr->currentRow);
+
+    (*driver->flushProc)(handle, driver->arg);
+
+    handlePtr->numCols = handlePtr->numRows = 0;
+    handlePtr->currentCol = handlePtr->currentRow = 0;
+    handlePtr->fetchingRows = NS_FALSE;
 }
 
 
@@ -770,9 +773,15 @@ Dbi_ResetHandle(Dbi_Handle *handle)
     Dbi_Driver *driver = ((Handle *) handle)->poolPtr->driver;
     int         status;
 
-    DbiLog(handle, Debug, "%s", "Dbi_Resethandle: calling driver->resetProc");
+    DbiLog(handle, Debug, "%s", "Dbi_Resethandle: calling Dbi_ResetProc");
+
     status = (*driver->resetProc)(handle, driver->arg);
-    Dbi_ResetException(handle);
+
+    if (Dbi_ExceptionPending(handle)) {
+        DbiLog(handle, Error, "reset: %s: %s",
+               Dbi_ExceptionCode(handle), Dbi_ExceptionMsg(handle));
+        Dbi_ResetException(handle);
+    }
 
     return status;
 }
@@ -1316,7 +1325,7 @@ Connect(Handle *handlePtr)
     int         status  = NS_ERROR;
 
     if (!poolPtr->stopping) {
-        DbiLog(handle, Debug, "%s", "Connect: calling driver->openProc");
+        DbiLog(handle, Debug, "%s", "Connect: calling Dbi_OpenProc");
         status = (*driver->openProc)(handle, driver->arg);
         poolPtr->stats.handleopens++;
         if (status != NS_OK) {

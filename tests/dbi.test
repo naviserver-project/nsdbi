@@ -49,10 +49,10 @@ test stats.1 {pool stats} -body {
 
 
 test dml-1 {dml} -body {
-    dbi dml {DML 3}
+    dbi dml {DML 0 3}
 } -result 3
 
-test dml-1 {dml error} -body {
+test dml-2 {dml error} -body {
     dbi dml {ROWS 1 1}
 } -returnCodes error -result {query was not a DML or DDL command}
 
@@ -63,16 +63,16 @@ test 0or1row-1 {found single column} -body {
 } -result v
 
 test 0or1row-2 {found multiple columns} -body {
-    dbi 0or1row {ROWS 1 3 v}
+    dbi 0or1row {ROWS 3 1 v}
 } -result {v v v}
 
 test 0or1row-3 {not found} -body {
-    dbi 0or1row {ROWS 0 1}
+    dbi 0or1row {ROWS 1 0}
 } -result {}
 
 test 0or1row-4 {no columns} -body {
-    dbi 0or1row {ROWS 1 0}
-} -returnCodes error -result {bug: driver failed to set number of columns}
+    dbi 0or1row {ROWS 0 1}
+} -returnCodes error -result {bug: driver returned rows but failed to set number of columns}
 
 test 0or1row-5 {query error} -body {
     dbi 0or1row {ERROR}
@@ -85,11 +85,11 @@ test 1row-1 {found single column} -body {
 } -result v
 
 test 1row-2 {found multiple columns} -body {
-    dbi 1row {ROWS 1 3 v}
+    dbi 1row {ROWS 3 1 v}
 } -result {v v v}
 
 test 1row-3 {1row not found} -body {
-    dbi 1row {ROWS 0 1}
+    dbi 1row {ROWS 1 0}
 } -returnCodes error -result {query was not a statement returning rows}
 
 test 1row-4 {query error} -body {
@@ -105,16 +105,16 @@ test rows-1 {found 1 row, 1 column} -body {
 } -result v
 
 test rows-2 {found 1 row, 3 columns} -body {
-    dbi rows {ROWS 1 3 v}
+    dbi rows {ROWS 3 1 v}
 } -result {v v v}
 
 test rows-3 {found 2 rows, 1 column} -body {
-    dbi rows {ROWS 2 1 v}
+    dbi rows {ROWS 1 2 v}
 } -result {v v}
 
 test rows-4 {no rows} -body {
     dbi rows {ROWS 0 0}
-} -returnCodes error -result {bug: driver failed to set number of columns}
+} -returnCodes error -result {bug: driver returned rows but failed to set number of columns}
 
 test rows-5 {query error} -body {
     dbi rows {ERROR}
@@ -138,7 +138,7 @@ test poolhandle-1 {cache pool pointer in pool name obj} -body {
 
 test bindvars-1 {local variable} -body {
     set x X
-    dbi rows {ROWS 1 2 :x}
+    dbi rows {ROWS 2 1 :x}
 } -cleanup {
     unset -nocomplain x
 } -result {{X 0:x} v}
@@ -150,26 +150,26 @@ test bindvars-1.1 {missing local variable} -body {
 test bindvars-2 {duplicate bind vars} -body {
     set x X
     set y Y
-    dbi rows {ROWS 1 2 :x :y :x}
+    dbi rows {ROWS 2 1 :x :y :x}
 } -cleanup {
     unset -nocomplain x y
 } -result {{X Y {0:x 1:y 0:x}} v}
 
 test bindvars-3 {quoted bind var} -body {
-    dbi rows {ROWS 1 2 query ':x' query}
+    dbi rows {ROWS 2 1 query ':x' query}
 } -result {{{query ':x' query}} v}
 
 test bindvars-4 {quoted bind var string 0, end-1} -body {
-    dbi rows {ROWS 1 2 ':x'}
+    dbi rows {ROWS 2 1 ':x'}
 } -result {':x' v}
 
 test bindvars-5 {quoted bind var with spaces} -body {
-    dbi rows {ROWS 1 2 query ' :x ' query}
+    dbi rows {ROWS 2 1 query ' :x ' query}
 } -result {{{query ' :x ' query}} v}
 
 test bindvars-6 {double quoted bind var} -body {
     set x X
-    dbi rows {ROWS 1 2 query '':x'' query}
+    dbi rows {ROWS 2 1 query '':x'' query}
 } -cleanup {
     unset -nocomplain x
 } -result {{X {query ''0:x'' query}} v}
@@ -180,9 +180,9 @@ test bindvars-7 {exceed max bind vars} -body {
 
 test bindvars-8 {bound vars get reset} -body {
     set x 1
-    set r [dbi rows {ROWS 1 2 :x}]
+    set r [dbi rows {ROWS 2 1 :x}]
     set x 2
-    lappend r [dbi rows {ROWS 1 2 :x}]
+    lappend r [dbi rows {ROWS 2 1 :x}]
 } -cleanup {
     unset -nocomplain x
 } -result {{1 0:x} v {{2 0:x} v}}
@@ -192,18 +192,18 @@ test bindvars-8 {bound vars get reset} -body {
 test bindarray-1 {bind array vars} -body {
     set a(x) X
     set a(y) Y
-    dbi rows -bindarray a -- {ROWS 1 2 :x :y}
+    dbi rows -bindarray a -- {ROWS 2 1 :x :y}
 } -cleanup {
     unset -nocomplain a
 } -result {{X Y {0:x 1:y}} v}
 
 test bindarray-2 {bind missing array} -body {
-    dbi rows -bindarray a -- {ROWS 1 2 :x}
+    dbi rows -bindarray a -- {ROWS 2 1 :x}
 } -returnCodes error -result {can't read "a(x)": no such variable}
 
 test bindarray-3 {bind non-array} -body {
     set a b
-    dbi rows -bindarray a -- {ROWS 1 2 :x}
+    dbi rows -bindarray a -- {ROWS 2 1 :x}
 } -returnCodes error -result {can't read "a(x)": variable isn't array}
 
 
@@ -212,13 +212,13 @@ test bindset-1 {bind ns_set} -body {
     set s [ns_set create]
     ns_set put $s x X
     ns_set put $s y Y
-    dbi rows -bindset $s -- {ROWS 1 2 :x :y}
+    dbi rows -bindset $s -- {ROWS 2 1 :x :y}
 } -cleanup {
     ns_set free $s
 } -result {{X Y {0:x 1:y}} v}
 
 test bindset-2 {bind missing set} -body {
-    dbi rows -bindset s -- {ROWS 1 2 :x}
+    dbi rows -bindset s -- {ROWS 2 1 :x}
 } -returnCodes error -result {no such set: s}
 
 

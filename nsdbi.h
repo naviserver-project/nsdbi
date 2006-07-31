@@ -57,14 +57,13 @@
 
 
 /*
- * The following defines opaque pool and statement handles.
+ * The following defines an opaque pool of handles..
  */
 
-typedef struct _Dbi_Pool       *Dbi_Pool;
-typedef struct _Dbi_Statement  *Dbi_Statement;
+typedef struct _Dbi_Pool *Dbi_Pool;
 
 /*
- * The following struct defines a database handle.
+ * The following struct defines a handle in a pool.
  */
 
 typedef struct Dbi_Handle {
@@ -73,39 +72,32 @@ typedef struct Dbi_Handle {
 } Dbi_Handle;
 
 /*
- * The following struct defines a query which is used to
- * send SQL to the database and fetch the result.
+ * The following struct defines an SQL statement which
+ * can be executed by a handle. Any bind variables will be
+ * converted into driver specific notation.
  */
 
-typedef struct Dbi_Query {
+typedef struct Dbi_Statement {
+    CONST char      *sql;    /* The SQL to be executed.  */
+    CONST int        length; /* Length of the SQL string. */
+} Dbi_Statement;
 
-    Dbi_Handle      *handle;       /* The db handle to query. */
-    Dbi_Statement   *stmt;         /* The statement to send. */
-    void            *arg;          /* Driver private query context. */
+/*
+ * The following struct defines a set of values to bind
+ * to variables in an SQL statement.
+ *
+ */
 
-    /*
-     * The following defines any values for bind variables.
-     */
-
-    int              nbound;       /* The number of bound values. */
-    struct {
-        char        *value;        /* The values. */
-        int          len;          /* Value length. */
-    } bind[DBI_MAX_BIND];
-
-    /*
-     * The following maintains the query result.
-     */
+typedef struct Dbi_Bind {
 
     struct {
-        int          fetchingRows; /* Is there a pending result set? */
-        int          numCols;      /* Number of columns in penfing result. */
-        int          numRows;      /* Number of rows in pending result. */
-        int          currentCol;   /* The current column index. */
-        int          currentRow;   /* The current row index. */
-    } result;
+        CONST char  *value;  /* The value. */
+        int          length; /* Length of value. */
+    } vals[DBI_MAX_BIND];    /* Array of values. */
 
-} Dbi_Query;
+    int              nbound; /* Number of bound values. */
+    
+} Dbi_Bind;
 
 /*
  * The following typedefs define the functions that loadable
@@ -116,12 +108,13 @@ typedef int   (Dbi_OpenProc)     (Dbi_Handle *, void *arg);
 typedef void  (Dbi_CloseProc)    (Dbi_Handle *, void *arg);
 typedef int   (Dbi_ConnectedProc)(Dbi_Handle *, void *arg);
 typedef void  (Dbi_BindVarProc)  (Ns_DString *, CONST char *name, int bindIdx, void *arg);
-typedef int   (Dbi_ExecProc)     (Dbi_Query *, void *arg);
-typedef int   (Dbi_ValueProc)    (Dbi_Query *, CONST char **value, int *len,
-                                  void *arg);
-typedef int   (Dbi_ColumnProc)   (Dbi_Query *, CONST char **column, int *len,
-                                  void *arg);
-typedef void  (Dbi_FlushProc)    (Dbi_Query *, void *arg);
+typedef int   (Dbi_ExecProc)     (Dbi_Handle *, Dbi_Statement *, Dbi_Bind *,
+                                  int *ncolsPtr, int *nrowsPtr, void *arg);
+typedef int   (Dbi_ValueProc)    (Dbi_Handle *, int col, int row,
+                                  CONST char **valuePtr, int *lengthPtr, void *arg);
+typedef int   (Dbi_ColumnProc)   (Dbi_Handle *, int col,
+                                  CONST char **columnPtr, int *lengthPtr, void *arg);
+typedef void  (Dbi_FlushProc)    (Dbi_Handle *, void *arg);
 typedef int   (Dbi_ResetProc)    (Dbi_Handle *, void *arg);
 
 /*
@@ -186,15 +179,18 @@ Dbi_ReleaseConnHandles(Ns_Conn *conn)
     NS_GNUC_NONNULL(1);
 
 NS_EXTERN int
-Dbi_Exec(Dbi_Query *)
-    NS_GNUC_NONNULL(1);
+Dbi_Exec(Dbi_Handle *, Dbi_Statement *, Dbi_Bind *,
+         int *ncolsPtr, int *nrowsPtr)
+    NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2) NS_GNUC_NONNULL(3)
+     NS_GNUC_NONNULL(4) NS_GNUC_NONNULL(5);
 
 NS_EXTERN int
-Dbi_NextValue(Dbi_Query *, CONST char **, int *, CONST char **, int *)
+Dbi_NextValue(Dbi_Handle *, CONST char **valuePtr, int *vlengthPtr,
+              CONST char **columnPtr, int *clengthPtr)
     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2) NS_GNUC_NONNULL(3);
 
 NS_EXTERN void
-Dbi_Flush(Dbi_Query *)
+Dbi_Flush(Dbi_Handle *)
     NS_GNUC_NONNULL(1);
 
 NS_EXTERN int
@@ -235,7 +231,7 @@ Dbi_ExceptionCode(Dbi_Handle *handle)
 
 NS_EXTERN char *
 Dbi_ExceptionMsg(Dbi_Handle *handle)
-     NS_GNUC_NONNULL(1);
+    NS_GNUC_NONNULL(1);
 
 NS_EXTERN int
 Dbi_ExceptionPending(Dbi_Handle *handle)
@@ -254,49 +250,24 @@ Dbi_StatementFree(Dbi_Statement *)
      NS_GNUC_NONNULL(1);
 
 NS_EXTERN int
-Dbi_StatementPrepare(Dbi_Statement *, Dbi_Handle *)
+Dbi_StatementPrepare(Dbi_Handle *, Dbi_Statement *)
     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
-
-NS_EXTERN CONST char *
-Dbi_StatementBoundSQL(Dbi_Statement *, int *len)
-     NS_GNUC_NONNULL(1);
 
 NS_EXTERN CONST char *
 Dbi_StatementSQL(Dbi_Statement *, int *len)
      NS_GNUC_NONNULL(1);
 
 NS_EXTERN int
-Dbi_StatementGetBindVar(Dbi_Statement *, int idx, CONST char **key)
+Dbi_GetBindVariable(Dbi_Statement *, int idx, CONST char **namePtr)
     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(3);
 
 NS_EXTERN int
-Dbi_QueryGetBindValue(Dbi_Query *, int idx,
-                      CONST char **value, int *len)
-    NS_GNUC_NONNULL(1);
+Dbi_SetBindValue(Dbi_Bind *, int idx, CONST char *value, int length)
+    NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(3);
 
 NS_EXTERN int
-Dbi_QuerySetBindValue(Dbi_Query *, int idx, CONST char *value, int len)
-     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(3);
-
-
-/*
- * util.c:
- */
-
-NS_EXTERN int
-Dbi_Select(Dbi_Query *)
-    NS_GNUC_NONNULL(1);
-
-NS_EXTERN int
-Dbi_0or1Row(Dbi_Query *)
-     NS_GNUC_NONNULL(1);
-
-NS_EXTERN int
-Dbi_1Row(Dbi_Query *)
-     NS_GNUC_NONNULL(1);
-
-NS_EXTERN int
-Dbi_DML(Dbi_Query *)
+Dbi_GetBindValue(Dbi_Bind *, int idx,
+                 CONST char **valuePtr, int *lengthPtr)
     NS_GNUC_NONNULL(1);
 
 
