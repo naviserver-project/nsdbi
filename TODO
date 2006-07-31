@@ -1,168 +1,180 @@
 
 *) Make sure results are utf8 encoded. Contract is: drivers always return data
- as utf-8 strings, no matter what the db uses internaly.
+   as utf-8 strings, no matter what the db uses internaly.
 
-Other rules: what about default date format, timezone?
+   Other rules: date format (ISO), timezone (UTC)?
 
 
 *) How to send/recieve binary data between database? Could check bound
- variables type: if bytearray, use Tcl_GetByteArray* instead of
- Tcl_GetString*. But what about data coming back? Maybe need an extra switch:
+   variables type: if bytearray, use Tcl_GetByteArray* instead of
+   Tcl_GetString*. But what about data coming back? Maybe an extra switch:
 
-    # The 2nd and 3rd columns are binary.
-    dbi rows -binary {2 3} {select a, b, c from x}
+     # The 2nd and 3rd columns are binary.
+     dbi rows -binary {1 2} {select a, b, c from x}
 
-Will need driver support.
+   Will need driver support.
 
 
 *) A standard scheme for common database errors such as 'duplicate row' when
- inserting a new row with a primary key which is already taken. Turn these
- into exceptions so that Tcl code can catch them.
+   inserting a new row with a primary key which is already taken. Turn these
+   into exceptions so that Tcl code can catch them.
 
 
 *) Handle caching is mostly transparent, but requires some ugliness to auto
-release handles before conn IO. A cleaner, although less transparent way to
-handle this might be:
+   release handles before conn IO. A cleaner, although less transparent way to
+   handle this might be:
 
-    dbi withhandle -pool x {
-        dbi 1row {query...}
-        dbi 1row {query...}
-    }
+     dbi withhandle -pool x {
+         dbi 1row {query...}
+         dbi 1row {query...}
+     }
 
 
-*) Do we also need to handle transactions in Tcl code:
+*) Do we also need to handle transactions in Tcl code?
 
-    dbi transaction -pool x {
-        dbi ...
-        dbi ...
-    }
+     dbi transaction -pool x {
+         dbi ...
+         dbi ...
+     }
 
 If it's not absolutely necessary it would be nice to skip this. Is it better
 to compose reuseable chunks of SQL in Tcl, or to use the db, views etc.?
 
 
+*) Result assertions don't roll back transactions. e.g.:
+
+     dbi rows {update ...}
+
+   We were expecting rows, but got a DML result because of a bad query. A Tcl
+   error will be thrown, but the DML is not rolled back. This would require
+   opening an closing a transaction for every query. Is this slow?
+
+
 *) Result caching: Caching the results from a db query is easy, but flushing
-is complicated. You often want to flush a whole class of cached results
-because they depend upon the values in some other table which was just
-updated. Perhaps results can be cached with multiple keys:
+   is complicated. You often want to flush a whole class of cached results
+   because they depend upon the values in some other table which was just
+   updated. Perhaps results can be cached with multiple keys:
 
-    # All 'it' results flushed atomically.
-    dbi dml -cachekey it$id -cachekey it {update ...}
+     # All 'it' results flushed atomically.
+     dbi dml -cachekey it$id -cachekey it {update ... :id ...}
 
-    # Return cached result for key it$id if available.
-    dbi rows -cachekey it$id {select ... :id ...}
+     # Return cached result for key it$id if available.
+     dbi rows -cachekey it$id {select ... :id ...}
 
-    # Flush every 'it'.
-    dbi flush -cachekey it
+     # Flush every 'it'.
+     dbi flush -cachekey it
 
 
 *) Limits for pools?  Set max handles, default pool etc. per urlspecific
-data. So: dbi commands run from pages under /foo/bar would by default get a
-handle from pool x if none specified.  If there are 6 concurrent pages running
-under /foo/bar and there are 10 handles in pool x but the limit says 6, the
-next page will have to wiat.
+   data. So: dbi commands run from pages under /foo/bar would by default get a
+   handle from pool x if none specified.  If there are 6 concurrent pages
+   running under /foo/bar and there are 10 handles in pool x but the limit
+   says 6, the next page will have to wait.
 
-The goal is to abstract pool names from code.  Pool names can change -- they
-should be in a config file.  e.g. a site grows large and partitions user data
-into two databases: usernames a-m -> pool1, usernames n-z pool1.
+   The goal is to abstract pool names from Tcl code.  Pool names can change --
+   they should be in a config file.  e.g. a site grows large and partitions
+   user data into two databases: user names a-m -> pool1, user names n-z pool2
+   etc.
 
 
 *) Add Url2Pool callbacks (See url2file) to determine which handle to use
-when?  e.g. round-robin requests between 3 databases?
+   when?  e.g. round-robin requests between 3 databases?
 
 
 *) Add higher level Tcl commands 'update', 'insert' etc.
 
-    set a(x) 1; set a(y) 2; set a(z) 3
+     set a(x) 1; set a(y) 2; set a(z) 3
 
-    dbi update tablex $a
+     dbi update tablex $a
 
-    # Translates to:
+     # Translates to:
 
-    dbi dml -bindarray a -- {
-        update tablex set x = :x, y = :y, z = :z
-    }
+     dbi dml -bindarray a -- {
+         update tablex set x = :x, y = :y, z = :z
+     }
 
-    # And:
+     # And:
 
-    dbi insert tablex $a
+     dbi insert tablex $a
 
-    # Translates to:
+     # Translates to:
 
-    dbi dml -bindarray a -- {
-        insert into tablex
-        (x, y, z)
-        values
-        (:x, :y, :z)
-    }
+     dbi dml -bindarray a -- {
+         insert into tablex
+         (x, y, z)
+         values
+         (:x, :y, :z)
+     }
 
-    # MySQL has this native. Others could wrap in transaction:
+     # MySQL has this native. Others could wrap in a transaction:
+     # If row exists, update. Otherwise, insert (atomically).
 
-    dbi insertorupdate tablex $a
+     dbi insertorupdate tablex $a
 
 
 *) Predefined schema queries for drivers. i.e. you want to know which tables
- are defined, or how many columns a table has.  Drivers supply a string of SQL
- which returns the correct answer. Can overide in config file for weird db
- setups.
+   are defined, or how many columns a table has.  Drivers supply a string of
+   SQL which returns the correct answer. Can overide in config file for weird
+   db setups.
 
-    dbi tables
-    dbi columns tablex
+     foreach table [dbi tables pool1] {
+         dbi columns $table
+     }
 
 
 *) Dynamically change pool config.
 
-    dbi pool maxconnections
-    5 ;# current handles
-    dbi pool maxconnections 10
-    5 ;# old handles
-    dbi pool maxconnection
-    10 ;# current handles
+     dbi pool maxconnections
+     5                           ;# current handles
+     dbi pool maxconnections 10
+     5                           ;# old handles
+     dbi pool maxconnection
+     10                          ;# current handles
 
 
 *) Transparent support for various keyed data structures: sets, arrays,
- TclX keyed lists, Tcl8.5 dicts:
+   TclX keyed lists, Tcl8.5 dicts:
 
-    # Figure out what $x is and do the right thing.
-    dbi rows -bind $x {query ...}
+     # Figure out what $x is and do the right thing.
+     dbi rows -bind $x {query ...}
 
 
 *) Array opperations (Oracle array DML etc.) with native driver support:
 
-    # 3 inserts in single transation, efficiently:
-    dbi dml {
-        insert into tablex (x) values (:x)
-    } a b c
+     # 3 inserts in single transation. Efficiently:
+     dbi dml {insert into tablex (x) values (:x)} a b c
 
 
 *) Add a Tcl 'format' command to turn a result into a useable string without
- first creating a list:
+   first creating a list:
 
-    ns_return 200 text/plain \
-        [dbi format {select x, y from table} {row: {x} {y}\n}]
+     ns_return 200 text/plain \
+         [dbi format {select x, y from table} {row: {x} {y}\n}]
 
-    # Result would be:
+     # Result would be:
 
-    row: a b
-    row: d e
-    ...
+     row: a b
+     row: c d
+     ...
 
 
-*) Add prepared statement support to the driver API.
+*) Add prepared statement support to the driver API. Prepared statements
+   should be transparent to Tcl code.
 
 
 *) Does it make sense to extend the C API with new features when there are
-already so many db C APIs out there? Perhaps we should just use one of them?
+   already so many databse C APIs out there? Perhaps we should just use one of
+   them?
 
 
 *) Asynchronous API. Send a query to the db, initiate an HTTP request to some
- outside service, submit an ns_job: *concurrently*.  Wait for all the
- results to come back.
+   outside service, submit an ns_job: *concurrently*.  Wait for all the
+   results to come back.
 
-This could be extended so that multiple db queries are submitted from within
-the driver thread.  A conn thread would only be allocated when notification
-that all query results are ready is recieved. This would prevent conn threads
-sitting idle waiting for db I/O.
+   This could be extended so that multiple db queries are submitted from
+   within the driver thread.  A conn thread would only be allocated when
+   notification that all query results are ready. This would prevent conn
+   threads sitting idle waiting for db I/O.
 
-The hard part is coming up with a sane API.
+   The hard part is coming up with an API which is actually workable.
 
