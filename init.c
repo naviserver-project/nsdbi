@@ -494,6 +494,7 @@ Dbi_GetHandle(Dbi_Handle **handlePtrPtr, Dbi_Pool *pool, Ns_Conn *conn,
             ReturnHandle(handlePtr);
             Ns_CondSignal(&poolPtr->getCond);
             Ns_MutexUnlock(&poolPtr->lock);
+            status = NS_ERROR;
         }
     }
 
@@ -501,7 +502,7 @@ Dbi_GetHandle(Dbi_Handle **handlePtrPtr, Dbi_Pool *pool, Ns_Conn *conn,
      * Return the handle and cache for the current connection.
      */
 
-    if (handlePtr != NULL) {
+    if (status == NS_OK) {
         *handlePtrPtr = (Dbi_Handle *) handlePtr;
         if (conn != NULL) {
             handlePtr->conn = conn;
