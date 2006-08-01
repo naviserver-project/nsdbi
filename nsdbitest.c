@@ -241,7 +241,7 @@ Bind(Ns_DString *ds, CONST char *name, int bindIdx, void *arg)
  *      Execute a query.
  *
  * Results:
- *      DBI_ROWS, DBI_DML or NS_ERROR.
+ *      DBI_ROWS, DBI_DML or DBI_EXEC_ERROR.
  *
  * Side effects:
  *      None.
@@ -249,14 +249,15 @@ Bind(Ns_DString *ds, CONST char *name, int bindIdx, void *arg)
  *----------------------------------------------------------------------
  */
 
-static int
+static DBI_EXEC_STATUS
 Exec(Dbi_Handle *handle, Dbi_Statement *stmt, Dbi_Bind *bind,
      int *ncolsPtr, int *nrowsPtr, void *arg)
 {
-    Connection *conn = handle->arg;
-    CONST char *value;
-    char        cmd[64];
-    int         n, i, length, rest = 0, status = NS_ERROR;
+    Connection      *conn = handle->arg;
+    CONST char      *value;
+    char             cmd[64];
+    DBI_EXEC_STATUS  dbistat = DBI_EXEC_ERROR;
+    int              n, i, length, rest = 0;
 
     assert(STREQ((char *) arg, "driver context"));
 
@@ -275,18 +276,18 @@ Exec(Dbi_Handle *handle, Dbi_Statement *stmt, Dbi_Bind *bind,
 
     if (n >= 1) {
         if (STREQ(cmd, "DML")) {
-            status = DBI_DML;
+            dbistat = DBI_EXEC_DML;
         } else if (STREQ(cmd, "ROWS")) {
             for (i = 0; i < bind->nbound; i++) {
                 if (Dbi_GetBindValue(bind, i, &value, &length) != NS_OK) {
-                    return NS_ERROR;
+                    return DBI_EXEC_ERROR;
                 }
                 Tcl_DStringAppendElement(&conn->ds, value);
             }
-            status = DBI_ROWS;
+            dbistat = DBI_EXEC_ROWS;
         } else if (STREQ(cmd, "SLEEP")) {
             sleep(*ncolsPtr);
-            status = DBI_ROWS;
+            dbistat = DBI_EXEC_ROWS;
         } else if (STREQ(cmd, "ERROR")) {
             Dbi_SetException(handle, "TEST", "driver error");
         } else {
@@ -298,7 +299,7 @@ Exec(Dbi_Handle *handle, Dbi_Statement *stmt, Dbi_Bind *bind,
     }
     Tcl_DStringAppendElement(&conn->ds, stmt->sql + rest);
 
-    return status;
+    return dbistat;
 }
 
 

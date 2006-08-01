@@ -177,18 +177,19 @@ DbiInitInterp(Tcl_Interp *interp, void *arg)
 static int
 TclDbiCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
 {
-    ServerData    *sdataPtr = arg;
-    CONST char    *server = sdataPtr->server;
-    Dbi_Pool      *pool;
-    Dbi_Handle    *handle;
-    Dbi_Statement *stmt;
-    Dbi_Bind       bind;
-    Ns_DString     ds;
-    Ns_Conn       *conn = NULL;
-    char          *array = NULL, *setid = NULL;
-    Tcl_Obj       *stmtObj, *poolObj = NULL;
-    Ns_Time        time, *timeoutPtr = NULL;
-    int            cmd, n, ncols, nrows, status = TCL_OK;
+    ServerData      *sdataPtr = arg;
+    CONST char      *server = sdataPtr->server;
+    Dbi_Pool        *pool;
+    Dbi_Handle      *handle;
+    Dbi_Statement   *stmt;
+    Dbi_Bind         bind;
+    Ns_DString       ds;
+    DBI_EXEC_STATUS  dbistat;
+    Ns_Conn         *conn = NULL;
+    char            *array = NULL, *setid = NULL;
+    Tcl_Obj         *stmtObj, *poolObj = NULL;
+    Ns_Time          time, *timeoutPtr = NULL;
+    int              cmd, n, ncols, nrows, status = TCL_OK;
 
     Ns_ObjvSpec opts[] = {
         {"-pool",      Ns_ObjvObj,    &poolObj,    NULL},
@@ -327,8 +328,7 @@ TclDbiCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
          * Bind values to variable as required.
          */
 
-        status = BindVars(interp, stmt, &bind, array, setid);
-        if (status != TCL_OK) {
+        if ((status = BindVars(interp, stmt, &bind, array, setid)) != TCL_OK) {
             goto done;
         }
 
@@ -336,8 +336,9 @@ TclDbiCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
          * Execute the statement.
          */
 
-        status = Dbi_Exec(handle, stmt, &bind, &ncols, &nrows);
-        if (status == NS_ERROR) {
+        dbistat = Dbi_Exec(handle, stmt, &bind, &ncols, &nrows);
+
+        if (dbistat == DBI_EXEC_ERROR) {
             status = Exception(interp, Dbi_ExceptionCode(handle),
                                Dbi_ExceptionMsg(handle));
             Dbi_ResetException(handle);
@@ -351,7 +352,7 @@ TclDbiCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
         switch (cmd) {
 
         case CDmlCmd:
-            if (status != DBI_DML) {
+            if (dbistat != DBI_EXEC_DML) {
                 status = Exception(interp, NULL, "query was not a DML or DDL command");
             } else {
                 Tcl_SetIntObj(Tcl_GetObjResult(interp), nrows);
@@ -360,7 +361,7 @@ TclDbiCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
             break;
 
         case C0or1rowCmd:
-            if (status != DBI_ROWS) {
+            if (dbistat != DBI_EXEC_ROWS) {
                 status = Exception(interp, NULL, "query was not a statement returning rows");
             } else if (nrows > 1) {
                 status = Exception(interp, NULL, "query returned more than 1 row");
@@ -370,7 +371,7 @@ TclDbiCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
             break;
 
         case C1rowCmd:
-            if (status != DBI_ROWS || nrows == 0) {
+            if (dbistat != DBI_EXEC_ROWS || nrows == 0) {
                 status = Exception(interp, NULL, "query was not a statement returning rows");
             } else if (nrows > 1) {
                 status = Exception(interp, NULL, "query returned more than 1 row");
@@ -380,7 +381,7 @@ TclDbiCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
             break;
 
         case CRowsCmd:
-            if (status != DBI_ROWS) {
+            if (dbistat != DBI_EXEC_ROWS) {
                 status = Exception(interp, NULL, "query was not a statement returning rows");
             } else if (nrows > 0) {
                 status = RowResult(interp, handle);
@@ -396,7 +397,7 @@ TclDbiCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
     done:
         Dbi_Flush(handle);
         if (conn != NULL) {
-            Dbi_ResetHandle(handle);
+            Dbi_Reset(handle);
         } else {
             Dbi_PutHandle(handle);
         }
@@ -535,23 +536,25 @@ BindVars(Tcl_Interp *interp, Dbi_Statement *stmt, Dbi_Bind *bind,
 static int
 RowResult(Tcl_Interp *interp, Dbi_Handle *handle)
 {
-    Tcl_Obj    *resObj;
-    CONST char *value;
-    int         vLen, status;
+    Tcl_Obj          *resObj;
+    CONST char       *value;
+    int               vLen;
+    DBI_VALUE_STATUS  dbistat;
 
     resObj = Tcl_GetObjResult(interp);
     do {
-        status = Dbi_NextValue(handle, &value, &vLen, NULL, NULL);
-        if (status == NS_ERROR) {
-            return Exception(interp, Dbi_ExceptionCode(handle),
-                             Dbi_ExceptionMsg(handle));
+        dbistat = Dbi_NextValue(handle, &value, &vLen, NULL, NULL);
+        if (dbistat == DBI_VALUE_ERROR) {
+            Exception(interp, Dbi_ExceptionCode(handle),
+                      Dbi_ExceptionMsg(handle));
             Dbi_ResetException(handle);
+            return TCL_ERROR;
         }
         if (Tcl_ListObjAppendElement(interp, resObj,
                 Tcl_NewStringObj((char *) value, vLen)) != TCL_OK) {
             return TCL_ERROR;
         }
-    } while (status != DBI_END_DATA);
+    } while (dbistat != DBI_END_ROWS);
 
     return TCL_OK;
 }

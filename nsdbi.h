@@ -41,19 +41,20 @@
 #include "ns.h"
 
 
-/*
- * The following are dbi return codes.
- */
+#define DBI_MAX_BIND 32
 
-#define DBI_DML           0x01
-#define DBI_ROWS          0x02
-#define DBI_LAST_COL      0x04
-#define DBI_END_DATA      0x08
-#define DBI_NO_DATA       0x10
+typedef enum {
+    DBI_EXEC_ROWS = 1,
+    DBI_EXEC_DML,
+    DBI_EXEC_ERROR
+} DBI_EXEC_STATUS;
 
-#define DBI_READONLY      -3
-
-#define DBI_MAX_BIND      32
+typedef enum {
+    DBI_VALUE = 0,
+    DBI_END_COL,
+    DBI_END_ROWS,
+    DBI_VALUE_ERROR
+} DBI_VALUE_STATUS;
 
 
 /*
@@ -104,18 +105,45 @@ typedef struct Dbi_Bind {
  * drivers must implement.
  */
 
-typedef int   (Dbi_OpenProc)     (Dbi_Handle *, void *arg);
-typedef void  (Dbi_CloseProc)    (Dbi_Handle *, void *arg);
-typedef int   (Dbi_ConnectedProc)(Dbi_Handle *, void *arg);
-typedef void  (Dbi_BindVarProc)  (Ns_DString *, CONST char *name, int bindIdx, void *arg);
-typedef int   (Dbi_ExecProc)     (Dbi_Handle *, Dbi_Statement *, Dbi_Bind *,
-                                  int *ncolsPtr, int *nrowsPtr, void *arg);
-typedef int   (Dbi_ValueProc)    (Dbi_Handle *, int col, int row,
-                                  CONST char **valuePtr, int *lengthPtr, void *arg);
-typedef int   (Dbi_ColumnProc)   (Dbi_Handle *, int col,
-                                  CONST char **columnPtr, int *lengthPtr, void *arg);
-typedef void  (Dbi_FlushProc)    (Dbi_Handle *, void *arg);
-typedef int   (Dbi_ResetProc)    (Dbi_Handle *, void *arg);
+typedef int
+(Dbi_OpenProc)(Dbi_Handle *, void *arg)
+    NS_GNUC_NONNULL(1);
+
+typedef void
+(Dbi_CloseProc)(Dbi_Handle *, void *arg)
+    NS_GNUC_NONNULL(1);
+
+typedef int
+(Dbi_ConnectedProc)(Dbi_Handle *, void *arg)
+    NS_GNUC_NONNULL(1);
+
+typedef void
+(Dbi_BindVarProc)(Ns_DString *, CONST char *name, int bindIdx, void *arg)
+    NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
+
+typedef DBI_EXEC_STATUS
+(Dbi_ExecProc)(Dbi_Handle *, Dbi_Statement *, Dbi_Bind *,
+               int *ncolsPtr, int *nrowsPtr, void *arg)
+    NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2)
+     NS_GNUC_NONNULL(4) NS_GNUC_NONNULL(5);
+
+typedef int
+(Dbi_ValueProc)(Dbi_Handle *, int col, int row,
+                CONST char **valuePtr, int *lengthPtr, void *arg)
+    NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(4) NS_GNUC_NONNULL(5);
+
+typedef int
+(Dbi_ColumnProc)(Dbi_Handle *, int col,
+                 CONST char **columnPtr, int *lengthPtr, void *arg)
+    NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(3) NS_GNUC_NONNULL(4);
+
+typedef void
+(Dbi_FlushProc)(Dbi_Handle *, void *arg)
+    NS_GNUC_NONNULL(1);
+
+typedef int
+(Dbi_ResetProc)(Dbi_Handle *, void *arg)
+    NS_GNUC_NONNULL(1);
 
 /*
  * The following structure specifies the driver-specific functions
@@ -179,13 +207,13 @@ NS_EXTERN int
 Dbi_ReleaseConnHandles(Ns_Conn *conn)
     NS_GNUC_NONNULL(1);
 
-NS_EXTERN int
+NS_EXTERN DBI_EXEC_STATUS
 Dbi_Exec(Dbi_Handle *, Dbi_Statement *, Dbi_Bind *,
          int *ncolsPtr, int *nrowsPtr)
     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2) NS_GNUC_NONNULL(3)
      NS_GNUC_NONNULL(4) NS_GNUC_NONNULL(5);
 
-NS_EXTERN int
+NS_EXTERN DBI_VALUE_STATUS
 Dbi_NextValue(Dbi_Handle *, CONST char **valuePtr, int *vlengthPtr,
               CONST char **columnPtr, int *clengthPtr)
     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2) NS_GNUC_NONNULL(3);
@@ -195,7 +223,7 @@ Dbi_Flush(Dbi_Handle *)
     NS_GNUC_NONNULL(1);
 
 NS_EXTERN int
-Dbi_ResetHandle(Dbi_Handle *)
+Dbi_Reset(Dbi_Handle *)
     NS_GNUC_NONNULL(1);
 
 NS_EXTERN void

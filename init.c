@@ -549,7 +549,7 @@ Dbi_PutHandle(Dbi_Handle *handle)
      * Cleanup the handle.
      */
 
-    Dbi_ResetHandle(handle);
+    Dbi_Reset(handle);
 
     /*
      * Close the handle if it's stale, otherwise update
@@ -615,13 +615,13 @@ Dbi_ReleaseConnHandles(Ns_Conn *conn)
  *----------------------------------------------------------------------
  */
 
-int
+DBI_EXEC_STATUS
 Dbi_Exec(Dbi_Handle *handle, Dbi_Statement *stmt, Dbi_Bind *bind,
          int *ncolsPtr, int *nrowsPtr)
 {
-    Handle      *handlePtr = (Handle *) handle;
-    Dbi_Driver  *driver    = handlePtr->poolPtr->driver;
-    int          status;
+    Handle          *handlePtr = (Handle *) handle;
+    Dbi_Driver      *driver    = handlePtr->poolPtr->driver;
+    DBI_EXEC_STATUS  status;
 
     DbiLog(handle, Debug, "Dbi_Exec: calling Dbi_ExecProc: bound: %d sql: %s",
            bind->nbound, stmt->sql);
@@ -632,12 +632,12 @@ Dbi_Exec(Dbi_Handle *handle, Dbi_Statement *stmt, Dbi_Bind *bind,
     handlePtr->numRows = *nrowsPtr;
     handlePtr->stats.queries++;
 
-    if (status == DBI_ROWS) {
+    if (status == DBI_EXEC_ROWS) {
         handlePtr->fetchingRows = NS_TRUE;
         if (!*ncolsPtr) {
             Dbi_SetException(handle, "DBI",
                 "bug: driver returned rows but failed to set number of columns");
-            return NS_ERROR;
+            return DBI_EXEC_ERROR;
         }
     }
 
@@ -655,10 +655,10 @@ Dbi_Exec(Dbi_Handle *handle, Dbi_Statement *stmt, Dbi_Bind *bind,
  *      This routine is normally called repeatedly after a Dbi_Exec.
  *
  * Results:
- *      NS_OK:        the next result value was successfully retrieved
- *      DBI_LAST_COL: the result of the last column in current row
- *      DBI_END_DATA: the result of the last column in the last row
- *      NS_ERROR:     an error occurred retrieving the result
+ *      DBI_VALUE:       the next result value was successfully retrieved
+ *      DBI_END_COL:     the result of the last column in current row
+ *      DBI_END_ROWS:    the result of the last column in the last row
+ *      DBI_VALUE_ERROR: an error occurred retrieving the result
  *
  * Side effects:
  *      The current column/row counter is advanced.
@@ -666,7 +666,7 @@ Dbi_Exec(Dbi_Handle *handle, Dbi_Statement *stmt, Dbi_Bind *bind,
  *----------------------------------------------------------------------
  */
 
-int
+DBI_VALUE_STATUS
 Dbi_NextValue(Dbi_Handle *handle, CONST char **valuePtr, int *vlengthPtr,
               CONST char **columnPtr, int *clengthPtr)
 {
@@ -676,7 +676,7 @@ Dbi_NextValue(Dbi_Handle *handle, CONST char **valuePtr, int *vlengthPtr,
 
     if (handlePtr->fetchingRows == NS_FALSE) {
         Ns_Log(Bug, "dbi: Dbi_NextValue: no pending rows");
-        return NS_ERROR;
+        return DBI_VALUE_ERROR;
     }
 
     DbiLog(handlePtr, Debug, "Dbi_NextValue: calling Dbi_ValueProc: "
@@ -687,7 +687,7 @@ Dbi_NextValue(Dbi_Handle *handle, CONST char **valuePtr, int *vlengthPtr,
     status = (*driver->valueProc)(handle, handlePtr->currentCol, handlePtr->currentRow,
                                   valuePtr, vlengthPtr, driver->arg);
     if (status == NS_ERROR) {
-        return NS_ERROR;
+        return DBI_VALUE_ERROR;
     }
 
     if (columnPtr != NULL && clengthPtr != NULL) {
@@ -697,7 +697,7 @@ Dbi_NextValue(Dbi_Handle *handle, CONST char **valuePtr, int *vlengthPtr,
         status = (*driver->columnProc)(handle, handlePtr->currentCol,
                                        columnPtr, clengthPtr, driver->arg);
         if (status == NS_ERROR) {
-            return NS_ERROR;
+            return DBI_VALUE_ERROR;
         }
     }
 
@@ -706,10 +706,10 @@ Dbi_NextValue(Dbi_Handle *handle, CONST char **valuePtr, int *vlengthPtr,
 
         if (handlePtr->currentRow == handlePtr->numRows - 1) {
             handlePtr->fetchingRows = NS_FALSE;
-            status = DBI_END_DATA;
+            status = DBI_END_ROWS;
         } else {
             handlePtr->currentRow++;
-            status = DBI_LAST_COL;
+            status = DBI_END_COL;
         }
     }
 
@@ -756,7 +756,7 @@ Dbi_Flush(Dbi_Handle  *handle)
 /*
  *----------------------------------------------------------------------
  *
- * Dbi_ResetHandle --
+ * Dbi_Reset --
  *
  *      Reset a handle.
  *
@@ -771,12 +771,12 @@ Dbi_Flush(Dbi_Handle  *handle)
  */
 
 int
-Dbi_ResetHandle(Dbi_Handle *handle)
+Dbi_Reset(Dbi_Handle *handle)
 {
     Dbi_Driver *driver = ((Handle *) handle)->poolPtr->driver;
     int         status;
 
-    DbiLog(handle, Debug, "%s", "Dbi_Resethandle: calling Dbi_ResetProc");
+    DbiLog(handle, Debug, "%s", "Dbi_Reset: calling Dbi_ResetProc");
 
     status = (*driver->resetProc)(handle, driver->arg);
 
