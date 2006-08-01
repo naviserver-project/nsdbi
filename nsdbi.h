@@ -79,8 +79,9 @@ typedef struct Dbi_Handle {
  */
 
 typedef struct Dbi_Statement {
-    CONST char      *sql;    /* The SQL to be executed.  */
+    CONST char      *sql;    /* The SQL to be executed. */
     CONST int        length; /* Length of the SQL string. */
+    int              nbind;  /* Number of bind variables. */
 } Dbi_Statement;
 
 /*

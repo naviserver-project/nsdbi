@@ -49,6 +49,7 @@ typedef struct Statement {
 
     char               *sql;        /* Pointer to bound SQL. */
     int                 length;     /* Length of bound SQL. */
+    int                 nbind;      /* Number of bind variables. */
 
     /* Private to a Statement. */
 
@@ -59,7 +60,6 @@ typedef struct Statement {
 
     struct {
         Tcl_HashTable   table;      /* Bind variables by name. */
-        int             nbound;     /* Number of bind variables. */
         struct {
             CONST char *name;       /* (Hash table key) */
         } vars[DBI_MAX_BIND];       /* Bind variables by order. */
@@ -239,7 +239,7 @@ Dbi_GetBindVariable(Dbi_Statement *stmt, int idx, CONST char **namePtr)
 {
     Statement *stmtPtr = (Statement *) stmt;
 
-    if (idx < 0 || idx >= stmtPtr->bind.nbound) {
+    if (idx < 0 || idx >= stmtPtr->nbind) {
         return NS_ERROR;
     }
     *namePtr = stmtPtr->bind.vars[idx].name;
@@ -342,7 +342,7 @@ ParseBindVars(Statement *stmtPtr)
 #define nexteq(c) (*(p+1) == (c))
 
     Ns_DStringTrunc(&stmtPtr->dsBoundSql, 0);
-    stmtPtr->bind.nbound = 0;
+    stmtPtr->nbind = 0;
     sql = Ns_DStringValue(&stmtPtr->dsSql);
     len = Ns_DStringLength(&stmtPtr->dsSql);
     quote = 0;
@@ -390,13 +390,13 @@ DefineBindVar(Statement *stmtPtr, CONST char *name)
     Tcl_HashEntry *hPtr;
     int            new, index;
 
-    index = stmtPtr->bind.nbound;
+    index = stmtPtr->nbind;
     if (index >= DBI_MAX_BIND) {
         return NS_ERROR;
     }
     hPtr = Tcl_CreateHashEntry(&stmtPtr->bind.table, name, &new);
     if (new) {
-        stmtPtr->bind.nbound++;
+        stmtPtr->nbind++;
         Tcl_SetHashValue(hPtr, (void *) index);
         stmtPtr->bind.vars[index].name = Tcl_GetHashKey(&stmtPtr->bind.table, hPtr);
     } else {
