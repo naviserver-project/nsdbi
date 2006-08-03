@@ -107,43 +107,55 @@ typedef struct Dbi_Bind {
  */
 
 typedef int
-(Dbi_OpenProc)(Dbi_Handle *, void *arg)
+(Dbi_OpenProc)(Dbi_Handle *, void *driverArg)
     NS_GNUC_NONNULL(1);
 
 typedef void
-(Dbi_CloseProc)(Dbi_Handle *, void *arg)
+(Dbi_CloseProc)(Dbi_Handle *, void *driverArg)
     NS_GNUC_NONNULL(1);
 
 typedef int
-(Dbi_ConnectedProc)(Dbi_Handle *, void *arg)
+(Dbi_ConnectedProc)(Dbi_Handle *, void *driverArg)
     NS_GNUC_NONNULL(1);
 
 typedef void
-(Dbi_BindVarProc)(Ns_DString *, CONST char *name, int bindIdx, void *arg)
+(Dbi_BindVarProc)(Ns_DString *, CONST char *name, int bindIdx,
+                  void *driverArg)
     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
+
+typedef int
+(Dbi_PrepareProc)(Dbi_Handle *, CONST char *sql, int length,
+                  unsigned int id, unsigned int nqueries,
+                  void **stmtArg, void *driverArg)
+    NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2) NS_GNUC_NONNULL(6);
+
+typedef void
+(Dbi_PrepareCloseProc)(void *stmtArg, void *driverArg)
+    NS_GNUC_NONNULL(1);
 
 typedef DBI_EXEC_STATUS
 (Dbi_ExecProc)(Dbi_Handle *, Dbi_Statement *, Dbi_Bind *,
-               int *ncolsPtr, int *nrowsPtr, void *arg)
+               int *ncolsPtr, int *nrowsPtr,
+               void *stmtArg, void *driverArg)
     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2)
      NS_GNUC_NONNULL(4) NS_GNUC_NONNULL(5);
 
 typedef int
 (Dbi_ValueProc)(Dbi_Handle *, int col, int row,
-                CONST char **valuePtr, int *lengthPtr, void *arg)
+                CONST char **valuePtr, int *lengthPtr, void *driverArg)
     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(4) NS_GNUC_NONNULL(5);
 
 typedef int
 (Dbi_ColumnProc)(Dbi_Handle *, int col,
-                 CONST char **columnPtr, int *lengthPtr, void *arg)
+                 CONST char **columnPtr, int *lengthPtr, void *driverArg)
     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(3) NS_GNUC_NONNULL(4);
 
 typedef void
-(Dbi_FlushProc)(Dbi_Handle *, void *arg)
+(Dbi_FlushProc)(Dbi_Handle *, void *driverArg)
     NS_GNUC_NONNULL(1);
 
 typedef int
-(Dbi_ResetProc)(Dbi_Handle *, void *arg)
+(Dbi_ResetProc)(Dbi_Handle *, void *driverArg)
     NS_GNUC_NONNULL(1);
 
 /*
@@ -153,23 +165,25 @@ typedef int
 
 typedef struct Dbi_Driver {
 
-    void               *arg;          /* Driver callback data. */
+    void                 *arg;          /* Driver callback data. */
 
     /*
      * The following callbacks and data are (so far) all mandatory.
      */
 
-    CONST char         *name;         /* Driver name. */
-    CONST char         *database;     /* Database name. */
-    Dbi_OpenProc       *openProc;
-    Dbi_CloseProc      *closeProc;
-    Dbi_ConnectedProc  *connectedProc;
-    Dbi_BindVarProc    *bindVarProc;
-    Dbi_ExecProc       *execProc;
-    Dbi_ValueProc      *valueProc;
-    Dbi_ColumnProc     *columnProc;
-    Dbi_FlushProc      *flushProc;
-    Dbi_ResetProc      *resetProc;
+    CONST char           *name;         /* Driver name. */
+    CONST char           *database;     /* Database name. */
+    Dbi_OpenProc         *openProc;
+    Dbi_CloseProc        *closeProc;
+    Dbi_ConnectedProc    *connectedProc;
+    Dbi_BindVarProc      *bindVarProc;
+    Dbi_PrepareProc      *prepareProc;
+    Dbi_PrepareCloseProc *prepareCloseProc;
+    Dbi_ExecProc         *execProc;
+    Dbi_ValueProc        *valueProc;
+    Dbi_ColumnProc       *columnProc;
+    Dbi_FlushProc        *flushProc;
+    Dbi_ResetProc        *resetProc;
 
 } Dbi_Driver;
 

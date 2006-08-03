@@ -61,6 +61,8 @@ static Dbi_OpenProc         Open;
 static Dbi_CloseProc        Close;
 static Dbi_ConnectedProc    Connected;
 static Dbi_BindVarProc      Bind;
+static Dbi_PrepareProc      Prepare;
+static Dbi_PrepareCloseProc PrepareClose;
 static Dbi_ExecProc         Exec;
 static Dbi_ValueProc        Value;
 static Dbi_ColumnProc       Column;
@@ -93,18 +95,20 @@ Ns_ModuleInit(CONST char *server, CONST char *module)
     CONST char *database = "db";
 
     driver = ns_calloc(1, sizeof(Dbi_Driver));
-    driver->arg           = "driver context";
-    driver->name          = name;
-    driver->database      = database;
-    driver->openProc      = Open;
-    driver->closeProc     = Close;
-    driver->connectedProc = Connected;
-    driver->bindVarProc   = Bind;
-    driver->execProc      = Exec;
-    driver->valueProc     = Value;
-    driver->columnProc    = Column;
-    driver->flushProc     = Flush;
-    driver->resetProc     = Reset;
+    driver->arg              = "driver context";
+    driver->name             = name;
+    driver->database         = database;
+    driver->openProc         = Open;
+    driver->closeProc        = Close;
+    driver->connectedProc    = Connected;
+    driver->bindVarProc      = Bind;
+    driver->prepareProc      = Prepare;
+    driver->prepareCloseProc = PrepareClose;
+    driver->execProc         = Exec;
+    driver->valueProc        = Value;
+    driver->columnProc       = Column;
+    driver->flushProc        = Flush;
+    driver->resetProc        = Reset;
 
     return Dbi_RegisterDriver(server, module, driver, sizeof(Dbi_Driver));
 }
@@ -236,6 +240,64 @@ Bind(Ns_DString *ds, CONST char *name, int bindIdx, void *arg)
 /*
  *----------------------------------------------------------------------
  *
+ * Prepare --
+ *
+ *      Prepare the given chunk of SQL for execution.
+ *
+ * Results:
+ *      NS_OK or NS_ERROR.
+ *
+ * Side effects:
+ *      None.
+ *
+ *----------------------------------------------------------------------
+ */
+
+static int
+Prepare(Dbi_Handle *handle, CONST char *sql, int length,
+        unsigned int id, unsigned int nqueries,
+        void **stmtArg, void *driverArg)
+{
+    assert(*stmtArg == NULL);
+
+    if (STREQ(sql, "NOPREPARE")) {
+        Dbi_SetException(handle, "TEST", "test: prepare failure");
+        return NS_ERROR;
+    }
+    if (nqueries > 0) {
+        *stmtArg = (void*) NS_TRUE;
+    }
+    return NS_OK;
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * PrepareClose --
+ *
+ *      Cleanup a prepared statement.
+ *
+ * Results:
+ *      None.
+ *
+ * Side effects:
+ *      None.
+ *
+ *----------------------------------------------------------------------
+ */
+
+static void
+PrepareClose(void *stmtArg, void *driverArg)
+{
+    Ns_Log(Debug, "nsdbitest: PrepareClose: stmtArg: %d",
+           (int) stmtArg);
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
  * Exec --
  *
  *      Execute a query.
@@ -251,7 +313,8 @@ Bind(Ns_DString *ds, CONST char *name, int bindIdx, void *arg)
 
 static DBI_EXEC_STATUS
 Exec(Dbi_Handle *handle, Dbi_Statement *stmt, Dbi_Bind *bind,
-     int *ncolsPtr, int *nrowsPtr, void *arg)
+     int *ncolsPtr, int *nrowsPtr,
+     void *stmtArg, void *driverArg)
 {
     Connection      *conn = handle->arg;
     CONST char      *value;
@@ -259,7 +322,7 @@ Exec(Dbi_Handle *handle, Dbi_Statement *stmt, Dbi_Bind *bind,
     DBI_EXEC_STATUS  dbistat = DBI_EXEC_ERROR;
     int              n, i, length, rest = 0;
 
-    assert(STREQ((char *) arg, "driver context"));
+    assert(STREQ((char *) driverArg, "driver context"));
 
     assert(conn != NULL);
     assert(conn->connected == NS_TRUE);

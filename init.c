@@ -61,6 +61,8 @@ typedef struct Pool {
     time_t             maxidle;
     time_t             maxopen;
     int                maxqueries;
+    int                cachesize;
+
     int                stale_on_close;
     int                stopping;
 
@@ -108,11 +110,28 @@ typedef struct Handle {
     int               currentCol;   /* The current column index. */
     int               currentRow;   /* The current row index. */
 
+    unsigned int      stmtid;       /* Unique ID for statements. */
+    Ns_Cache         *cache;        /* Cache of prepared Statement structs. */
+
     struct {
-        unsigned int queries;       /* Total queries via current connection. */
+        unsigned int  queries;      /* Total queries via current connection. */
     } stats;
 
 } Handle;
+
+/*
+ * The following structure defines a prepared statement kept
+ * in a per-handle cache.
+ */
+
+typedef struct Statement {
+    unsigned int      id;           /* Unique (per handle) statement ID. */
+    Tcl_HashEntry    *hPtr;         /* Entry in the id table. */
+    unsigned int      nqueries;     /* Total queries for this statement. */
+    void             *arg;          /* Statement context for driver. */
+    int               length;       /* Length of sql. */
+    char              sql[1];       /* Driver specific SQL. */
+} Statement;
 
 
 /*
@@ -129,6 +148,9 @@ static int CloseIfStale(Handle *, time_t now) NS_GNUC_NONNULL(1);
 static int Connect(Handle *) NS_GNUC_NONNULL(1);
 static int Connected(Handle *handlePtr) NS_GNUC_NONNULL(1);
 static void CheckPool(Pool *poolPtr, int stale) NS_GNUC_NONNULL(1);
+
+static Ns_Callback FreeStatement;
+static void FlushStatements(Ns_Cache *);
 
 static Ns_Callback     ScheduledPoolCheck;
 static Ns_ArgProc      PoolCheckArgProc;
@@ -233,11 +255,12 @@ Dbi_RegisterDriver(CONST char *server, CONST char *module,
     Ns_CondInit(&poolPtr->getCond);
     poolPtr->driver = driver;
     poolPtr->module = ns_strdup(module);
-    poolPtr->nhandles   = Ns_ConfigIntRange(path, "handles",    2,  1, INT_MAX);
-    poolPtr->maxwait    = Ns_ConfigIntRange(path, "maxwait",    10, 0, INT_MAX);
-    poolPtr->maxidle    = Ns_ConfigIntRange(path, "maxidle",    0,  0, INT_MAX);
-    poolPtr->maxopen    = Ns_ConfigIntRange(path, "maxopen",    0,  0, INT_MAX);
-    poolPtr->maxqueries = Ns_ConfigIntRange(path, "maxqueries", 0,  0, INT_MAX);
+    poolPtr->nhandles   = Ns_ConfigIntRange(path, "handles",    2,          1, INT_MAX);
+    poolPtr->maxwait    = Ns_ConfigIntRange(path, "maxwait",    10,         0, INT_MAX);
+    poolPtr->maxidle    = Ns_ConfigIntRange(path, "maxidle",    0,          0, INT_MAX);
+    poolPtr->maxopen    = Ns_ConfigIntRange(path, "maxopen",    0,          0, INT_MAX);
+    poolPtr->maxqueries = Ns_ConfigIntRange(path, "maxqueries", 0,          0, INT_MAX);
+    poolPtr->cachesize  = Ns_ConfigIntRange(path, "cachesize",  1024*1024,  0, INT_MAX);
     if (poolPtr->maxidle || poolPtr->maxopen) {
         Ns_ScheduleProc(ScheduledPoolCheck, poolPtr, 0,
                         Ns_ConfigIntRange(path, "checkinterval", 600, 30, INT_MAX));
@@ -252,6 +275,8 @@ Dbi_RegisterDriver(CONST char *server, CONST char *module,
     for (i = 0; i < poolPtr->nhandles; i++, handlePtr++) {
         handlePtr->poolPtr = poolPtr;
         Ns_DStringInit(&handlePtr->dsExceptionMsg);
+        handlePtr->cache = Ns_CacheCreateSz(module, TCL_STRING_KEYS,
+                                            poolPtr->cachesize, FreeStatement);
         ReturnHandle(handlePtr);
     }
 
@@ -608,7 +633,9 @@ Dbi_ReleaseConnHandles(Ns_Conn *conn)
  *      Execute an SQL statement.
  *
  * Results:
- *      DBI_DML, DBI_ROWS, or NS_ERROR. ncolsPtr, nrowsPtr updated.
+ *      DBI_EXEC_DML, DBI_EXEC_ROWS, or DBI_EXEC_ERROR.
+ *      nrowsPtr updated with rows affected for a DBI_EXEC_DML result.
+ *      nrowsPtr and ncolsPtr updated for a DBI_EXEC_ROWS result.
  *
  * Side effects:
  *      SQL is sent to database for evaluation.
@@ -622,16 +649,57 @@ Dbi_Exec(Dbi_Handle *handle, Dbi_Statement *stmt, Dbi_Bind *bind,
 {
     Handle          *handlePtr = (Handle *) handle;
     Dbi_Driver      *driver    = handlePtr->poolPtr->driver;
+    Statement       *stmtPtr;
+    Ns_Entry        *entry;
+    int              new;
     DBI_EXEC_STATUS  status;
 
-    DbiLog(handle, Debug, "Dbi_Exec: calling Dbi_ExecProc: bound: %d sql: %s",
-           bind->nbound, stmt->sql);
+    /*
+     * Find the statement in the handle cache.
+     */
 
+    entry = Ns_CacheCreateEntry(handlePtr->cache, stmt->sql, &new);
+    if (new) {
+        stmtPtr = ns_calloc(1, sizeof(Statement) + stmt->length);
+        stmtPtr->id = ++handlePtr->stmtid;
+        strcpy(stmtPtr->sql, stmt->sql);
+        Ns_CacheSetValueSz(entry, stmtPtr, sizeof(Statement) + stmt->length);
+    } else {
+        stmtPtr = Ns_CacheGetValue(entry);
+    }
+
+    /*
+     * Prepare the query.
+     */
+
+    if (stmtPtr->arg == NULL) {
+
+        DbiLog(handle, Debug, "Dbi_Exec: calling Dbi_PrepareProc: id: %u nqueries: %d",
+               stmtPtr->id, stmtPtr->nqueries);
+
+        if ((*driver->prepareProc)(handle, stmtPtr->sql, stmtPtr->length,
+                                   stmtPtr->id, stmtPtr->nqueries,
+                                   &stmtPtr->arg, driver->arg) != NS_OK) {
+            return DBI_EXEC_ERROR;
+        }
+    }
+
+    /*
+     * Execute the query.
+     */
+
+    DbiLog(handle, Debug, "Dbi_Exec: calling Dbi_ExecProc: bound: %d sql: %s",
+           bind->nbound, stmtPtr->sql);
+
+    *ncolsPtr = 0;
+    *nrowsPtr = 0;
     status = (*driver->execProc)(handle, stmt, bind,
-                                 ncolsPtr, nrowsPtr, driver->arg);
+                                 ncolsPtr, nrowsPtr,
+                                 stmtPtr->arg, driver->arg);
     handlePtr->numCols = *ncolsPtr;
     handlePtr->numRows = *nrowsPtr;
     handlePtr->stats.queries++;
+    stmtPtr->nqueries++;
 
     if (status == DBI_EXEC_ROWS) {
         handlePtr->fetchingRows = NS_TRUE;
@@ -1152,6 +1220,8 @@ CloseIfStale(Handle *handlePtr, time_t now)
             DbiLog(handle, Notice, "closing %s handle, %d queries",
                    reason, handlePtr->stats.queries);
 
+            FlushStatements(handlePtr->cache);
+
             (*driver->closeProc)(handle, driver->arg);
             handle->arg = NULL;
             handlePtr->atime = handlePtr->otime = 0;
@@ -1294,7 +1364,6 @@ AtShutdown(Ns_Time *toPtr, void *arg)
         Ns_MutexUnlock(&poolPtr->lock);
     } else {
         Ns_DStringInit(&ds);
-        
         Ns_Log(Notice, "dbi[%s:%s]: %s", poolPtr->driver->name, poolPtr->module,
                Dbi_Stats(&ds, (Dbi_Pool *) poolPtr));
         Ns_DStringFree(&ds);
@@ -1368,11 +1437,74 @@ Connect(Handle *handlePtr)
  *----------------------------------------------------------------------
  */
 
-int
+static int
 Connected(Handle *handlePtr)
 {
     Dbi_Handle *handle = (Dbi_Handle *) handlePtr;
     Dbi_Driver *driver = handlePtr->poolPtr->driver;
 
     return (*driver->connectedProc)(handle, driver->arg);
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * FreeStatement --
+ *
+ *      Cache callback to free a prepared statement.
+ *
+ * Results:
+ *      None.
+ *
+ * Side effects:
+ *      None.
+ *
+ *----------------------------------------------------------------------
+ */
+
+static void
+FreeStatement(void *arg)
+{
+    Statement *stmtPtr   = arg;
+
+    Ns_Log(Warning, "FreeStatement: id: %u", stmtPtr->id);
+    ns_free(stmtPtr);
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * FlushStatements --
+ *
+ *      Call the driver proc for each prepared statement in the cache.
+ *      This is called just before a handle is closed.
+ *
+ * Results:
+ *      None.
+ *
+ * Side effects:
+ *      None.
+ *
+ *----------------------------------------------------------------------
+ */
+
+static void
+FlushStatements(Ns_Cache *cache)
+{
+    Ns_CacheSearch  search;
+    Ns_Entry       *entry;
+    Statement      *stmtPtr;
+
+    entry = Ns_CacheFirstEntry(cache, &search);
+    while (entry != NULL) {
+        stmtPtr = Ns_CacheGetValue(entry);
+        if (stmtPtr->arg != NULL) {
+            Ns_Log(Debug, "nsdbi: FlushStatements: calling Dbi_PrepareCloseProc: "
+                   "id: %u nqueries: %u",
+                   stmtPtr->id, stmtPtr->nqueries);
+        }
+        entry = Ns_CacheNextEntry(&search);
+    }
 }
