@@ -34,7 +34,7 @@
  *      Tcl database access routines.
  */
 
-#include "dbi.h"
+#include "nsdbi.h"
 
 NS_RCSID("@(#) $Header$");
 
@@ -46,7 +46,7 @@ NS_RCSID("@(#) $Header$");
 static Tcl_ObjCmdProc TclDbiCmd;
 
 static Dbi_Pool *
-GetPool(ServerData *sdataPtr, Tcl_Interp *interp, Tcl_Obj *poolObj)
+GetPool(CONST char *server, Tcl_Interp *interp, Tcl_Obj *poolObj)
     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
 
 static int
@@ -107,12 +107,9 @@ int
 DbiInitInterp(Tcl_Interp *interp, void *arg)
 {
     char       *server = arg;
-    ServerData *sdataPtr;
     int         i;
 
-    sdataPtr = DbiGetServer(server);
-
-    Tcl_CreateObjCommand(interp, "dbi", TclDbiCmd, sdataPtr, NULL);
+    Tcl_CreateObjCommand(interp, "dbi", TclDbiCmd, server, NULL);
 
     /*
      * Add traces to release db handles before lengthy IO
@@ -147,8 +144,7 @@ DbiInitInterp(Tcl_Interp *interp, void *arg)
 static int
 TclDbiCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
 {
-    ServerData       *sdataPtr = arg;
-    CONST char       *server = sdataPtr->server;
+    CONST char       *server = arg;
     Dbi_Pool         *pool;
     Dbi_Handle       *handle;
     Dbi_Statement    *stmt;
@@ -225,7 +221,7 @@ TclDbiCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
             Tcl_WrongNumArgs(interp, 2, objv, "pool");
             return TCL_ERROR;
         }
-        if ((pool = GetPool(sdataPtr, interp, objv[2])) == NULL) {
+        if ((pool = GetPool(server, interp, objv[2])) == NULL) {
             return TCL_ERROR;
         }
 
@@ -257,7 +253,7 @@ TclDbiCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
          * Grab a free handle.
          */
 
-        if ((pool = GetPool(sdataPtr, interp, poolObj)) == NULL) {
+        if ((pool = GetPool(server, interp, poolObj)) == NULL) {
             return TCL_ERROR;
         }
         conn = Ns_TclGetConn(interp);
@@ -392,13 +388,13 @@ TclDbiCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
  */
 
 static Dbi_Pool *
-GetPool(ServerData *sdataPtr, Tcl_Interp *interp, Tcl_Obj *poolObj)
+GetPool(CONST char *server, Tcl_Interp *interp, Tcl_Obj *poolObj)
 {
     Dbi_Pool    *pool;
     const char  *poolType = "dbi:pool";
 
     if (poolObj == NULL) {
-        pool = sdataPtr->defpoolPtr;
+        pool = Dbi_DefaultPool(server);
         if (pool == NULL) {
             Tcl_AppendToObj(Tcl_GetObjResult(interp),
                 "no pool specified and no default configured",
@@ -406,7 +402,7 @@ GetPool(ServerData *sdataPtr, Tcl_Interp *interp, Tcl_Obj *poolObj)
             return NULL;
         }
     } else if (Ns_TclGetOpaqueFromObj(poolObj, poolType, (void **) &pool) != TCL_OK) {
-        pool = DbiGetPool(sdataPtr, Tcl_GetString(poolObj));
+        pool = Dbi_GetPool(server, Tcl_GetString(poolObj));
         if (pool == NULL) {
             Tcl_AppendToObj(Tcl_GetObjResult(interp),
                 "invalid pool name or pool not available to virtual server",

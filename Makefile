@@ -36,7 +36,6 @@ MODNAME     = nsdbi
 
 LIB         = nsdbi
 LIBOBJS     = init.o tclcmds.o
-HDRS        = dbi.h
 LIBHDRS     = nsdbi.h
 
 MOD         = nsdbitest.so

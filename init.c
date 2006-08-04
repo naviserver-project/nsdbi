@@ -35,10 +35,24 @@
  *      pools of database handles.
  */
 
-#include "dbi.h"
+#include "nsdbi.h"
 
 NS_RCSID("@(#) $Header$");
 
+
+extern Ns_TclInterpInitProc DbiInitInterp;
+
+
+/*
+ * The following structure tracks which pools are
+ * available to a virtual server.
+ */
+
+typedef struct ServerData {
+    CONST char        *server;
+    Dbi_Pool          *defpoolPtr;
+    Tcl_HashTable      poolsTable;
+} ServerData;
 
 /*
  * The following structure defines a pool of database handles.
@@ -152,6 +166,7 @@ typedef struct Statement {
            ((Handle *) handle)->poolPtr->driver->name,          \
            ((Handle *) handle)->poolPtr->module, __VA_ARGS__)
 
+static ServerData *GetServer(CONST char *server);
 static void ReturnHandle(Handle * handle) NS_GNUC_NONNULL(1);
 static int CloseIfStale(Handle *, time_t now) NS_GNUC_NONNULL(1);
 static int Connect(Handle *) NS_GNUC_NONNULL(1);
@@ -343,14 +358,20 @@ Dbi_RegisterDriver(CONST char *server, CONST char *module,
 Dbi_Pool *
 Dbi_GetPool(CONST char *server, CONST char *poolname)
 {
-    ServerData *sdataPtr;
-    Dbi_Pool   *pool;
+    ServerData     *sdataPtr;
+    Tcl_HashEntry  *hPtr;
+    Dbi_Pool       *pool;
 
-    if ((sdataPtr = DbiGetServer(server)) == NULL) {
+    if ((sdataPtr = GetServer(server)) == NULL) {
         Ns_Log(Error, "dbi: invalid server '%s' while getting pool '%s'", server, poolname);
         return NULL;
     }
-    pool = DbiGetPool(sdataPtr, poolname);
+    if (poolname == NULL) {
+        pool = sdataPtr->defpoolPtr;
+    } else {
+        hPtr = Tcl_FindHashEntry(&sdataPtr->poolsTable, poolname);
+        pool = hPtr ? Tcl_GetHashValue(hPtr) : NULL;
+    }
     if (pool == NULL) {
         if (poolname == NULL) {
             Ns_Log(Error, "dbi: no default pool for server '%s'", server); 
@@ -359,21 +380,6 @@ Dbi_GetPool(CONST char *server, CONST char *poolname)
         }
     }
     return pool;
-}
-
-Dbi_Pool *
-DbiGetPool(ServerData *sdataPtr, CONST char *poolname)
-{
-   Tcl_HashEntry  *hPtr;
-   Dbi_Pool       *pool;
-
-   if (poolname == NULL) {
-       pool = sdataPtr->defpoolPtr;
-   } else {
-       hPtr = Tcl_FindHashEntry(&sdataPtr->poolsTable, poolname);
-       pool = hPtr ? Tcl_GetHashValue(hPtr) : NULL;
-   }
-   return pool;
 }
 
 
@@ -398,7 +404,7 @@ Dbi_DefaultPool(CONST char *server)
 {
     ServerData *sdataPtr;
 
-    sdataPtr = DbiGetServer(server);
+    sdataPtr = GetServer(server);
     return (sdataPtr ? sdataPtr->defpoolPtr : NULL);
 }
 
@@ -428,7 +434,7 @@ Dbi_ListPools(Ns_DString *ds, CONST char *server)
     Tcl_HashEntry  *hPtr;
     Tcl_HashSearch  search;
 
-    if ((sdataPtr = DbiGetServer(server)) == NULL) {
+    if ((sdataPtr = GetServer(server)) == NULL) {
         return NS_ERROR;
     }
     hPtr = Tcl_FirstHashEntry(&sdataPtr->poolsTable, &search);
@@ -1232,17 +1238,11 @@ Dbi_ExceptionPending(Dbi_Handle *handle)
     return NS_FALSE;
 }
 
-Dbi_Driver *
-DbiPoolDriver(Dbi_Pool *pool)
-{
-    return ((Pool *) pool)->driver;
-}
-
 
 /*
  *----------------------------------------------------------------------
  *
- * DbiGetServer --
+ * GetServer --
  *
  *      Get per-server data.
  *
@@ -1256,7 +1256,7 @@ DbiPoolDriver(Dbi_Pool *pool)
  */
 
 ServerData *
-DbiGetServer(CONST char *server)
+GetServer(CONST char *server)
 {
     Tcl_HashEntry *hPtr;
 
