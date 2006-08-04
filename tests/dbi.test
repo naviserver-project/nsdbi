@@ -159,7 +159,7 @@ test bindvars-2 {duplicate bind vars} -body {
     dbi rows {ROWS 2 1 :x :y :x}
 } -cleanup {
     unset -nocomplain x y
-} -result {{X Y {0:x 1:y 0:x}} v}
+} -result {{X Y X {0:x 1:y 2:x}} v}
 
 test bindvars-3 {quoted bind var} -body {
     dbi rows {ROWS 2 1 query ':x' query}
