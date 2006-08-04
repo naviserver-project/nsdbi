@@ -58,10 +58,11 @@ typedef enum {
 
 
 /*
- * The following defines an opaque pool of handles..
+ * The following defines opaque pool and statement handles.
  */
 
-typedef struct _Dbi_Pool *Dbi_Pool;
+typedef struct _Dbi_Pool      *Dbi_Pool;
+typedef struct _Dbi_Statement *Dbi_Statement;
 
 /*
  * The following struct defines a handle in a pool.
@@ -72,37 +73,9 @@ typedef struct Dbi_Handle {
     void            *arg;  /* Driver private handle context. */
 } Dbi_Handle;
 
-/*
- * The following struct defines an SQL statement which
- * can be executed by a handle. Any bind variables will be
- * converted into driver specific notation.
- */
-
-typedef struct Dbi_Statement {
-    CONST char      *sql;    /* The SQL to be executed. */
-    CONST int        length; /* Length of the SQL string. */
-    int              nbind;  /* Number of bind variables. */
-} Dbi_Statement;
 
 /*
- * The following struct defines a set of values to bind
- * to variables in an SQL statement.
- *
- */
-
-typedef struct Dbi_Bind {
-
-    struct {
-        CONST char  *value;  /* The value. */
-        int          length; /* Length of value. */
-    } vals[DBI_MAX_BIND];    /* Array of values. */
-
-    int              nbound; /* Number of bound values. */
-    
-} Dbi_Bind;
-
-/*
- * The following typedefs define the functions that loadable
+ * The following define the functions that loadable
  * drivers must implement.
  */
 
@@ -134,11 +107,12 @@ typedef void
     NS_GNUC_NONNULL(1);
 
 typedef DBI_EXEC_STATUS
-(Dbi_ExecProc)(Dbi_Handle *, Dbi_Statement *, Dbi_Bind *,
+(Dbi_ExecProc)(Dbi_Handle *, CONST char *sql, int length,
+               CONST char **values, unsigned int *lengths, int nvalues,
                int *ncolsPtr, int *nrowsPtr,
                void *stmtArg, void *driverArg)
     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2)
-     NS_GNUC_NONNULL(4) NS_GNUC_NONNULL(5);
+     NS_GNUC_NONNULL(7) NS_GNUC_NONNULL(8);
 
 typedef int
 (Dbi_ValueProc)(Dbi_Handle *, int col, int row,
@@ -168,7 +142,7 @@ typedef struct Dbi_Driver {
     void                 *arg;          /* Driver callback data. */
 
     /*
-     * The following callbacks and data are (so far) all mandatory.
+     * The following callbacks and data are (so far) all required.
      */
 
     CONST char           *name;         /* Driver name. */
@@ -188,9 +162,6 @@ typedef struct Dbi_Driver {
 } Dbi_Driver;
 
 
-/*
- * init.c:
- */
 
 NS_EXTERN int
 Dbi_RegisterDriver(CONST char *server, CONST char *module,
@@ -222,11 +193,30 @@ NS_EXTERN int
 Dbi_ReleaseConnHandles(Ns_Conn *conn)
     NS_GNUC_NONNULL(1);
 
+NS_EXTERN Dbi_Statement *
+Dbi_Prepare(Dbi_Handle *, CONST char *sql, int length)
+    NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
+
+NS_EXTERN int
+Dbi_GetNumVariables(Dbi_Statement *stmt)
+    NS_GNUC_NONNULL(1);
+
+NS_EXTERN int
+Dbi_GetBindVariable(Dbi_Statement *stmt, int idx, CONST char **namePtr)
+    NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(3);
+
 NS_EXTERN DBI_EXEC_STATUS
-Dbi_Exec(Dbi_Handle *, Dbi_Statement *, Dbi_Bind *,
-         int *ncolsPtr, int *nrowsPtr)
-    NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2) NS_GNUC_NONNULL(3)
-     NS_GNUC_NONNULL(4) NS_GNUC_NONNULL(5);
+Dbi_Exec(Dbi_Handle *, Dbi_Statement *,
+         CONST char **values, unsigned int *lengths)
+    NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
+
+NS_EXTERN int
+Dbi_NumColumns(Dbi_Handle *handle)
+    NS_GNUC_NONNULL(1);
+
+NS_EXTERN int
+Dbi_NumRows(Dbi_Handle *handle)
+    NS_GNUC_NONNULL(1);
 
 NS_EXTERN DBI_VALUE_STATUS
 Dbi_NextValue(Dbi_Handle *, CONST char **valuePtr, int *vlengthPtr,
@@ -280,39 +270,6 @@ Dbi_ExceptionMsg(Dbi_Handle *handle)
 NS_EXTERN int
 Dbi_ExceptionPending(Dbi_Handle *handle)
      NS_GNUC_NONNULL(1);
-
-/*
- * stmt.c
- */
-
-NS_EXTERN Dbi_Statement *
-Dbi_StatementAlloc(CONST char *sql, int len)
-     NS_GNUC_NONNULL(1);
-
-NS_EXTERN void
-Dbi_StatementFree(Dbi_Statement *)
-     NS_GNUC_NONNULL(1);
-
-NS_EXTERN int
-Dbi_StatementPrepare(Dbi_Handle *, Dbi_Statement *)
-    NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
-
-NS_EXTERN CONST char *
-Dbi_StatementSQL(Dbi_Statement *, int *len)
-     NS_GNUC_NONNULL(1);
-
-NS_EXTERN int
-Dbi_GetBindVariable(Dbi_Statement *, int idx, CONST char **namePtr)
-    NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(3);
-
-NS_EXTERN int
-Dbi_SetBindValue(Dbi_Bind *, int idx, CONST char *value, int length)
-    NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(3);
-
-NS_EXTERN int
-Dbi_GetBindValue(Dbi_Bind *, int idx,
-                 CONST char **valuePtr, int *lengthPtr)
-    NS_GNUC_NONNULL(1);
 
 
 #endif /* NSDBI_H */

@@ -43,12 +43,15 @@ NS_RCSID("@(#) $Header$");
  * Static functions defined in this file
  */
 
+static Tcl_ObjCmdProc TclDbiCmd;
+
 static Dbi_Pool *
 GetPool(ServerData *sdataPtr, Tcl_Interp *interp, Tcl_Obj *poolObj)
     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
 
 static int
-BindVars(Tcl_Interp *interp, Dbi_Statement *stmt, Dbi_Bind *bind,
+BindVars(Tcl_Interp *interp, Dbi_Statement *stmt,
+         CONST char **values, unsigned int *lengths,
          char *array, char *setid)
     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2) NS_GNUC_NONNULL(3);
 
@@ -60,25 +63,14 @@ static int
 Exception(Tcl_Interp *interp, CONST char *code, CONST char *msg)
     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(3);
 
-static Tcl_ObjCmdProc          TclDbiCmd;
-
-static Tcl_FreeInternalRepProc FreeStmt;
-static Tcl_DupInternalRepProc  DupStmt;
-static Tcl_UpdateStringProc    UpdateStringOfStmt;
-static Tcl_SetFromAnyProc      SetStmtFromAny;
+#define SqlException(interp, handle)                   \
+    Exception((interp), Dbi_ExceptionCode((handle)),   \
+              Dbi_ExceptionMsg((handle)))
 
 
 /*
  * Static variables defined in this file.
  */
-
-static Tcl_ObjType stmtType = {
-    "dbi:statement",
-    FreeStmt,
-    DupStmt,
-    UpdateStringOfStmt,
-    SetStmtFromAny
-};
 
 /*
  * The following list of potentialy blocking commands are
@@ -93,28 +85,6 @@ static char *blockingCmds[] = {
     "ns_connsendfp", NULL
 };
 
-
-
-/*
- *----------------------------------------------------------------------
- * DbiInitTclObjTypes --
- *
- *      One time initialization of the dbi Tcl_Obj types.
- *
- * Results:
- *      None.
- *
- * Side effects:
- *      None.
- *
- *----------------------------------------------------------------------
- */
-
-void
-DbiInitTclObjTypes()
-{
-    Tcl_RegisterObjType(&stmtType);
-}
 
 
 /*
@@ -177,19 +147,20 @@ DbiInitInterp(Tcl_Interp *interp, void *arg)
 static int
 TclDbiCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
 {
-    ServerData      *sdataPtr = arg;
-    CONST char      *server = sdataPtr->server;
-    Dbi_Pool        *pool;
-    Dbi_Handle      *handle;
-    Dbi_Statement   *stmt;
-    Dbi_Bind         bind;
-    Ns_DString       ds;
-    DBI_EXEC_STATUS  dbistat;
-    Ns_Conn         *conn = NULL;
-    char            *array = NULL, *setid = NULL;
-    Tcl_Obj         *stmtObj, *poolObj = NULL;
-    Ns_Time          time, *timeoutPtr = NULL;
-    int              cmd, n, ncols, nrows, status = TCL_OK;
+    ServerData       *sdataPtr = arg;
+    CONST char       *server = sdataPtr->server;
+    Dbi_Pool         *pool;
+    Dbi_Handle       *handle;
+    Dbi_Statement    *stmt;
+    Ns_DString        ds;
+    DBI_EXEC_STATUS   dbistat;
+    CONST char       *values[DBI_MAX_BIND];
+    unsigned int      lengths[DBI_MAX_BIND];
+    Ns_Conn          *conn = NULL;
+    char             *sql, *array = NULL, *setid = NULL;
+    Tcl_Obj          *sqlObj, *poolObj = NULL;
+    Ns_Time           time, *timeoutPtr = NULL;
+    int               cmd, length, n, nrows, status = TCL_OK;
 
     Ns_ObjvSpec opts[] = {
         {"-pool",      Ns_ObjvObj,    &poolObj,    NULL},
@@ -200,7 +171,7 @@ TclDbiCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
         {NULL, NULL, NULL, NULL}
     };
     Ns_ObjvSpec args[] = {
-        {"statement", Ns_ObjvObj, &stmtObj, NULL},
+        {"sql",        Ns_ObjvObj, &sqlObj, NULL},
         {NULL, NULL, NULL, NULL}
     };
 
@@ -281,17 +252,6 @@ TclDbiCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
         if (Ns_ParseObjv(opts, args, interp, 2, objc, objv) != NS_OK) {
             return TCL_ERROR;
         }
-        memset(&bind, 0, sizeof(bind));
-
-        /*
-         * Convert the SQL statement to a stmt obj internal rep if
-         * not already cached.
-         */
-
-        if (stmtObj->typePtr != &stmtType) {
-            (void) SetStmtFromAny(interp, stmtObj);
-        }
-        stmt = stmtObj->internalRep.otherValuePtr;
 
         /*
          * Grab a free handle.
@@ -317,9 +277,10 @@ TclDbiCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
          * Prepare the statement for our handle.
          */
 
-        if (Dbi_StatementPrepare(handle, stmt) != NS_OK) {
-            status = Exception(interp, Dbi_ExceptionCode(handle),
-                               Dbi_ExceptionMsg(handle));
+        sql = Tcl_GetStringFromObj(sqlObj, &length);
+        stmt = Dbi_Prepare(handle, sql, length);
+        if (stmt == NULL) {
+            status = SqlException(interp, handle);
             Dbi_ResetException(handle);
             goto done;
         }
@@ -328,7 +289,9 @@ TclDbiCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
          * Bind values to variable as required.
          */
 
-        if ((status = BindVars(interp, stmt, &bind, array, setid)) != TCL_OK) {
+        n = BindVars(interp, stmt, values, lengths, array, setid);
+        if (n < 0) {
+            status = TCL_ERROR;
             goto done;
         }
 
@@ -336,14 +299,15 @@ TclDbiCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
          * Execute the statement.
          */
 
-        dbistat = Dbi_Exec(handle, stmt, &bind, &ncols, &nrows);
+        dbistat = Dbi_Exec(handle, stmt, n ? values : NULL, n ? lengths : NULL);
 
         if (dbistat == DBI_EXEC_ERROR) {
-            status = Exception(interp, Dbi_ExceptionCode(handle),
-                               Dbi_ExceptionMsg(handle));
+            status = SqlException(interp, handle);
             Dbi_ResetException(handle);
             goto done;
         }
+
+        nrows = Dbi_NumRows(handle);
 
         /*
          * The query commands are assertions about the result set.
@@ -464,7 +428,7 @@ GetPool(ServerData *sdataPtr, Tcl_Interp *interp, Tcl_Obj *poolObj)
  *      of the dictionary if given, or local variables otherwise.
  *
  * Results:
- *      TCL_OK or TCL_ERROR;
+ *      Number of variables bound, or -1 on error.
  *
  * Side effects:
  *      Error message may be left in interp.
@@ -473,45 +437,57 @@ GetPool(ServerData *sdataPtr, Tcl_Interp *interp, Tcl_Obj *poolObj)
  */
 
 static int
-BindVars(Tcl_Interp *interp, Dbi_Statement *stmt, Dbi_Bind *bind,
+BindVars(Tcl_Interp *interp, Dbi_Statement *stmt,
+         CONST char **values, unsigned int *lengths,
          char *array, char *setid)
 {
     Ns_Set         *set = NULL;
     Tcl_Obj        *valObjPtr;
     CONST char     *key, *value;
-    int             len, idx;
+    int             i, nbind, length;
+
+    nbind = Dbi_GetNumVariables(stmt);
+    if (nbind == 0) {
+        return 0;
+    }
 
     if (setid != NULL) {
         if (Ns_TclGetSet2(interp, setid, &set) != TCL_OK) {
-            return TCL_ERROR;
+            return -1;
         }
     }
 
-    idx = 0;
-    while (Dbi_GetBindVariable(stmt, idx, &key) == NS_OK) {
+    for (i = 0; i < nbind; i++) {
+
+        if (Dbi_GetBindVariable(stmt, i, &key) != NS_OK) {
+            Ns_Log(Bug, "dbi: BindVars: bind variable out of range");
+            return -1;
+        }
+
         value = NULL;
 
         if (set != NULL) {
             if ((value = Ns_SetGet(set, key)) != NULL) {
-                len = strlen(value);
+                length = strlen(value);
             }
         } else {
             valObjPtr = Tcl_GetVar2Ex(interp, array ? array : key,
                                       array ? key : NULL, TCL_LEAVE_ERR_MSG);
             if (valObjPtr != NULL) {
-                value = Tcl_GetStringFromObj(valObjPtr, &len);
+                value = Tcl_GetStringFromObj(valObjPtr, &length);
             }
         }
         if (value == NULL) {
             Tcl_AddObjErrorInfo(interp, "\ndbi: bind variable not found: ", -1);
             Tcl_AddObjErrorInfo(interp, key, -1);
-            return TCL_ERROR;
+            return -1;
         }
-        Dbi_SetBindValue(bind, idx, value, len);
-        idx++;
+
+        values[i] = value;
+        lengths[i] = length;
     }
 
-    return TCL_OK;
+    return nbind;
 }
 
 
@@ -588,119 +564,4 @@ Exception(Tcl_Interp *interp, CONST char *code, CONST char *msg)
     Tcl_SetStringObj(Tcl_GetObjResult(interp), msg, -1);
 
     return TCL_ERROR;
-}
-
-
-/*
- *----------------------------------------------------------------------
- * FreeStmt --
- *
- *     This procedure is called to delete the internal rep of a
- *     statement Tcl object.
- *
- * Results:
- *      None.
- *
- * Side effects:
- *      The internal representation of the given object is deleted..
- *
- *----------------------------------------------------------------------
- */
-
-static void
-FreeStmt(Tcl_Obj *objPtr)
-{
-    Dbi_Statement *stmt;
-
-    stmt = objPtr->internalRep.otherValuePtr;
-    Dbi_StatementFree(stmt);
-}
-
-
-/*
- *----------------------------------------------------------------------
- * DupStmt --
- *
- *     This procedure is called to copy the internal rep of a statement
- *     Tcl object to another object.
- *
- * Results:
- *      None.
- *
- * Side effects:
- *      The internal representation of the target object is updated
- *      and the type is set.
- *
- *----------------------------------------------------------------------
- */
-
-static void
-DupStmt(Tcl_Obj *srcObjPtr, Tcl_Obj *dupObjPtr)
-{
-    Dbi_Statement *stmt, *srcStmt;
-    CONST char    *sql;
-    int            len;
-
-    srcStmt = srcObjPtr->internalRep.otherValuePtr;
-    sql = Dbi_StatementSQL(srcStmt, &len);
-    stmt = Dbi_StatementAlloc(sql, len);
-    Ns_TclSetOtherValuePtr(dupObjPtr, &stmtType, stmt);
-}
-
-
-/*
- *----------------------------------------------------------------------
- * UpdateStringOfStmt --
- *
- *     This procedure is called to convert a Tcl object from statement
- *     internal form to it's string form: the original sql string.
- *
- * Results:
- *      None.
- *
- * Side effects:
- *      The string representation of the object is updated.
- *
- *----------------------------------------------------------------------
- */
-
-static void
-UpdateStringOfStmt(Tcl_Obj *objPtr)
-{
-    Dbi_Statement  *stmt;
-    CONST char     *sql;
-    int             len;
-
-    stmt = objPtr->internalRep.otherValuePtr;
-    sql = Dbi_StatementSQL(stmt, &len);
-    Ns_TclSetStringRep(objPtr, sql, len);
-}
-
-
-/*
- *----------------------------------------------------------------------
- * SetStmtFromAny --
- *
- *      Attempt to convert a Tcl object to dbi:statement type.
- *
- * Results:
- *      Always TCL_OK.
- *
- * Side effects:
- *      None.
- *
- *----------------------------------------------------------------------
- */
-
-static int
-SetStmtFromAny(Tcl_Interp *interp, Tcl_Obj *objPtr)
-{
-    Dbi_Statement *stmt;
-    char          *string;
-    int            len;
-
-    string = Tcl_GetStringFromObj(objPtr, &len);
-    stmt = Dbi_StatementAlloc(string, len);
-    Ns_TclSetOtherValuePtr(objPtr, &stmtType, stmt);
-    return TCL_OK;
 }

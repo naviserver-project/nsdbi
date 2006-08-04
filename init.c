@@ -126,11 +126,20 @@ typedef struct Handle {
 
 typedef struct Statement {
     unsigned int      id;           /* Unique (per handle) statement ID. */
-    Tcl_HashEntry    *hPtr;         /* Entry in the id table. */
     unsigned int      nqueries;     /* Total queries for this statement. */
     void             *arg;          /* Statement context for driver. */
+
+    Handle           *handlePtr;    /* Handle this Statement belongs to. */
+    Tcl_HashEntry    *hPtr;         /* Entry in the id table. */
+
+    Tcl_HashTable     bindTable;    /* Bind variables by name. */
+    int               nbind;        /* Number of bind variables. */
+    struct {
+        CONST char   *name;         /* (Hash table key) */
+    } vars[DBI_MAX_BIND];           /* Bind variables by index. */
+
     int               length;       /* Length of sql. */
-    char              sql[1];       /* Driver specific SQL. */
+    char              sql[1];  /* Driver specific SQL. */
 } Statement;
 
 
@@ -148,9 +157,11 @@ static int CloseIfStale(Handle *, time_t now) NS_GNUC_NONNULL(1);
 static int Connect(Handle *) NS_GNUC_NONNULL(1);
 static int Connected(Handle *handlePtr) NS_GNUC_NONNULL(1);
 static void CheckPool(Pool *poolPtr, int stale) NS_GNUC_NONNULL(1);
+static Statement *ParseBindVars(Handle *handlePtr, CONST char *sql, int length);
+static int DefineBindVar(Statement *stmtPtr, CONST char *name, Ns_DString *dsPtr);
 
 static Ns_Callback FreeStatement;
-static void FlushStatements(Ns_Cache *);
+static void CloseStatements(Ns_Cache *);
 
 static Ns_Callback     ScheduledPoolCheck;
 static Ns_ArgProc      PoolCheckArgProc;
@@ -218,7 +229,6 @@ Dbi_RegisterDriver(CONST char *server, CONST char *module,
     if (!once) {
         once = 1;
 
-        DbiInitTclObjTypes();
         Ns_ClsAlloc(&handleCls, (Ns_Callback *) Dbi_PutHandle);
         Ns_RegisterProcInfo(ScheduledPoolCheck, "dbi:check", PoolCheckArgProc);
 
@@ -628,6 +638,126 @@ Dbi_ReleaseConnHandles(Ns_Conn *conn)
 /*
  *----------------------------------------------------------------------
  *
+ * Dbi_Prepare --
+ *
+ *      Parse the sql for bind variables.
+ *
+ * Results:
+ *      NS_ERROR if max bind variables exceeded.
+ *
+ * Side effects:
+ *      Statement is parsed by driver callback and any bind variables
+ *      are converted to driver specific notation.
+ *
+ *      Statement is cached for handle.
+ *
+ *----------------------------------------------------------------------
+ */
+
+Dbi_Statement *
+Dbi_Prepare(Dbi_Handle *handle, CONST char *sql, int length)
+{
+    Handle          *handlePtr = (Handle *) handle;
+    Dbi_Driver      *driver    = handlePtr->poolPtr->driver;
+    Statement       *stmtPtr;
+    Ns_Entry        *entry;
+    int              new;
+
+    /*
+     * Find the statement in the handle cache.
+     */
+
+    entry = Ns_CacheCreateEntry(handlePtr->cache, sql, &new);
+    if (new) {
+        if ((stmtPtr = ParseBindVars(handlePtr, sql, length)) == NULL) {
+            Ns_CacheFlushEntry(entry);
+            return NULL;
+        }
+        Ns_CacheSetValueSz(entry, stmtPtr, sizeof(Statement) + stmtPtr->length);
+    } else {
+        stmtPtr = Ns_CacheGetValue(entry);
+    }
+
+    /*
+     * Prepare the query.
+     */
+
+    if (stmtPtr->arg == NULL) {
+
+        DbiLog(handle, Debug, "Dbi_Prepare: calling Dbi_PrepareProc: id: %u nqueries: %d",
+               stmtPtr->id, stmtPtr->nqueries);
+
+        if ((*driver->prepareProc)(handle, stmtPtr->sql, stmtPtr->length,
+                                   stmtPtr->id, stmtPtr->nqueries,
+                                   &stmtPtr->arg, driver->arg) != NS_OK) {
+            return NULL;
+        }
+    }
+
+    return (Dbi_Statement *) stmtPtr;
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * Dbi_GetNumVariables --
+ *
+ *      Return the number of bind variables found in the prepared
+ *      statement.
+ *
+ * Results:
+ *      Zero or more variables.
+ *
+ * Side effects:
+ *      None.
+ *
+ *----------------------------------------------------------------------
+ */
+
+int
+Dbi_GetNumVariables(Dbi_Statement *stmt)
+{
+    return ((Statement *) stmt)->nbind;
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * Dbi_GetBindVariable --
+ *
+ *      Get the name of the bind variable at the given index.
+ *
+ *      Called by user code after a Dbi_Prepare to identify variables
+ *      which need bound.
+ *
+ * Results:
+ *      NS_OK if exists, NS_ERROR otherwise.
+ *
+ * Side effects:
+ *      None.
+ *
+ *----------------------------------------------------------------------
+ */
+
+int
+Dbi_GetBindVariable(Dbi_Statement *stmt, int idx, CONST char **namePtr)
+{
+    Statement *stmtPtr = (Statement *) stmt;
+
+    if (idx < 0 || idx >= stmtPtr->nbind) {
+        return NS_ERROR;
+    }
+    *namePtr = stmtPtr->vars[idx].name;
+
+    return NS_OK;
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
  * Dbi_Exec --
  *
  *      Execute an SQL statement.
@@ -644,66 +774,33 @@ Dbi_ReleaseConnHandles(Ns_Conn *conn)
  */
 
 DBI_EXEC_STATUS
-Dbi_Exec(Dbi_Handle *handle, Dbi_Statement *stmt, Dbi_Bind *bind,
-         int *ncolsPtr, int *nrowsPtr)
+Dbi_Exec(Dbi_Handle *handle, Dbi_Statement *stmt,
+         CONST char **values, unsigned int *lengths)
 {
+    Statement       *stmtPtr   = (Statement *) stmt;
     Handle          *handlePtr = (Handle *) handle;
     Dbi_Driver      *driver    = handlePtr->poolPtr->driver;
-    Statement       *stmtPtr;
-    Ns_Entry        *entry;
-    int              new;
     DBI_EXEC_STATUS  status;
 
-    /*
-     * Find the statement in the handle cache.
-     */
-
-    entry = Ns_CacheCreateEntry(handlePtr->cache, stmt->sql, &new);
-    if (new) {
-        stmtPtr = ns_calloc(1, sizeof(Statement) + stmt->length);
-        stmtPtr->id = ++handlePtr->stmtid;
-        strcpy(stmtPtr->sql, stmt->sql);
-        Ns_CacheSetValueSz(entry, stmtPtr, sizeof(Statement) + stmt->length);
-    } else {
-        stmtPtr = Ns_CacheGetValue(entry);
-    }
-
-    /*
-     * Prepare the query.
-     */
-
-    if (stmtPtr->arg == NULL) {
-
-        DbiLog(handle, Debug, "Dbi_Exec: calling Dbi_PrepareProc: id: %u nqueries: %d",
-               stmtPtr->id, stmtPtr->nqueries);
-
-        if ((*driver->prepareProc)(handle, stmtPtr->sql, stmtPtr->length,
-                                   stmtPtr->id, stmtPtr->nqueries,
-                                   &stmtPtr->arg, driver->arg) != NS_OK) {
-            return DBI_EXEC_ERROR;
-        }
-    }
-
-    /*
-     * Execute the query.
-     */
-
     DbiLog(handle, Debug, "Dbi_Exec: calling Dbi_ExecProc: bound: %d sql: %s",
-           bind->nbound, stmtPtr->sql);
+           stmtPtr->nbind, stmtPtr->sql);
 
-    *ncolsPtr = 0;
-    *nrowsPtr = 0;
-    status = (*driver->execProc)(handle, stmt, bind,
-                                 ncolsPtr, nrowsPtr,
+    if (stmtPtr->nbind > 0
+        && (values == NULL || lengths == NULL)) {
+        Dbi_SetException(handle, "DBI",
+            "bug: bind variables not bound with values");
+    }
+
+    status = (*driver->execProc)(handle, stmtPtr->sql, stmtPtr->length,
+                                 values, lengths, stmtPtr->nbind,
+                                 &handlePtr->numCols, &handlePtr->numRows,
                                  stmtPtr->arg, driver->arg);
-    handlePtr->numCols = *ncolsPtr;
-    handlePtr->numRows = *nrowsPtr;
     handlePtr->stats.queries++;
     stmtPtr->nqueries++;
 
     if (status == DBI_EXEC_ROWS) {
         handlePtr->fetchingRows = NS_TRUE;
-        if (!*ncolsPtr) {
+        if (handlePtr->numCols < 1) {
             Dbi_SetException(handle, "DBI",
                 "bug: driver returned rows but failed to set number of columns");
             return DBI_EXEC_ERROR;
@@ -711,6 +808,35 @@ Dbi_Exec(Dbi_Handle *handle, Dbi_Statement *stmt, Dbi_Bind *bind,
     }
 
     return status;
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * Dbi_NumColumns, Dbi_NumRows --
+ *
+ *      Return the number of columns or rows.
+ *
+ * Results:
+ *      Number of columns or rows. 0 if none.
+ *
+ * Side effects:
+ *      None.
+ *
+ *----------------------------------------------------------------------
+ */
+
+int
+Dbi_NumColumns(Dbi_Handle *handle)
+{
+    return ((Handle *) handle)->numCols;
+}
+
+int
+Dbi_NumRows(Dbi_Handle *handle)
+{
+    return ((Handle *) handle)->numRows;
 }
 
 
@@ -928,7 +1054,7 @@ Dbi_Stats(Ns_DString *dest, Dbi_Pool *pool)
  *
  * Dbi_PoolName, Dbi_DriverName, Dbi_DatabaseName --
  *
- *      Return the string name of the driver or the database type.
+ *      Return the string name of the pool, the driver or the database.
  *
  * Results:
  *      String name.
@@ -982,10 +1108,9 @@ Dbi_SetException(Dbi_Handle *handle, CONST char *sqlstate, CONST char *fmt, ...)
     va_list      ap;
     int          len;
 
-    if (sqlstate != NULL) {
-        strncpy(handlePtr->cExceptionCode, sqlstate, 6);
-        handlePtr->cExceptionCode[5] = '\0';
-    }
+    strncpy(handlePtr->cExceptionCode, sqlstate, 6);
+    handlePtr->cExceptionCode[5] = '\0';
+
     if (fmt != NULL) {
         Ns_DStringTrunc(ds, 0);
         va_start(ap, fmt);
@@ -1220,7 +1345,7 @@ CloseIfStale(Handle *handlePtr, time_t now)
             DbiLog(handle, Notice, "closing %s handle, %d queries",
                    reason, handlePtr->stats.queries);
 
-            FlushStatements(handlePtr->cache);
+            CloseStatements(handlePtr->cache);
 
             (*driver->closeProc)(handle, driver->arg);
             handle->arg = NULL;
@@ -1458,7 +1583,7 @@ Connected(Handle *handlePtr)
  *      None.
  *
  * Side effects:
- *      None.
+ *      Calls the driver's Dbi_PrepareCloseProc.
  *
  *----------------------------------------------------------------------
  */
@@ -1466,9 +1591,17 @@ Connected(Handle *handlePtr)
 static void
 FreeStatement(void *arg)
 {
-    Statement *stmtPtr   = arg;
+    Statement  *stmtPtr = arg;
+    Dbi_Driver *driver;
 
-    Ns_Log(Warning, "FreeStatement: id: %u", stmtPtr->id);
+    Tcl_DeleteHashTable(&stmtPtr->bindTable);
+    if (stmtPtr->arg != NULL) {
+        DbiLog(stmtPtr->handlePtr, Debug,
+               "FreeStatement: calling Dbi_PrepareCloseProc: id: %u nqueries: %u",
+               stmtPtr->id, stmtPtr->nqueries);
+        driver = stmtPtr->handlePtr->poolPtr->driver;
+        (*driver->prepareCloseProc)(stmtPtr->arg, driver->arg);
+    }
     ns_free(stmtPtr);
 }
 
@@ -1476,9 +1609,11 @@ FreeStatement(void *arg)
 /*
  *----------------------------------------------------------------------
  *
- * FlushStatements --
+ * CloseStatements --
  *
- *      Call the driver proc for each prepared statement in the cache.
+ *      Call the driver proc for each prepared statement in the cache,
+ *      but don't flush the cache entries.
+ *
  *      This is called just before a handle is closed.
  *
  * Results:
@@ -1491,20 +1626,180 @@ FreeStatement(void *arg)
  */
 
 static void
-FlushStatements(Ns_Cache *cache)
+CloseStatements(Ns_Cache *cache)
 {
     Ns_CacheSearch  search;
     Ns_Entry       *entry;
     Statement      *stmtPtr;
+    Dbi_Driver     *driver;
 
     entry = Ns_CacheFirstEntry(cache, &search);
     while (entry != NULL) {
         stmtPtr = Ns_CacheGetValue(entry);
         if (stmtPtr->arg != NULL) {
-            Ns_Log(Debug, "nsdbi: FlushStatements: calling Dbi_PrepareCloseProc: "
-                   "id: %u nqueries: %u",
+            DbiLog(stmtPtr->handlePtr, Debug,
+                   "CloseStatements: calling Dbi_PrepareCloseProc: id: %u nqueries: %u",
                    stmtPtr->id, stmtPtr->nqueries);
+            driver = stmtPtr->handlePtr->poolPtr->driver;
+            (*driver->prepareCloseProc)(stmtPtr->arg, driver->arg);
         }
         entry = Ns_CacheNextEntry(&search);
     }
+}
+
+
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * ParseBindVars --
+ *
+ *      Parse the given SQL string for bind variables of the form :name
+ *      and call the driver for a replacement string.  Store the
+ *      identified bind variables in a hash table of keys.
+ *
+ * Results:
+ *      New Statement pointer or NULL if max bind variables exceeded.
+ *
+ * Side effects:
+ *      Memory for Statement is allocated.
+ *
+ *----------------------------------------------------------------------
+ */
+
+static Statement *
+ParseBindVars(Handle *handlePtr, CONST char *origSql, int origLength)
+{
+    Statement  *stmtPtr = NULL;
+    Ns_DString  ds, origDs;
+    char        save, *sql, *p, *chunk, *bind;
+    int         len, isQuoted, status = NS_OK;
+
+#define preveq(c) (p != sql && *(p-1) == (c))
+#define nexteq(c) (*(p+1) == (c))
+
+    /*
+     * Allocate a new Statement. Allocate a little extra memory
+     * for driver notation which may be (but is unlikely to be)
+     * larger than the original. Check for overrun at the end.
+     */
+
+    stmtPtr = ns_calloc(1, sizeof(Statement) + origLength + 32);
+    stmtPtr->handlePtr = handlePtr;
+    Tcl_InitHashTable(&stmtPtr->bindTable, TCL_STRING_KEYS);
+
+    /*
+     * Save a copy of the orginal sql to chop up.
+     */
+
+    Ns_DStringInit(&ds);
+    Ns_DStringInit(&origDs);
+    Ns_DStringNAppend(&origDs, origSql, origLength);
+
+    sql = Ns_DStringValue(&origDs);
+    len = Ns_DStringLength(&origDs);
+
+    p = sql;
+    chunk = sql;
+    bind = NULL;
+    isQuoted = 0;
+
+    while (len > 0) {
+
+        if (*p == ':' && !isQuoted && !nexteq(':') && !preveq(':') && !preveq('\\')) {
+            /* found the start of what looks like a bind variable */
+            bind = p;
+        } else if (*p == '\'' && bind == NULL) {
+            if (p == sql || !preveq('\\')) {
+                isQuoted = !isQuoted;
+            }
+        } else if (bind != NULL) {
+            if (!(isalnum((int)*p) || *p == '_') && p > bind) {
+                /* End of bind var. Append the preceding chunk. */
+                *bind = '\0';
+                Ns_DStringNAppend(&ds, chunk, bind - chunk);
+                chunk = p;
+                /* Now substitute the bind var. */
+                ++bind;     /* beginning of bind var */
+                save = *p;
+                *p = '\0';  /* end of bind var */
+                if ((status = DefineBindVar(stmtPtr, bind, &ds))
+                    != NS_OK) {
+                    goto done;
+                }
+                *p = save;
+                bind = NULL;
+            }
+        }
+        ++p;
+        --len;
+    }
+    /* append remaining chunk */
+    Ns_DStringNAppend(&ds, chunk, bind ? bind - chunk : p - chunk);
+    /* check for trailing bindvar */
+    if (bind != NULL && p > bind) {
+        if ((status = DefineBindVar(stmtPtr, ++bind, &ds))
+            != NS_OK) {
+            goto done;
+        }
+    }
+
+    /*
+     * Check for overrun.
+     */
+
+    if (Ns_DStringLength(&ds) > origLength + 32) {
+        Dbi_SetException((Dbi_Handle *) handlePtr, "HY000",
+                         "bug: not enough memory for bound sql");
+        status = NS_ERROR;
+        goto done;
+    }
+
+ done:
+    if (status == NS_OK) {
+        stmtPtr->id = ++handlePtr->stmtid;
+        strncpy(stmtPtr->sql, Ns_DStringValue(&ds), Ns_DStringLength(&ds));
+        stmtPtr->length = Ns_DStringLength(&ds);
+    } else {
+        Tcl_DeleteHashTable(&stmtPtr->bindTable);
+        ns_free(stmtPtr);
+        stmtPtr = NULL;
+    }
+    Ns_DStringFree(&ds);
+    Ns_DStringFree(&origDs);
+
+    return stmtPtr;
+}
+
+static int
+DefineBindVar(Statement *stmtPtr, CONST char *name, Ns_DString *dsPtr)
+{
+    Dbi_Driver    *driver = stmtPtr->handlePtr->poolPtr->driver;
+    Tcl_HashEntry *hPtr;
+    int            new, index;
+
+    index = stmtPtr->nbind;
+    if (index >= DBI_MAX_BIND) {
+        Dbi_SetException((Dbi_Handle *) stmtPtr->handlePtr,
+                         "HY000", "max bind variables exceeded: %d",
+                         DBI_MAX_BIND);
+        return NS_ERROR;
+    }
+
+    /*
+     * Double count duplicate bind variables as some drivers
+     * only support '?' notation, and they have no way to figure
+     * out that a bind variable is reused within a statement.
+     */
+
+    hPtr = Tcl_CreateHashEntry(&stmtPtr->bindTable, name, &new);
+    if (new) {
+        Tcl_SetHashValue(hPtr, (void *) index);
+    }
+    stmtPtr->vars[index].name = Tcl_GetHashKey(&stmtPtr->bindTable, hPtr);
+    stmtPtr->nbind++;
+
+    (*driver->bindVarProc)(dsPtr, name, index, driver->arg);
+
+    return NS_OK;
 }

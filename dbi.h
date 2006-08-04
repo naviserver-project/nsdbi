@@ -60,7 +60,6 @@ DbiGetServer(CONST char *server)
 Dbi_Driver *
 DbiPoolDriver(Dbi_Pool *pool);
 
-extern void DbiInitTclObjTypes(void);
 extern Ns_TclInterpInitProc DbiInitInterp;
 
 

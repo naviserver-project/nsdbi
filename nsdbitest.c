@@ -312,15 +312,15 @@ PrepareClose(void *stmtArg, void *driverArg)
  */
 
 static DBI_EXEC_STATUS
-Exec(Dbi_Handle *handle, Dbi_Statement *stmt, Dbi_Bind *bind,
+Exec(Dbi_Handle *handle, CONST char *sql, int length,
+     CONST char **values, unsigned int *lengths, int nvalues,
      int *ncolsPtr, int *nrowsPtr,
      void *stmtArg, void *driverArg)
 {
     Connection      *conn = handle->arg;
-    CONST char      *value;
     char             cmd[64];
     DBI_EXEC_STATUS  dbistat = DBI_EXEC_ERROR;
-    int              n, i, length, rest = 0;
+    int              n, i, rest = 0;
 
     assert(STREQ((char *) driverArg, "driver context"));
 
@@ -328,24 +328,21 @@ Exec(Dbi_Handle *handle, Dbi_Statement *stmt, Dbi_Bind *bind,
     assert(conn->connected == NS_TRUE);
     assert(Ns_DStringLength(&conn->ds) == 0);
 
-    assert(bind->nbound >= 0 && bind->nbound <= DBI_MAX_BIND);
-    assert((bind->nbound == 0 && bind->vals[0].value == NULL)
-           || bind->nbound > 0);
+    assert(nvalues <= DBI_MAX_BIND);
+    assert((nvalues == 0 && values == NULL && lengths == NULL)
+           || (nvalues > 0 && values != NULL && lengths != NULL));
 
     assert(ncolsPtr != NULL);
     assert(nrowsPtr != NULL);
 
-    n = sscanf(stmt->sql, "%s %d %d %n", cmd, ncolsPtr, nrowsPtr, &rest);
+    n = sscanf(sql, "%s %d %d %n", cmd, ncolsPtr, nrowsPtr, &rest);
 
     if (n >= 1) {
         if (STREQ(cmd, "DML")) {
             dbistat = DBI_EXEC_DML;
         } else if (STREQ(cmd, "ROWS")) {
-            for (i = 0; i < bind->nbound; i++) {
-                if (Dbi_GetBindValue(bind, i, &value, &length) != NS_OK) {
-                    return DBI_EXEC_ERROR;
-                }
-                Tcl_DStringAppendElement(&conn->ds, value);
+            for (i = 0; i < nvalues; i++) {
+                Tcl_DStringAppendElement(&conn->ds, values[i]);
             }
             dbistat = DBI_EXEC_ROWS;
         } else if (STREQ(cmd, "SLEEP")) {
@@ -360,7 +357,7 @@ Exec(Dbi_Handle *handle, Dbi_Statement *stmt, Dbi_Bind *bind,
     error:
         Dbi_SetException(handle, "TEST", "nsdbitest query syntax error");
     }
-    Tcl_DStringAppendElement(&conn->ds, stmt->sql + rest);
+    Tcl_DStringAppendElement(&conn->ds, sql + rest);
 
     return dbistat;
 }
