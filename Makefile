@@ -35,7 +35,7 @@ NSD         = $(NAVISERVER)/bin/nsd
 MODNAME     = nsdbi
 
 LIB         = nsdbi
-LIBOBJS     = init.o tclcmds.o stmt.o
+LIBOBJS     = init.o tclcmds.o
 HDRS        = dbi.h
 LIBHDRS     = nsdbi.h
 
