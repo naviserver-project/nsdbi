@@ -204,6 +204,10 @@ Dbi_Exec(Dbi_Handle *, Dbi_Statement *,
          CONST char **values, unsigned int *lengths)
     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
 
+NS_EXTERN DBI_EXEC_STATUS
+Dbi_ExecDirect(Dbi_Handle *, CONST char *sql)
+    NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
+
 NS_EXTERN int
 Dbi_NumColumns(Dbi_Handle *handle)
     NS_GNUC_NONNULL(1);

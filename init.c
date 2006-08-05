@@ -706,8 +706,6 @@ Dbi_GetBindVariable(Dbi_Statement *stmt, int idx, CONST char **namePtr)
  *
  * Results:
  *      DBI_EXEC_DML, DBI_EXEC_ROWS, or DBI_EXEC_ERROR.
- *      nrowsPtr updated with rows affected for a DBI_EXEC_DML result.
- *      nrowsPtr and ncolsPtr updated for a DBI_EXEC_ROWS result.
  *
  * Side effects:
  *      SQL is sent to database for evaluation.
@@ -750,6 +748,40 @@ Dbi_Exec(Dbi_Handle *handle, Dbi_Statement *stmt,
     }
 
     return status;
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * Dbi_ExecDirect --
+ *
+ *      Prepare and execute an SQL statement without binding any values.
+ *
+ * Results:
+ *      DBI_EXEC_ROWS, DBI_EXEC_DML, or DBI_EXEC_ERROR.
+ *
+ * Side effects:
+ *      SQL is sent to database for evaluation.
+ *
+ *----------------------------------------------------------------------
+ */
+
+DBI_EXEC_STATUS
+Dbi_ExecDirect(Dbi_Handle *handle, CONST char *sql)
+{
+    Dbi_Statement *stmt;
+    CONST char    *values[DBI_MAX_BIND];
+    unsigned int   lengths[DBI_MAX_BIND];
+
+    stmt = Dbi_Prepare(handle, sql, strlen(sql));
+    if (stmt == NULL) {
+        return DBI_EXEC_ERROR;
+    }
+    memset(&values, 0, sizeof(values));
+    memset(&lengths, 0, sizeof(lengths));
+
+    return Dbi_Exec(handle, stmt, values, lengths);
 }
 
 
