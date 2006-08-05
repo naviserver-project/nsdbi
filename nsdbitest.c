@@ -329,7 +329,7 @@ Exec(Dbi_Handle *handle, CONST char *sql, int length,
     assert(Ns_DStringLength(&conn->ds) == 0);
 
     assert(nvalues <= DBI_MAX_BIND);
-    assert((nvalues == 0 && values == NULL && lengths == NULL)
+    assert(nvalues == 0
            || (nvalues > 0 && values != NULL && lengths != NULL));
 
     assert(ncolsPtr != NULL);

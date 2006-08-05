@@ -75,8 +75,7 @@ typedef struct Dbi_Handle {
 
 
 /*
- * The following define the functions that loadable
- * drivers must implement.
+ * The following functions must be implemented by database drivers.
  */
 
 typedef int
@@ -181,16 +180,11 @@ Dbi_ListPools(Ns_DString *ds, CONST char *server)
     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
 
 NS_EXTERN int
-Dbi_GetHandle(Dbi_Handle **handlePtrPtr, Dbi_Pool *pool, Ns_Conn *conn,
-              Ns_Time *timeoutPtr)
+Dbi_GetHandle(Dbi_Handle **handlePtrPtr, Dbi_Pool *pool, Ns_Time *timeoutPtr)
     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
 
 NS_EXTERN void
 Dbi_PutHandle(Dbi_Handle *handle)
-    NS_GNUC_NONNULL(1);
-
-NS_EXTERN int
-Dbi_ReleaseConnHandles(Ns_Conn *conn)
     NS_GNUC_NONNULL(1);
 
 NS_EXTERN Dbi_Statement *

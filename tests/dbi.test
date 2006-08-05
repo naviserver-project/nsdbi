@@ -16,7 +16,7 @@ test basic-syntax.1 {check the basic syntax and arg handling} -body {
 
 test basic-syntax.2 {check the basic syntax and arg handling} -body {
     dbi ?
-} -returnCodes error -result {bad command "?": must be 0or1row, 1row, bounce, default, dml, info, pools, releasehandles, rows, or stats}
+} -returnCodes error -result {bad command "?": must be 0or1row, 1row, bounce, default, dml, info, pools, rows, stats, or withhandle}
 
 
 
@@ -102,8 +102,6 @@ test 1row-4 {query error} -body {
     dbi 1row {ERROR}
 } -returnCodes error -result {driver error}
 
-
-#dbi_releasehandles
 
 
 test rows-1 {found 1 row, 1 column} -body {
@@ -233,6 +231,22 @@ test bindset-2 {bind missing set} -body {
 test bounce-1 {bounce pool} -body {
     dbi bounce pool1
 } -result {}
+
+
+
+test withhandle-1 {two queries, same handle} -body {
+    dbi withhandle {
+        dbi rows {ROWS 2 2 foo}
+        dbi rows {ROWS 2 2 bar}
+    }
+} -result {bar v v v}
+
+test withhandle-2 {two queries, same handle, global pool} -body {
+    dbi withhandle -pool global1 {
+        dbi rows {ROWS 2 2 foo}
+        dbi rows {ROWS 2 2 bar}
+    }
+} -result {bar v v v}
 
 
 

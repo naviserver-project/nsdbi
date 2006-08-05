@@ -107,7 +107,6 @@ typedef struct Handle {
     /* Private to a Handle. */
 
     struct Handle    *nextPtr;      /* Next handle in the pool. */
-    Ns_Conn          *conn;         /* Conn that handle is cached for, if any. */
     char              cExceptionCode[6];
     Ns_DString        dsExceptionMsg;
     time_t            otime;        /* Time when handle was connected to db. */
@@ -153,7 +152,7 @@ typedef struct Statement {
     } vars[DBI_MAX_BIND];           /* Bind variables by index. */
 
     int               length;       /* Length of sql. */
-    char              sql[1];  /* Driver specific SQL. */
+    char              sql[1];       /* Driver specific SQL. */
 } Statement;
 
 
@@ -187,7 +186,6 @@ static Ns_ShutdownProc AtShutdown;
  */
 
 static Tcl_HashTable  serversTable;
-static Ns_Cls         handleCls; /* Cache a single handle for current socket conn. */
 
 
 
@@ -237,16 +235,14 @@ Dbi_RegisterDriver(CONST char *server, CONST char *module,
     }
 
     /*
-     * Initialise the nsdbi library. Gather list of servers now for
-     * the benfit of global modules.
+     * Initialise the nsdbi library.
+     * Gather list of servers now for the benfit of global modules.
      */
 
     if (!once) {
         once = 1;
 
-        Ns_ClsAlloc(&handleCls, (Ns_Callback *) Dbi_PutHandle);
         Ns_RegisterProcInfo(ScheduledPoolCheck, "dbi:check", PoolCheckArgProc);
-
         Tcl_InitHashTable(&serversTable, TCL_STRING_KEYS);
 
         set = Ns_ConfigGetSection("ns/servers");
@@ -457,7 +453,7 @@ Dbi_ListPools(Ns_DString *ds, CONST char *server)
  *      seconds.
  *
  * Results:
- *      NS_OK / NS_TIMEOUT / NS_ERROR.
+ *      NS_OK, NS_TIMEOUT or NS_ERROR.
  *
  * Side effects:
  *      Database may be opened if needed.
@@ -466,26 +462,12 @@ Dbi_ListPools(Ns_DString *ds, CONST char *server)
  */
 
 int
-Dbi_GetHandle(Dbi_Handle **handlePtrPtr, Dbi_Pool *pool, Ns_Conn *conn,
-              Ns_Time *timeoutPtr)
+Dbi_GetHandle(Dbi_Handle **handlePtrPtr, Dbi_Pool *pool, Ns_Time *timeoutPtr)
 {
     Pool       *poolPtr = (Pool *) pool;
     Handle     *handlePtr;
-    Dbi_Handle *handle;
     Ns_Time     time;
     int         status;
-
-    /*
-     * Check the conn for a cached handle first.
-     */
-
-    if (conn != NULL && (handle = Ns_ClsGet(&handleCls, conn)) != NULL) {
-        if (handle->pool == pool) {
-            *handlePtrPtr = handle;
-            return NS_OK;
-        }
-        Dbi_PutHandle(handle);
-    }
 
     /*
      * Wait until this thread can be the exclusive thread aquiring
@@ -539,16 +521,8 @@ Dbi_GetHandle(Dbi_Handle **handlePtrPtr, Dbi_Pool *pool, Ns_Conn *conn,
         }
     }
 
-    /*
-     * Return the handle and cache for the current connection.
-     */
-
     if (status == NS_OK) {
         *handlePtrPtr = (Dbi_Handle *) handlePtr;
-        if (conn != NULL) {
-            handlePtr->conn = conn;
-            Ns_ClsSet(&handleCls, conn, handlePtr);
-        }
     }
 
     return status;
@@ -566,7 +540,7 @@ Dbi_GetHandle(Dbi_Handle **handlePtrPtr, Dbi_Pool *pool, Ns_Conn *conn,
  *      None.
  *
  * Side effects:
- *      Handle is reset and possibly closed as required.
+ *      Handle is reset and closed as required.
  *
  *----------------------------------------------------------------------
  */
@@ -579,19 +553,13 @@ Dbi_PutHandle(Dbi_Handle *handle)
     time_t   now;
 
     /*
-     * Remove from connection cache.
-     */
-
-    if (handlePtr->conn != NULL) {
-        Ns_ClsSet(&handleCls, handlePtr->conn, NULL);
-        handlePtr->conn = NULL;
-    }
-
-    /*
      * Cleanup the handle.
      */
 
-    Dbi_Reset(handle);
+    if (Dbi_Reset(handle) != NS_OK) {
+        /* Force the handle closed...? */
+        Ns_Log(Warning, "Dbi_PutHandle: Reset failed...");
+    }
 
     /*
      * Close the handle if it's stale, otherwise update
@@ -606,38 +574,6 @@ Dbi_PutHandle(Dbi_Handle *handle)
     ReturnHandle(handlePtr);
     Ns_CondSignal(&poolPtr->getCond);
     Ns_MutexUnlock(&poolPtr->lock);
-}
-
-
-/*
- *----------------------------------------------------------------------
- *
- * Dbi_ReleaseConnHandles --
- *
- *      Return any cached handles for the given conn back to their
- *      pools.
- *
- * Results:
- *      Number of cached handles returned.
- *
- * Side effects:
- *      See Dbi_PutHandle.
- *
- *----------------------------------------------------------------------
- */
-
-int
-Dbi_ReleaseConnHandles(Ns_Conn *conn)
-{
-    Dbi_Handle *handle;
-    int         nhandles = 0;
-
-    handle = Ns_ClsGet(&handleCls, conn);
-    if (handle != NULL) {
-        Dbi_PutHandle(handle);
-        nhandles = 1;
-    }
-    return nhandles;
 }
 
 
@@ -923,7 +859,8 @@ Dbi_NextValue(Dbi_Handle *handle, CONST char **valuePtr, int *vlengthPtr,
  *
  * Dbi_Flush --
  *
- *      Flush any pending rows.
+ *      Ready the handle for new queries by flushing any pending rows
+ *      and resetting the exception code.
  *
  * Results:
  *      NS_OK or NS_ERROR.
@@ -951,6 +888,8 @@ Dbi_Flush(Dbi_Handle  *handle)
     handlePtr->numCols = handlePtr->numRows = 0;
     handlePtr->currentCol = handlePtr->currentRow = 0;
     handlePtr->fetchingRows = NS_FALSE;
+
+    Dbi_ResetException(handle);
 }
 
 
@@ -959,14 +898,15 @@ Dbi_Flush(Dbi_Handle  *handle)
  *
  * Dbi_Reset --
  *
- *      Reset a handle.
+ *      Reset a handle to it's default state, closing any open
+ *      transactions.
  *
  * Results:
  *      NS_OK if handle reset, NS_ERROR if reset failed and handle
- *      should be returned to pool.
+ *      should be returned to pool, e.g. because the connection died.
  *
  * Side effects:
- *      Depends on driver.
+ *      Calls Dbi_Flush.
  *
  *----------------------------------------------------------------------
  */
@@ -977,8 +917,9 @@ Dbi_Reset(Dbi_Handle *handle)
     Dbi_Driver *driver = ((Handle *) handle)->poolPtr->driver;
     int         status;
 
-    DbiLog(handle, Debug, "%s", "Dbi_Reset: calling Dbi_ResetProc");
+    Dbi_Flush(handle);
 
+    DbiLog(handle, Debug, "%s", "Dbi_Reset: calling Dbi_ResetProc");
     status = (*driver->resetProc)(handle, driver->arg);
 
     if (Dbi_ExceptionPending(handle)) {
@@ -1329,7 +1270,9 @@ CloseIfStale(Handle *handlePtr, time_t now)
     char       *reason  = NULL;
 
     if (Connected(handlePtr)) {
-        if (poolPtr->stale_on_close > handlePtr->stale_on_close) {
+        if (poolPtr->stopping) {
+            reason = "stopped";
+        } else if (poolPtr->stale_on_close > handlePtr->stale_on_close) {
             reason = "bounced";
         } else if (poolPtr->maxopen && (handlePtr->otime < (now - poolPtr->maxopen))) {
             reason = "aged";
@@ -1577,7 +1520,7 @@ Connected(Handle *handlePtr)
  *
  * FreeStatement --
  *
- *      Cache callback to free a prepared statement.
+ *      Cache eviction callback to free a prepared statement.
  *
  * Results:
  *      None.
