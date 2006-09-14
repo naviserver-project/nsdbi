@@ -48,6 +48,7 @@ typedef struct InterpData {
     Tcl_Interp       *interp;
     CONST char       *server;
     Dbi_Handle       *handle;
+    int               transaction;
 } InterpData;
 
 /*
@@ -156,11 +157,11 @@ TclDbiCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
 
     static CONST char *cmds[] = {
         "0or1row", "1row", "bounce", "default", "dml", "info",
-        "pools", "rows", "stats", "withhandle", NULL
+        "pools", "rows", "stats", "transaction", "withhandle", NULL
     };
     enum CmdIdx {
         C0or1rowCmd, C1rowCmd, CBounceCmd, CDefaultCmd, CDmlCmd, CInfoCmd,
-        CPoolsCmd, CRowsCmd, CStatsCmd, CWithHandleCmd
+        CPoolsCmd, CRowsCmd, CStatsCmd, CTransactionCmd, CWithHandleCmd
     };
     if (objc < 2) {
         Tcl_WrongNumArgs(interp, 1, objv, "command ?args?");
@@ -272,9 +273,11 @@ TclDbiCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
     }
         break;
 
+    case CTransactionCmd:
     case CWithHandleCmd: {
 
-        Tcl_Obj *scriptObj;
+        Tcl_Obj         *scriptObj;
+        DBI_EXEC_STATUS  dbistat;
 
         Ns_ObjvSpec opts[] = {
             {"-pool",     Ns_ObjvObj,   &poolObj,    NULL},
@@ -291,31 +294,75 @@ TclDbiCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
         }
 
         /*
-         * Don't allow nested calls: we only cache one handle at a time.
+         * Don't allow nested calls to this Tcl command.  We might support
+         * true nested transactions one day and don't want people getting
+         * the wrong idea.
          */
 
         if (idataPtr->handle != NULL) {
             Tcl_AppendResult(interp, "nested call to ",
+                             Tcl_GetString(objv[0]), " ",
                              Tcl_GetString(objv[1]), NULL);
             return TCL_ERROR;
         }
 
         /*
-         * 1) Grab a free handle and cache it.
-         * 2) Execute the script.
-         * 3) Return the handle.
+         * Grab a free handle.
          */
 
         if ((pool = GetPool(idataPtr, poolObj)) == NULL
             || (handle = GetHandle(idataPtr, pool, timeoutPtr)) == NULL) {
             return TCL_ERROR;
         }
-        idataPtr->handle = handle;
 
+
+        if (cmd == CTransactionCmd) {
+
+            /*
+             * Start a transaction.
+             */
+
+            dbistat = Dbi_ExecDirect(handle, "begin transaction");
+            if (dbistat != DBI_EXEC_DML) {
+                SqlError(interp, handle);
+                Dbi_PutHandle(handle);
+                return TCL_ERROR;
+            }
+            Dbi_Flush(handle);
+            idataPtr->transaction = 1;
+        }
+
+        /*
+         * Cache the handle and run the script.
+         */
+
+        idataPtr->handle = handle;
         status = Tcl_EvalObjEx(interp, scriptObj, 0);
+        idataPtr->handle = NULL;
+        idataPtr->transaction = 0;
+
+        /*
+         * Commit or rollback an active transaction.
+         */
+
+        if (cmd == CTransactionCmd) {
+            if (status != TCL_OK) {
+                Tcl_AddErrorInfo(interp, "\n    dbi transaction status:\nrollback");
+                dbistat = Dbi_ExecDirect(handle, "rollback");
+                if (dbistat != DBI_EXEC_DML) {
+                    SqlError(interp, handle);
+                    status = TCL_ERROR;
+                }
+            } else {
+                dbistat = Dbi_ExecDirect(handle, "commit");
+                if (dbistat != DBI_EXEC_DML) {
+                    SqlError(interp, handle);
+                    status = TCL_ERROR;
+                }
+            }
+        }
 
         Dbi_PutHandle(handle);
-        idataPtr->handle = NULL;
 
         return status;
     }
@@ -603,5 +650,5 @@ static void
 SqlError(Tcl_Interp *interp, Dbi_Handle *handle)
 {
     Tcl_SetErrorCode(interp, Dbi_ExceptionCode(handle), NULL);
-    Tcl_SetStringObj(Tcl_GetObjResult(interp), Dbi_ExceptionMsg(handle), -1);
+    Tcl_AppendResult(interp, Dbi_ExceptionMsg(handle), NULL);
 }

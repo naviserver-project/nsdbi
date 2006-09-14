@@ -98,7 +98,7 @@ typedef void
 typedef int
 (Dbi_PrepareProc)(Dbi_Handle *, CONST char *sql, int length,
                   unsigned int id, unsigned int nqueries,
-                  void **stmtArg, void *driverArg)
+                  void **stmtArgPtr, void *driverArg)
     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2) NS_GNUC_NONNULL(6);
 
 typedef void

@@ -740,7 +740,7 @@ Dbi_Exec(Dbi_Handle *handle, Dbi_Statement *stmt,
 
     if (status == DBI_EXEC_ROWS) {
         handlePtr->fetchingRows = NS_TRUE;
-        if (handlePtr->numCols < 1) {
+        if (handlePtr->numRows > 0 && handlePtr->numCols < 1) {
             Dbi_SetException(handle, "DBI",
                 "bug: driver returned rows but failed to set number of columns");
             return DBI_EXEC_ERROR;

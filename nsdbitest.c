@@ -350,6 +350,10 @@ Exec(Dbi_Handle *handle, CONST char *sql, int length,
             dbistat = DBI_EXEC_ROWS;
         } else if (STREQ(cmd, "ERROR")) {
             Dbi_SetException(handle, "TEST", "driver error");
+        } else if (STREQ(sql, "begin transaction")
+                   || STREQ(sql, "commit")
+                   || STREQ(sql, "rollback")) {
+            dbistat = DBI_EXEC_ROWS;
         } else {
             goto error;
         }
