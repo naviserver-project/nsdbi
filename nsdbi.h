@@ -219,7 +219,7 @@ Dbi_NumRows(Dbi_Handle *handle)
 NS_EXTERN DBI_VALUE_STATUS
 Dbi_NextValue(Dbi_Handle *, CONST char **valuePtr, int *vlengthPtr,
               CONST char **columnPtr, int *clengthPtr)
-    NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2) NS_GNUC_NONNULL(3);
+    NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
 
 NS_EXTERN void
 Dbi_Flush(Dbi_Handle *)

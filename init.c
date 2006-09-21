@@ -841,7 +841,7 @@ Dbi_NextValue(Dbi_Handle *handle, CONST char **valuePtr, int *vlengthPtr,
 {
     Handle     *handlePtr = (Handle *) handle;
     Dbi_Driver *driver    = handlePtr->poolPtr->driver;
-    int         status;
+    int         vlength, clength, status;
 
     if (handlePtr->fetchingRows == NS_FALSE) {
         Ns_Log(Bug, "dbi: Dbi_NextValue: no pending rows");
@@ -854,19 +854,25 @@ Dbi_NextValue(Dbi_Handle *handle, CONST char **valuePtr, int *vlengthPtr,
            handlePtr->currentCol, handlePtr->currentRow);
 
     status = (*driver->valueProc)(handle, handlePtr->currentCol, handlePtr->currentRow,
-                                  valuePtr, vlengthPtr, driver->arg);
+                                  valuePtr, &vlength, driver->arg);
     if (status == NS_ERROR) {
         return DBI_VALUE_ERROR;
     }
+    if (vlengthPtr != NULL) {
+        *vlengthPtr = vlength;
+    }
 
-    if (columnPtr != NULL && clengthPtr != NULL) {
+    if (columnPtr != NULL) {
         DbiLog(handlePtr, Debug, "Dbi_NextValue: calling Dbi_ColumnProc: "
                "column index: %d row index: %d",
                handlePtr->currentCol, handlePtr->currentRow);
         status = (*driver->columnProc)(handle, handlePtr->currentCol,
-                                       columnPtr, clengthPtr, driver->arg);
+                                       columnPtr, &clength, driver->arg);
         if (status == NS_ERROR) {
             return DBI_VALUE_ERROR;
+        }
+        if (clengthPtr != NULL) {
+            *clengthPtr = clength;
         }
     }
 
