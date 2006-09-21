@@ -48,8 +48,9 @@ NS_EXPORT int Ns_ModuleVersion = 1;
  */
 
 typedef struct Connection {
-    int        connected;
-    Ns_DString ds;
+    int         connected;
+    char        columnBuf[32];
+    Ns_DString  ds;
 } Connection;
 
 
@@ -421,7 +422,7 @@ Value(Dbi_Handle *handle, int col, int row,
  *
  *      Fetch the name of the given column.
  *
- *      For testing, all columns are named "c".
+ *      For testing, all columns are named after their index position.
  *
  * Results:
  *      Always NS_OK.
@@ -447,8 +448,9 @@ Column(Dbi_Handle *handle, int col,
     assert(columnPtr != NULL);
     assert(lengthPtr != NULL);
 
-    *columnPtr = "c";
-    *lengthPtr = 1;
+    sprintf(conn->columnBuf, "%d", col);
+    *columnPtr = conn->columnBuf;
+    *lengthPtr = strlen(conn->columnBuf);
 
     return NS_OK;
 }
