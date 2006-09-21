@@ -1,0 +1,232 @@
+[include version_include.man]
+
+[manpage_begin nsdbi n [vset version]]
+[moddesc {NaviServer Database Interface}]
+[titledesc {Commands for querying an SQL database.}]
+
+[description]
+One or more paragraphs describing the command in detail.
+
+[vset standard_options "\
+[opt "[option -pool] [arg name]"] \
+[opt "[option -timeout] [arg t]"] \
+[opt "[option -bindarray] [arg name]"] \
+[opt "[option -bindset] [arg setid]"] \
+[opt [arg --]]"]
+
+[section {COMMANDS}]
+
+[list_begin definitions]
+
+[call [cmd dbi_rows] [vset standard_options] [arg query]]
+
+Execute a query which is expected to return zero or more rows. If no rows are
+returned then the result is the empty string. Otherwise a single, flat list
+of values is returned. [emph Note]: Column names are not included.
+
+
+[call [cmd dbi_1row] [vset standard_options] [arg query]]
+
+Execute a query which is expected to return exactly one row. If no rows are
+returned then an error is thrown.
+
+
+[call [cmd dbi_0or1row] [vset standard_options] [arg query]]
+
+Execute a query which is expected to return either zero rows or exactly one
+row. If no rows are returned the result is the empty string.
+
+
+[call [cmd dbi_dml] [vset standard_options] [arg query]]
+
+Execute a [term DML] or [term DDL] query, i.e. [term insert], [term update],
+[term delete] etc.  The result will be the number of rows affected by the
+query, for example the number of rows updated during an [term update] query.
+
+
+[call [cmd dbi_format] [vset standard_options] [arg query] [arg formatString]]
+
+Execute a query which is expected to return zero or more rows. For each row
+that is returned, the Tcl [arg formatString] is substituted using the value
+of each column.  The column values are available beginning at index position
+0.  The formatted rows are concatenated together and become the final result.
+If no rows are returned then the result is the empty string.
+
+[nl]
+Although not as felxible as the [cmd dbi_rows] command, the final result is
+constructed row by row without first building a list containing the entire
+result-set. This may require less memory and run slightly faster.
+
+
+
+[call [cmd dbi_eval] \
+[opt "[option -pool] [arg name]"]      \
+[opt "[option -timeout] [arg t]"]   \
+[opt [arg --]] \
+[arg script] ]
+
+Get a database handle and then evaluate [arg script], keeping the same handle
+open for the duration.  Any [emph dbi] commands within the script will
+use the same handle if the handle the command needs would have come from the
+same pool.
+
+[call [cmd dbi_transaction] \
+[opt "[option -pool] [arg name]"]      \
+[opt "[option -timeout] [arg t]"]   \
+[opt [arg --]] \
+[arg script] ]
+
+Evaluate the Tcl script.
+
+[list_end]
+
+
+[section {OPTIONS}]
+
+[list_begin opt]
+
+[opt_def -pool [arg pool]]
+The name of the pool to get a handle from. If none specified, the default
+pool is used.
+
+[opt_def -timeout [arg t]]
+Time to wait for a database handle if none available immediately. [arg t] is
+in [cmd ns_time] format and is either an absolute time in the future if
+large, or an offset from the current time if small.
+
+[nl]
+If [option -timeout] is not specified then the [arg maxwait] configuration
+value is used (which defaults to 10 seconds).
+
+[nl]
+If a handle does not become available during the timeout period a Tcl error
+is thrown with the NS_TIMEOUT...
+
+
+[opt_def -bindarray [arg arrayname]]
+Query bind variables will be searched for in this array.
+
+[opt_def -bindset [arg setid]]
+Values for bind variables specified in the [arg query] will be searched for
+in this Ns_Set.
+
+[list_end]
+
+
+[section {ARGUMENTS}]
+
+[list_begin arg]
+
+[arg_def string query]
+A query containing database specific SQL and nsdbi [term {bind variable}]
+notation.
+
+[arg_def string formatString]
+A format specification as used by the Tcl [cmd format] command.
+
+[arg_def string script]
+A chunk of Tcl code to execute in the context of a single handle for the
+[cmd dbi_eval] command, or within a single transaction for the
+[cmd dbi_transaction] command.
+
+[list_end]
+
+
+[section CONFIGURATION]
+        
+[para]
+To use the nsdbi commands you must first load a driver, e.g. the postgreSQL
+driver [term nsdbipg]. Driver's can be loaded more than once to create
+multiple pools of database handles, each pool with it's own configuration
+options.
+
+[example_begin]
+[cmd ns_section] "ns/server/$server1/modules"
+[cmd ns_param] [arg pool1] [arg nsdbipg.so]
+[cmd ns_param] [arg pool2] [arg nsdbipg.so]
+...
+
+[cmd ns_section] "ns/server/$server1/module/[arg pool1]"
+...
+[example_end]
+
+Standard configuration options which are available with every driver:
+        
+[list_begin definitions]
+
+[lst_item "[cmd ns_param] [arg default] false"]
+When this option is true, the pool for which it is defined becomes the
+default pool for the virtual server.
+
+[lst_item "[cmd ns_param] [arg handles] 2"]
+The maximum number of open connections to the database.
+
+[lst_item "[cmd ns_param] [arg maxwait] 10"]
+Seconds to wait if handle is at first unavailable.
+
+[lst_item "[cmd ns_param] [arg maxidle] 0"]
+If a handle is unused for [term maxidle] seconds, it is closed.
+
+[lst_item "[cmd ns_param] [arg maxopen] 0"]
+Handles are closed after [term maxopen] seconds, regardless of whether it
+has been used or not.
+
+[lst_item "[cmd ns_param] [arg maxqueries] 0"]
+Handles are closed after [term maxqueries] queries, if value is more than 0.
+
+[lst_item "[cmd ns_param] [arg checkinterval] 600"]
+Check for idle handles every [term checkinterval] seconds.
+
+[list_end]
+
+
+[section EXAMPLES]
+
+Select all rows from a table using the default pool:
+
+[example_begin]
+[cmd dbi_rows] {select a, b from table}
+[example_end]
+
+Select rows from a table using pool x. Only rows in which column [term a]
+matches the bind variable will be returned:
+
+[example_begin]
+set a "someValue"
+[cmd dbi_rows] [option "-pool [arg x]"] {
+    select a, b
+    from table
+    where a = :a
+}
+[example_end]
+
+Use the Tcl [term foreach] command to loop through each row of a result set
+and build up a chunk of HTML:
+
+[example_begin]
+foreach {a b} [lb][cmd dbi_rows] {
+    select a, b
+    from table
+}[rb] {
+    append html "<dt>$a</dt>"
+    append html "<dd>$b</dd>"
+}
+[example_end]
+
+Use the [cmd dbi_format] command to build up a chunk of HTML:
+
+[example_begin]
+set html [lb][cmd dbi_format] {
+    select a, b
+    from table
+} {
+    <dt>%s</dt>
+    <dd>%s</dd>
+}[rb]
+[example_end]
+
+
+[see_also nsdb format sprintf]
+[keywords NaviServer database sql]
+
+[manpage_end]
