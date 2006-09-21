@@ -10,15 +10,6 @@ eval ::tcltest::configure $argv
 
 
 
-# test basic-syntax.1 {check the basic syntax and arg handling} -body {
-#     dbi
-# } -returnCodes error -result {wrong # args: should be "dbi command ?args?"}
-
-# test basic-syntax.2 {check the basic syntax and arg handling} -body {
-#     dbi ?
-# } -returnCodes error -result {bad command "?": must be 0or1row, 1row, bounce, default, dml, info, pools, rows, stats, transaction, or withhandle}
-
-
 
 test pools {list all pools} -body {
     lsort [dbi_ctl pools]
@@ -116,13 +107,27 @@ test rows-3 {found 2 rows, 1 column} -body {
     dbi_rows {ROWS 1 2 v}
 } -result {v v}
 
-test rows-4 {no rows} -body {
+test rows-4 {found 2 rows, 2 columns} -body {
+    dbi_rows {ROWS 2 2 v}
+} -result {v v v v}
+
+test rows-5 {no rows} -body {
     dbi_rows {ROWS 0 1}
 } -returnCodes error -result {bug: driver returned rows but failed to set number of columns}
 
-test rows-5 {query error} -body {
+test rows-6 {query error} -body {
     dbi_rows {ERROR}
 } -returnCodes error -result {driver error}
+
+
+
+test string-1 {simple string} -body {
+    dbi_string {ROWS 2 2 v}
+} -result {v v v v}
+
+test string-2 {string with template} -body {
+    dbi_string {ROWS 2 2 v} {<%s-%s>}
+} -result {<v-v><v-v>}
 
 
 
@@ -303,6 +308,7 @@ test timeout-2 {timeout getting handle, absolute time} -body {
     after 1000
     dbi_rows -timeout [ns_time incr [ns_time get] 1] -pool pool2 -- {ROWS 2 2}
 } -returnCodes error -result {wait for database handle timed out}
+
 
 
 
