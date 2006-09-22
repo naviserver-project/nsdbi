@@ -121,12 +121,12 @@ test rows-6 {query error} -body {
 
 
 
-test string-1 {simple string} -body {
-    dbi_string {ROWS 2 2 v}
-} -result {v v v v}
+test format-1 {single row} -body {
+    dbi_format {ROWS 2 1 v} {<%s-%s>}
+} -result {<v-v>}
 
-test string-2 {string with template} -body {
-    dbi_string {ROWS 2 2 v} {<%s-%s>}
+test format-2 {2 rows} -body {
+    dbi_format {ROWS 2 2 v} {<%s-%s>}
 } -result {<v-v><v-v>}
 
 
