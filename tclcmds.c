@@ -86,7 +86,7 @@ static Dbi_Handle *GetHandle(InterpData *, Dbi_Pool *, Ns_Time *);
 static void CleanupHandle(InterpData *idataPtr, Dbi_Handle *handle);
 static int BindVars(Tcl_Interp *interp, Dbi_Statement *stmt,
                     CONST char **values, unsigned int *lengths,
-                    char *array, char *setid);
+                    CONST char *array, CONST char *setid);
 
 static int ListResult(Tcl_Interp *interp, Dbi_Handle *handle);
 static int VarResult(Tcl_Interp *interp, Dbi_Handle *handle);
@@ -949,7 +949,7 @@ CleanupHandle(InterpData *idataPtr, Dbi_Handle *handle)
 static int
 BindVars(Tcl_Interp *interp, Dbi_Statement *stmt,
          CONST char **values, unsigned int *lengths,
-         char *array, char *setid)
+         CONST char *array, CONST char *setid)
 {
     Ns_Set         *set = NULL;
     Tcl_Obj        *valObjPtr;
