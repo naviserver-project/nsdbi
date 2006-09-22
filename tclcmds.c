@@ -89,6 +89,7 @@ static int BindVars(Tcl_Interp *interp, Dbi_Statement *stmt,
                     char *array, char *setid);
 
 static int ListResult(Tcl_Interp *interp, Dbi_Handle *handle);
+static int VarResult(Tcl_Interp *interp, Dbi_Handle *handle);
 static int FormatResult(Tcl_Interp *interp, Dbi_Handle *handle,
                         Tcl_Obj *cmdObj, Tcl_Obj *formatObj);
 
@@ -307,7 +308,7 @@ RowCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[],
                 status = TCL_OK;
             }
         } else {
-            status = ListResult(interp, handle);
+            status = VarResult(interp, handle);
         }
         break;
 
@@ -984,6 +985,52 @@ ListResult(Tcl_Interp *interp, Dbi_Handle *handle)
             return TCL_ERROR;
         }
     } while (dbistat != DBI_END_ROWS);
+
+    return TCL_OK;
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * VarResult --
+ *
+ *      Set the single row result set as variables in the current
+ *      Tcl frame.
+ *
+ *
+ * Results:
+ *      TCL_OK or TCL_ERROR.
+ *
+ * Side effects:
+ *      Existing variables with the same name as columns in the result
+ *      set will be clobbered.
+ *
+ *----------------------------------------------------------------------
+ */
+
+static int
+VarResult(Tcl_Interp *interp, Dbi_Handle *handle)
+{
+    Tcl_Obj          *valObj;
+    CONST char       *value, *column;
+    int               vLen;
+    DBI_VALUE_STATUS  dbistat;
+
+    do {
+        dbistat = Dbi_NextValue(handle, &value, &vLen, &column, NULL);
+        if (dbistat == DBI_VALUE_ERROR) {
+            SqlError(interp, handle);
+            return TCL_ERROR;
+        }
+        valObj = Tcl_NewStringObj(value, vLen);
+        if (Tcl_SetVar2Ex(interp, column, NULL, valObj,
+                          TCL_LEAVE_ERR_MSG) == NULL) {
+            Tcl_DecrRefCount(valObj);
+            return TCL_ERROR;
+        }
+
+    } while (dbistat != DBI_END_COL && dbistat != DBI_END_ROWS);
 
     return TCL_OK;
 }

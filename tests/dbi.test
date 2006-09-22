@@ -57,15 +57,25 @@ test dml-2 {dml error} -body {
 
 test 0or1row-1 {found single column} -body {
     dbi_0or1row {ROWS 1 1 v}
+    set 0
+} -cleanup {
+    unset -nocomplain 0
 } -result v
 
 test 0or1row-2 {found multiple columns} -body {
     dbi_0or1row {ROWS 3 1 v}
+    list $0 $1 $2
+} -cleanup {
+    unset -nocomplain 0 1 2
 } -result {v v v}
 
 test 0or1row-3 {not found} -body {
+    set 0 x
     dbi_0or1row {ROWS 1 0}
-} -result {}
+    set 0
+} -cleanup {
+    unset -nocomplain 0
+} -result x
 
 test 0or1row-4 {no columns} -body {
     dbi_0or1row {ROWS 0 1}
@@ -79,17 +89,31 @@ test 0or1row-5 {query error} -body {
 
 test 1row-1 {found single column} -body {
     dbi_1row {ROWS 1 1 v}
+    set 0
+} -cleanup {
+    unset -nocomplain 0
 } -result v
 
 test 1row-2 {found multiple columns} -body {
     dbi_1row {ROWS 3 1 v}
+    list $0 $1 $2
+} -cleanup {
+    unset -nocomplain 0 1 2
 } -result {v v v}
 
-test 1row-3 {1row not found} -body {
+test 1row-3 {clobber existing variable} -body {
+    set 0 x
+    dbi_1row {ROWS 1 1 v}
+    set 0
+} -cleanup {
+    unset -nocomplain 0
+} -result v
+
+test 1row-4 {1row not found} -body {
     dbi_1row {ROWS 1 0}
 } -returnCodes error -result {query was not a statement returning rows}
 
-test 1row-4 {query error} -body {
+test 1row-5 {query error} -body {
     dbi_1row {ERROR}
 } -returnCodes error -result {driver error}
 
