@@ -56,6 +56,14 @@ typedef enum {
     DBI_VALUE_ERROR
 } DBI_VALUE_STATUS;
 
+typedef enum {
+    DBI_CONFIG_MAXHANDLES = 0,
+    DBI_CONFIG_MAXWAIT,
+    DBI_CONFIG_MAXIDLE,
+    DBI_CONFIG_MAXOPEN,
+    DBI_CONFIG_MAXQUERIES
+} DBI_CONFIG_OPTION;
+
 
 /*
  * The following defines opaque pool and statement handles.
@@ -247,6 +255,10 @@ Dbi_DriverName(Dbi_Pool *)
 
 NS_EXTERN CONST char *
 Dbi_DatabaseName(Dbi_Pool *)
+    NS_GNUC_NONNULL(1);
+
+NS_EXTERN int
+Dbi_Config(Dbi_Pool *, DBI_CONFIG_OPTION opt, int newValue)
     NS_GNUC_NONNULL(1);
 
 NS_EXTERN void

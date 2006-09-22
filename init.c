@@ -69,26 +69,26 @@ typedef struct Pool {
     char              *module;
     Dbi_Driver        *driver;
 
-    int                nhandles;
-    int                npresent;
-    int                maxwait;
-    time_t             maxidle;
-    time_t             maxopen;
-    int                maxqueries;
-    int                cachesize;
+    int                nhandles;        /* Current number of handles in pool. */
+    int                maxhandles;      /* Max handles to keep in pool. */
+    int                maxwait;         /* Default seconds to wait for handle. */
+    time_t             maxidle;         /* Seconds before unused handle is closed.  */
+    time_t             maxopen;         /* Seconds before active handle is closed. */
+    int                maxqueries;      /* Close active handle after maxqueries. */
+    int                cachesize;       /* Size of prepared statement cache. */
 
-    int                stale_on_close;
-    int                stopping;
+    int                stale_on_close;  /* Epoch for bouncing handles. */
+    int                stopping;        /* Server is shutting down. */
 
     struct {
-        unsigned int   handlegets;
-        unsigned int   handlemisses;
-        unsigned int   handleopens;
-        unsigned int   handlefailures;
-        unsigned int   queries;
-        unsigned int   otimecloses;
-        unsigned int   atimecloses;
-        unsigned int   querycloses;
+        unsigned int   handlegets;      /* Total No. requests for a handle. */
+        unsigned int   handlemisses;    /* Handle requests which timed out. */
+        unsigned int   handleopens;     /* Number of times connected to db. */
+        unsigned int   handlefailures;  /* Handle open attempts which failed. */
+        unsigned int   queries;         /* Total queries by all handles. */
+        unsigned int   otimecloses;     /* Handle closes due to maxopen. */
+        unsigned int   atimecloses;     /* Handle closed due to maxidle. */
+        unsigned int   querycloses;     /* Handle closes due to maxqueries. */
     } stats;
 
 } Pool;
@@ -111,7 +111,7 @@ typedef struct Handle {
     Ns_DString        dsExceptionMsg;
     time_t            otime;        /* Time when handle was connected to db. */
     time_t            atime;        /* Time when handle was last used. */
-    int               n;            /* Handle n of nhandles when acquired. */
+    int               n;            /* Handle n of maxhandles when acquired. */
     int               stale_on_close;
     int               reason;       /* Why the handle is being disconnected. */
 
@@ -276,7 +276,7 @@ Dbi_RegisterDriver(CONST char *server, CONST char *module,
     Ns_CondInit(&poolPtr->getCond);
     poolPtr->driver = driver;
     poolPtr->module = ns_strdup(module);
-    poolPtr->nhandles   = Ns_ConfigIntRange(path, "handles",    2,          1, INT_MAX);
+    poolPtr->maxhandles = Ns_ConfigIntRange(path, "maxhandles", 2,          1, INT_MAX);
     poolPtr->maxwait    = Ns_ConfigIntRange(path, "maxwait",    10,         0, INT_MAX);
     poolPtr->maxidle    = Ns_ConfigIntRange(path, "maxidle",    0,          0, INT_MAX);
     poolPtr->maxopen    = Ns_ConfigIntRange(path, "maxopen",    0,          0, INT_MAX);
@@ -292,8 +292,8 @@ Dbi_RegisterDriver(CONST char *server, CONST char *module,
      * Fill the pool with handles.
      */
 
-    handlePtr = ns_calloc(poolPtr->nhandles, sizeof(Handle));
-    for (i = 0; i < poolPtr->nhandles; i++, handlePtr++) {
+    handlePtr = ns_calloc(poolPtr->maxhandles, sizeof(Handle));
+    for (i = 0; i < poolPtr->maxhandles; i++, handlePtr++) {
         handlePtr->poolPtr = poolPtr;
         Ns_DStringInit(&handlePtr->dsExceptionMsg);
         handlePtr->cache = Ns_CacheCreateSz(module, TCL_STRING_KEYS,
@@ -501,8 +501,8 @@ Dbi_GetHandle(Dbi_Handle **handlePtrPtr, Dbi_Pool *pool, Ns_Time *timeoutPtr)
         if (poolPtr->lastPtr == handlePtr) {
             poolPtr->lastPtr = NULL;
         }
-        poolPtr->npresent--;
-        handlePtr->n = poolPtr->nhandles - poolPtr->npresent;
+        poolPtr->nhandles--;
+        handlePtr->n = poolPtr->maxhandles - poolPtr->nhandles;
         handlePtr->stale_on_close = poolPtr->stale_on_close;
     }
     Ns_MutexUnlock(&poolPtr->lock);
@@ -1072,6 +1072,68 @@ Dbi_DatabaseName(Dbi_Pool *pool)
 /*
  *----------------------------------------------------------------------
  *
+ * Dbi_Config --
+ *
+ *      Return the current value of the configuration option and if
+ *      newValue is >= 0, update the config.
+ *
+ * Results:
+ *      The old value of the config option.
+ *
+ * Side effects:
+ *      None.
+ *
+ *----------------------------------------------------------------------
+ */
+
+int
+Dbi_Config(Dbi_Pool *pool, DBI_CONFIG_OPTION opt, int newValue)
+{
+    Pool *poolPtr = (Pool *) pool;
+    int   oldValue;
+
+    Ns_MutexLock(&poolPtr->lock);
+    switch (opt) {
+    case DBI_CONFIG_MAXHANDLES:
+        oldValue = poolPtr->maxhandles;
+        if (newValue >= 1) {
+            poolPtr->maxhandles = newValue;
+        }
+        break;
+    case DBI_CONFIG_MAXWAIT:
+        oldValue = poolPtr->maxwait;
+        if (newValue >= 0) {
+            poolPtr->maxwait = newValue;
+        }
+        break;
+    case DBI_CONFIG_MAXIDLE:
+        oldValue = poolPtr->maxidle;
+        if (newValue >= 0) {
+            poolPtr->maxidle = newValue;
+        }
+        break;
+    case DBI_CONFIG_MAXOPEN:
+        oldValue = poolPtr->maxopen;
+        if (newValue >= 0) {
+            poolPtr->maxopen = newValue;
+        }
+        break;
+    case DBI_CONFIG_MAXQUERIES:
+        oldValue = poolPtr->maxqueries;
+        if (newValue >= 0) {
+            poolPtr->maxqueries = newValue;
+        }
+        break;
+    }
+    Ns_MutexUnlock(&poolPtr->lock);
+
+    return oldValue;
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
  * Dbi_SetException --
  *
  *      Set SQL exception state and message for the given handle.
@@ -1279,7 +1341,7 @@ ReturnHandle(Handle *handlePtr)
         poolPtr->lastPtr = handlePtr;
         handlePtr->nextPtr = NULL;
     }
-    poolPtr->npresent++;
+    poolPtr->nhandles++;
 }
 
 
@@ -1386,7 +1448,7 @@ CheckPool(Pool *poolPtr, int stale)
 
     if (handlePtr != NULL) {
         while (handlePtr != NULL) {
-            poolPtr->npresent--;
+            poolPtr->nhandles--;
             nextPtr = handlePtr->nextPtr;
             CloseIfStale(handlePtr, now);
             handlePtr->nextPtr = checkedPtr;
@@ -1517,7 +1579,7 @@ Connect(Handle *handlePtr)
             handlePtr->atime = handlePtr->otime = time(NULL);
             msg = Dbi_ExceptionMsg(handle);
             DbiLog(handle, Notice, "opened handle %d/%d%s%s",
-                   handlePtr->n, poolPtr->nhandles,
+                   handlePtr->n, poolPtr->maxhandles,
                    msg ? ": " : "", msg ? msg : "");
             Dbi_ResetException(handle);
         }

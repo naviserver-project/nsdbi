@@ -546,13 +546,17 @@ CtlObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
     InterpData *idataPtr = arg;
     Dbi_Pool   *pool;
     Ns_DString  ds;
-    int         cmd;
+    int         cmd, oldValue, newValue;
 
     static CONST char *cmds[] = {
-        "bounce", "default", "info", "pools", "stats", NULL
+        "bounce", "database", "default", "driver",
+        "maxhandles", "maxidle", "maxopen", "maxqueries", "maxwait",
+        "pools", "stats", NULL
     };
     enum CmdIdx {
-        CBounceCmd, CDefaultCmd, CInfoCmd, CPoolsCmd, CStatsCmd
+        CBounceCmd, CDatabaseCmd, CDefaultCmd, CDriverCmd,
+        CMaxHandlesCmd, CMaxIdleCmd, CMaxOpenCmd, CMaxQueriesCmd, CMaxWaitCmd,
+        CPoolsCmd, CStatsCmd
     };
     if (objc < 2) {
         Tcl_WrongNumArgs(interp, 1, objv, "command ?args?");
@@ -563,47 +567,97 @@ CtlObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
         return TCL_ERROR;
     }
 
-    switch (cmd) {
-    case CDefaultCmd:
-        pool = Dbi_DefaultPool(idataPtr->server);
-        if (pool != NULL) {
-            Tcl_SetStringObj(Tcl_GetObjResult(interp), Dbi_PoolName(pool), -1);
-        }
-        break;
+    /*
+     * The pools commands require no other arguments.
+     */
 
+    switch (cmd) {
     case CPoolsCmd:
         Ns_DStringInit(&ds);
         if (Dbi_ListPools(&ds, idataPtr->server) != NS_OK) {
             return TCL_ERROR;
         }
         Tcl_DStringResult(interp, &ds);
+        return TCL_OK;
+
+    case CDefaultCmd:
+        pool = Dbi_DefaultPool(idataPtr->server);
+        if (pool != NULL) {
+            Tcl_SetResult(interp, (char *) Dbi_PoolName(pool), TCL_VOLATILE);
+        }
+        if (objc == 3) {
+            
+        }
+        return TCL_OK;
+    }
+
+    /*
+     * All other commands require a pool to opperate on.
+     */
+
+    if (objc != 3 && objc != 4) {
+        Tcl_WrongNumArgs(interp, 2, objv, "pool ?args?");
+        return TCL_ERROR;
+    }
+    if ((pool = GetPool(idataPtr, objv[2])) == NULL) {
+        return TCL_ERROR;
+    }
+
+    switch (cmd) {
+    case CBounceCmd:
+        Dbi_BouncePool(pool);
+        return TCL_OK;
+
+    case CDriverCmd:
+        Tcl_SetResult(interp, (char *) Dbi_DriverName(pool), TCL_VOLATILE);
+        return TCL_OK;
+
+    case CDatabaseCmd:
+        Tcl_SetResult(interp, (char *) Dbi_DatabaseName(pool), TCL_VOLATILE);
+        return TCL_OK;
+
+    case CStatsCmd:
+        Ns_DStringInit(&ds);
+        Dbi_Stats(&ds, pool);
+        Tcl_DStringResult(interp, &ds);
+        return TCL_OK;
+    }
+
+    /*
+     * The remaining commands all take an optional argument which
+     * is the new value of the configuration parameter.
+     */
+
+    if (objc == 4) {
+        if (Tcl_GetIntFromObj(interp, objv[3], &newValue) != TCL_OK) {
+            return TCL_ERROR;
+        }
+    } else {
+        newValue = -1;
+    }
+
+    switch (cmd) {
+    case CMaxHandlesCmd:
+        oldValue = Dbi_Config(pool, DBI_CONFIG_MAXHANDLES, newValue);
         break;
 
-    case CBounceCmd:
-    case CInfoCmd:
-    case CStatsCmd:
-        if (objc != 3) {
-            Tcl_WrongNumArgs(interp, 2, objv, "pool");
-            return TCL_ERROR;
-        }
-        if ((pool = GetPool(idataPtr, objv[2])) == NULL) {
-            return TCL_ERROR;
-        }
+    case CMaxWaitCmd:
+        oldValue = Dbi_Config(pool, DBI_CONFIG_MAXWAIT, newValue);
+        break;
 
-        if (cmd == CBounceCmd) {
-            Dbi_BouncePool(pool);
-        } else if (cmd == CStatsCmd) {
-            Ns_DStringInit(&ds);
-            Dbi_Stats(&ds, pool);
-            Tcl_DStringResult(interp, &ds);
-        } else {
-            Tcl_AppendElement(interp, "driver");
-            Tcl_AppendElement(interp, Dbi_DriverName(pool));
-            Tcl_AppendElement(interp, "database");
-            Tcl_AppendElement(interp, Dbi_DatabaseName(pool));
-        }
+    case CMaxIdleCmd:
+        oldValue = Dbi_Config(pool, DBI_CONFIG_MAXIDLE, newValue);
+        break;
+
+    case CMaxOpenCmd:
+        oldValue = Dbi_Config(pool, DBI_CONFIG_MAXOPEN, newValue);
+        break;
+
+    case CMaxQueriesCmd:
+        oldValue = Dbi_Config(pool, DBI_CONFIG_MAXQUERIES, newValue);
         break;
     }
+    Tcl_SetIntObj(Tcl_GetObjResult(interp), oldValue);
 
     return TCL_OK;
 }

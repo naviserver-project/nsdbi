@@ -52,19 +52,18 @@ ns_param   pool2           $homedir/nsdbitest.so
 #
 
 ns_section "ns/module/global1"
-ns_param   handles         2
+ns_param   maxhandles      2
 
 ns_section "ns/module/global2"
-ns_param   handles         2
+ns_param   maxhandles      2
 
 ns_section "ns/server/server1/module/pool1"
 ns_param   default         true
-ns_param   handles         5
+ns_param   maxhandles      5
 ns_param   maxidle         20          ;# Handle closed after maxidle seconds if unused.
 ns_param   maxopen         40          ;# Handle closed after maxopen seconds, regardles of use.
 ns_param   maxqueries      10000       ;# Handle closed after maxqueries sql queries.
 ns_param   checkinterval   30          ;# Check for stale handles every 15 seconds.
 
 ns_section "ns/server/server1/module/pool2"
-ns_param   description     "Pool Two Description"
-ns_param   handles         1 ;# Used for timeout test.
+ns_param   maxhandles      1 ;# Set low for timeout test.

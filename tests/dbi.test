@@ -22,11 +22,39 @@ test default {default pool} -body {
 
 
 
-test info.1 {pool info} -body {
-    dbi_ctl info [dbi_ctl default]
-} -cleanup {
-    unset -nocomplain a
-} -result {driver test database db}
+test ctl.1 {driver} -body {
+    dbi_ctl driver pool1
+} -result test
+
+test ctl.2 {database} -body {
+    dbi_ctl database pool1
+} -result db
+
+test ctl.3 {default} -body {
+    dbi_ctl default
+} -result pool1
+
+test ctl.4 {maxhandles} -body {
+    dbi_ctl maxhandles pool1
+} -result [ns_config ns/server/server1/module/pool1 maxhandles -1]
+
+test ctl.5 {maxidle} -body {
+    dbi_ctl maxidle pool1
+} -result [ns_config ns/server/server1/module/pool1 maxidle -1]
+
+test ctl.6 {maxopen} -body {
+    dbi_ctl maxopen pool1
+} -result [ns_config ns/server/server1/module/pool1 maxopen -1]
+
+test ctl.7 {maxqueries} -body {
+    dbi_ctl maxqueries pool1
+} -result [ns_config ns/server/server1/module/pool1 maxqueries -1]
+
+test ctl.8 {change config} -body {
+    set old [dbi_ctl maxhandles pool1 99]
+    set new [dbi_ctl maxhandles pool1 $old]
+    list $old $new
+} -result "[ns_config ns/server/server1/module/pool1 maxhandles -1] 99"
 
 
 
@@ -39,7 +67,7 @@ test stats.1 {pool stats} -body {
 
 
 
-test prepare-1 {prepare callback failure} -body {
+test prepare-1 {simulate driver prepare callback failure} -body {
     dbi_rows {NOPREPARE}
 } -returnCodes error -result {test: prepare failure}
 
