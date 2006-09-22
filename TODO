@@ -13,7 +13,7 @@
    Tcl_GetString*. But what about data coming back? Maybe an extra switch:
 
      # The 2nd and 3rd columns are binary.
-     dbi rows -binary {1 2} {select a, b, c from x}
+     dbi_rows -binary {1 2} {select a, b, c from x}
 
    Will need driver support.
 
@@ -26,14 +26,14 @@
 *) How to pass NULLs to the database?
 
      set x [dbi null]
-     dbi dml {update ... :x}
+     dbi_dml {update ... :x}
 
 
 *) Handle caching is mostly transparent, but requires some ugliness to auto
    release handles before conn IO. A cleaner, although less transparent way to
    handle this might be:
 
-     dbi withhandle -pool x {
+     dbi_withhandle -pool x {
          dbi 1row {query...}
          dbi 1row {query...}
      }
@@ -41,7 +41,7 @@
 
 *) Do we also need to handle transactions in Tcl code?
 
-     dbi transaction -pool x {
+     dbi_transaction -pool x {
          dbi ...
          dbi ...
      }
@@ -52,7 +52,7 @@ to compose reuseable chunks of SQL in Tcl, or to use the db, views etc.?
 
 *) Result assertions don't roll back transactions. e.g.:
 
-     dbi rows {update ...}
+     dbi_rows {update ...}
 
    We were expecting rows, but got a DML result because of a bad query. A Tcl
    error will be thrown, but the DML is not rolled back. This would require
@@ -65,13 +65,13 @@ to compose reuseable chunks of SQL in Tcl, or to use the db, views etc.?
    updated. Perhaps results can be cached with multiple keys:
 
      # All 'it' results flushed atomically.
-     dbi dml -cachekey it$id -cachekey it {update ... :id ...}
+     dbi_dml -cachekey it$id -cachekey it {update ... :id ...}
 
      # Return cached result for key it$id if available.
-     dbi rows -cachekey it$id {select ... :id ...}
+     dbi_rows -cachekey it$id {select ... :id ...}
 
      # Flush every 'it'.
-     dbi flush -cachekey it
+     dbi_flush -cachekey it
 
 
 *) Limits for pools?  Set max handles, default pool etc. per urlspecific
@@ -94,21 +94,21 @@ to compose reuseable chunks of SQL in Tcl, or to use the db, views etc.?
 
      set a(x) 1; set a(y) 2; set a(z) 3
 
-     dbi update tablex $a
+     dbi_update tablex $a
 
      # Translates to:
 
-     dbi dml -bindarray a -- {
+     dbi_dml -bindarray a -- {
          update tablex set x = :x, y = :y, z = :z
      }
 
      # And:
 
-     dbi insert tablex $a
+     dbi_insert tablex $a
 
      # Translates to:
 
-     dbi dml -bindarray a -- {
+     dbi_dml -bindarray a -- {
          insert into tablex
          (x, y, z)
          values
@@ -118,7 +118,7 @@ to compose reuseable chunks of SQL in Tcl, or to use the db, views etc.?
      # MySQL has this native. Others could wrap in a transaction:
      # If row exists, update. Otherwise, insert (atomically).
 
-     dbi insertorupdate tablex $a
+     dbi_insertorupdate tablex $a
 
 
 *) Predefined schema queries for drivers. i.e. you want to know which tables
@@ -126,18 +126,18 @@ to compose reuseable chunks of SQL in Tcl, or to use the db, views etc.?
    SQL which returns the correct answer. Can overide in config file for weird
    db setups.
 
-     foreach table [dbi tables pool1] {
-         dbi columns $table
+     foreach table [dbi_tables pool1] {
+         dbi_columns $table
      }
 
 
 *) Dynamically change pool config.
 
-     dbi pool maxconnections
+     dbi_pool maxconnections
      5                           ;# current handles
-     dbi pool maxconnections 10
+     dbi_pool maxconnections 10
      5                           ;# old handles
-     dbi pool maxconnection
+     dbi_pool maxconnection
      10                          ;# current handles
 
 
@@ -145,30 +145,13 @@ to compose reuseable chunks of SQL in Tcl, or to use the db, views etc.?
    TclX keyed lists, Tcl8.5 dicts:
 
      # Figure out what $x is and do the right thing.
-     dbi rows -bind $x {query ...}
+     dbi_rows -bind $x {query ...}
 
 
-*) Array opperations (Oracle array DML etc.) with native driver support:
+*) Array opperations (Oracle array DML etc.) with native driver support?
 
-     # 3 inserts in single transation. Efficiently:
-     dbi dml {insert into tablex (x) values (:x)} a b c
-
-
-*) Add a Tcl 'format' command to turn a result into a useable string without
-   first creating a list:
-
-     ns_return 200 text/plain \
-         [dbi format {select x, y from table} {row: {x} {y}\n}]
-
-     # Result would be:
-
-     row: a b
-     row: c d
-     ...
-
-
-*) Add prepared statement support to the driver API. Prepared statements
-   should be transparent to Tcl code.
+     # 3 inserts in single transation, efficiently:
+     dbi_dml {insert into tablex (x) values (:x)} a b c
 
 
 *) Does it make sense to extend the C API with new features when there are
