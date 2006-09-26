@@ -66,114 +66,118 @@ typedef enum {
 
 
 /*
- * The following defines opaque pool and statement handles.
+ * The following defines an opaque pool handle.
  */
 
-typedef struct _Dbi_Pool      *Dbi_Pool;
-typedef struct _Dbi_Statement *Dbi_Statement;
+typedef struct _Dbi_Pool *Dbi_Pool;
 
 /*
  * The following struct defines a handle in a pool.
  */
 
 typedef struct Dbi_Handle {
-    Dbi_Pool        *pool; /* The pool this handle belongs to. */
-    void            *arg;  /* Driver private handle context. */
+    CONST Dbi_Pool     *pool;       /* The pool this handle belongs to. */
+    ClientData          driverData; /* Driver private handle context. */
 } Dbi_Handle;
 
+typedef struct Dbi_Statement {
+    CONST char         *sql;        /* SQL to execute. */
+    CONST int           length;     /* Length of SQL. */
+    CONST unsigned int  id;         /* Unique (per handle) statement ID. */
+    CONST unsigned int  nqueries;   /* Total queries for this statement. */
+    ClientData          driverData; /* Driver private statement context. */
+} Dbi_Statement;
 
 /*
- * The following functions must be implemented by database drivers.
+ * The following enum defines nsdbi driver function ids.
+ */
+
+typedef enum {
+    Dbi_OpenProcId = 1,
+    Dbi_CloseProcId,
+    Dbi_ConnectedProcId,
+    Dbi_BindVarProcId,
+    Dbi_PrepareProcId,
+    Dbi_PrepareCloseProcId,
+    Dbi_ExecProcId,
+    Dbi_ValueProcId,
+    Dbi_ColumnProcId,
+    Dbi_FlushProcId,
+    Dbi_ResetProcId
+} Dbi_ProcId;
+
+/*
+ * The following structure is used to register driver callbacks.
+ */
+
+typedef struct Dbi_DriverProc {
+    Dbi_ProcId     id;
+    void          *proc;
+} Dbi_DriverProc;
+
+/*
+ * The following callbacks must be implemented by database drivers.
  */
 
 typedef int
-(Dbi_OpenProc)(Dbi_Handle *, void *driverArg)
+(Dbi_OpenProc)(ClientData configData, Dbi_Handle *)
     NS_GNUC_NONNULL(1);
 
 typedef void
-(Dbi_CloseProc)(Dbi_Handle *, void *driverArg)
+(Dbi_CloseProc)(Dbi_Handle *)
     NS_GNUC_NONNULL(1);
 
 typedef int
-(Dbi_ConnectedProc)(Dbi_Handle *, void *driverArg)
+(Dbi_ConnectedProc)(Dbi_Handle *)
     NS_GNUC_NONNULL(1);
 
 typedef void
-(Dbi_BindVarProc)(Ns_DString *, CONST char *name, int bindIdx,
-                  void *driverArg)
+(Dbi_BindVarProc)(Ns_DString *, CONST char *name, int bindIdx)
     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
 
 typedef int
-(Dbi_PrepareProc)(Dbi_Handle *, CONST char *sql, int length,
-                  unsigned int id, unsigned int nqueries,
-                  void **stmtArgPtr, void *driverArg)
-    NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2) NS_GNUC_NONNULL(6);
+(Dbi_PrepareProc)(Dbi_Handle *, Dbi_Statement *)
+    NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
 
 typedef void
-(Dbi_PrepareCloseProc)(void *stmtArg, void *driverArg)
+(Dbi_PrepareCloseProc)(Dbi_Handle *, Dbi_Statement *)
     NS_GNUC_NONNULL(1);
 
 typedef DBI_EXEC_STATUS
-(Dbi_ExecProc)(Dbi_Handle *, CONST char *sql, int length,
-               CONST char **values, unsigned int *lengths, int nvalues,
-               int *ncolsPtr, int *nrowsPtr,
-               void *stmtArg, void *driverArg)
+(Dbi_ExecProc)(Dbi_Handle *, Dbi_Statement *,
+               CONST char **values, unsigned int *lengths, unsigned int nvalues,
+               int *ncolsPtr, int *nrowsPtr)
     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2)
-     NS_GNUC_NONNULL(7) NS_GNUC_NONNULL(8);
+     NS_GNUC_NONNULL(6) NS_GNUC_NONNULL(7);
 
 typedef int
 (Dbi_ValueProc)(Dbi_Handle *, int col, int row,
-                CONST char **valuePtr, int *lengthPtr, void *driverArg)
+                CONST char **valuePtr, int *lengthPtr)
     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(4) NS_GNUC_NONNULL(5);
 
 typedef int
 (Dbi_ColumnProc)(Dbi_Handle *, int col,
-                 CONST char **columnPtr, int *lengthPtr, void *driverArg)
+                 CONST char **columnPtr, int *lengthPtr)
     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(3) NS_GNUC_NONNULL(4);
 
 typedef void
-(Dbi_FlushProc)(Dbi_Handle *, void *driverArg)
+(Dbi_FlushProc)(Dbi_Handle *)
     NS_GNUC_NONNULL(1);
 
 typedef int
-(Dbi_ResetProc)(Dbi_Handle *, void *driverArg)
+(Dbi_ResetProc)(Dbi_Handle *)
     NS_GNUC_NONNULL(1);
 
-/*
- * The following structure specifies the driver-specific functions
- * to call for each Dbi_ routine.
- */
-
-typedef struct Dbi_Driver {
-
-    void                 *arg;          /* Driver callback data. */
-
-    /*
-     * The following callbacks and data are (so far) all required.
-     */
-
-    CONST char           *name;         /* Driver name. */
-    CONST char           *database;     /* Database name. */
-    Dbi_OpenProc         *openProc;
-    Dbi_CloseProc        *closeProc;
-    Dbi_ConnectedProc    *connectedProc;
-    Dbi_BindVarProc      *bindVarProc;
-    Dbi_PrepareProc      *prepareProc;
-    Dbi_PrepareCloseProc *prepareCloseProc;
-    Dbi_ExecProc         *execProc;
-    Dbi_ValueProc        *valueProc;
-    Dbi_ColumnProc       *columnProc;
-    Dbi_FlushProc        *flushProc;
-    Dbi_ResetProc        *resetProc;
-
-} Dbi_Driver;
 
 
 
 NS_EXTERN int
 Dbi_RegisterDriver(CONST char *server, CONST char *module,
-                   Dbi_Driver *driver, int size)
-    NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2) NS_GNUC_NONNULL(3);
+                   CONST char *driver, CONST char *database,
+                   Dbi_DriverProc *procs, ClientData configData)
+    NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2)
+     NS_GNUC_NONNULL(3) NS_GNUC_NONNULL(4)
+     NS_GNUC_NONNULL(5);
 
 NS_EXTERN Dbi_Pool *
 Dbi_GetPool(CONST char *server, CONST char *poolname)
@@ -188,8 +192,8 @@ Dbi_ListPools(Ns_DString *ds, CONST char *server)
     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
 
 NS_EXTERN int
-Dbi_GetHandle(Dbi_Handle **handlePtrPtr, Dbi_Pool *pool, Ns_Time *timeoutPtr)
-    NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
+Dbi_GetHandle(Dbi_Pool *pool, Ns_Time *timeoutPtr, Dbi_Handle **handlePtrPtr)
+    NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(3);
 
 NS_EXTERN void
 Dbi_PutHandle(Dbi_Handle *handle)

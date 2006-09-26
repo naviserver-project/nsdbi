@@ -48,6 +48,7 @@ NS_EXPORT int Ns_ModuleVersion = 1;
  */
 
 typedef struct Connection {
+    CONST char *configData;
     int         connected;
     char        columnBuf[32];
     Ns_DString  ds;
@@ -71,6 +72,25 @@ static Dbi_FlushProc        Flush;
 static Dbi_ResetProc        Reset;
 
 
+/*
+ * Local variables defined in this file.
+ */
+
+static Dbi_DriverProc procs[] = {
+    {Dbi_OpenProcId,         Open},
+    {Dbi_CloseProcId,        Close},
+    {Dbi_ConnectedProcId,    Connected},
+    {Dbi_BindVarProcId,      Bind},
+    {Dbi_PrepareProcId,      Prepare},
+    {Dbi_PrepareCloseProcId, PrepareClose},
+    {Dbi_ExecProcId,         Exec},
+    {Dbi_ValueProcId,        Value},
+    {Dbi_ColumnProcId,       Column},
+    {Dbi_FlushProcId,        Flush},
+    {Dbi_ResetProcId,        Reset},
+    {0, NULL}
+};
+
 
 /*
  *----------------------------------------------------------------------
@@ -91,27 +111,12 @@ static Dbi_ResetProc        Reset;
 NS_EXPORT int
 Ns_ModuleInit(CONST char *server, CONST char *module)
 {
-    Dbi_Driver *driver;
-    CONST char *name     = "test";
-    CONST char *database = "db";
+    CONST char *name      = "test";
+    CONST char *database  = "db";
+    char *configData      = "driver config data";
 
-    driver = ns_calloc(1, sizeof(Dbi_Driver));
-    driver->arg              = "driver context";
-    driver->name             = name;
-    driver->database         = database;
-    driver->openProc         = Open;
-    driver->closeProc        = Close;
-    driver->connectedProc    = Connected;
-    driver->bindVarProc      = Bind;
-    driver->prepareProc      = Prepare;
-    driver->prepareCloseProc = PrepareClose;
-    driver->execProc         = Exec;
-    driver->valueProc        = Value;
-    driver->columnProc       = Column;
-    driver->flushProc        = Flush;
-    driver->resetProc        = Reset;
-
-    return Dbi_RegisterDriver(server, module, driver, sizeof(Dbi_Driver));
+    return Dbi_RegisterDriver(server, module, name, database,
+                              procs, configData);
 }
 
 
@@ -132,17 +137,22 @@ Ns_ModuleInit(CONST char *server, CONST char *module)
  */
 
 static int
-Open(Dbi_Handle *handle, void *arg)
+Open(ClientData configData, Dbi_Handle *handle)
 {
-    Connection *conn;
+    Connection *conn = handle->driverData;
 
-    assert(STREQ((char *) arg, "driver context"));
-    assert(handle->arg == NULL);
+    assert(STREQ((char *) configData, "driver config data"));
+    assert(handle->driverData == NULL);
 
-    conn = ns_malloc(sizeof(Connection));
+    if (conn == NULL) {
+        conn = ns_malloc(sizeof(Connection));
+        conn->configData = configData;
+        Ns_DStringInit(&conn->ds);
+        handle->driverData = conn;
+    } else {
+        assert(conn->connected == NS_FALSE);
+    }
     conn->connected = NS_TRUE;
-    Ns_DStringInit(&conn->ds);
-    handle->arg = conn;
 
     Dbi_SetException(handle, "TEST", "extra driver connection info");
 
@@ -167,17 +177,17 @@ Open(Dbi_Handle *handle, void *arg)
  */
 
 static void
-Close(Dbi_Handle *handle, void *arg)
+Close(Dbi_Handle *handle)
 {
-    Connection *conn = handle->arg;
+    Connection *conn = handle->driverData;
 
-    assert(STREQ((char *) arg, "driver context"));
     assert(conn != NULL);
+    assert(STREQ(conn->configData, "driver config data"));
 
-    Ns_DStringFree(&conn->ds);
-    ns_free(conn);
+    assert(conn->connected = NS_TRUE);
+    assert(Ns_DStringLength(&conn->ds) == 0);
 
-    /* handle->arg = NULL;  Let dbi do this so we can check. */
+    conn->connected = NS_FALSE; /* Simulate close connection. */
 }
 
 
@@ -186,7 +196,7 @@ Close(Dbi_Handle *handle, void *arg)
  *
  * Connected --
  *
- *      Is the gien handle currently connected?
+ *      Is the given handle currently connected?
  *
  * Results:
  *      NS_TRUE.
@@ -198,11 +208,9 @@ Close(Dbi_Handle *handle, void *arg)
  */
 
 static int
-Connected(Dbi_Handle *handle, void *arg)
+Connected(Dbi_Handle *handle)
 {
-    Connection *conn = handle->arg;
-
-    assert(STREQ((char *) arg, "driver context"));
+    Connection *conn = handle->driverData;
 
     return conn ? conn->connected : NS_FALSE;
 }
@@ -213,7 +221,7 @@ Connected(Dbi_Handle *handle, void *arg)
  *
  * Bind --
  *
- *      Append a bind variable place holder to the given dstring.
+ *      Append the name and index so that both can be verified in tests.
  *
  * Results:
  *      NS_OK.
@@ -225,10 +233,8 @@ Connected(Dbi_Handle *handle, void *arg)
  */
 
 static void
-Bind(Ns_DString *ds, CONST char *name, int bindIdx, void *arg)
+Bind(Ns_DString *ds, CONST char *name, int bindIdx)
 {
-    assert(STREQ((char *) arg, "driver context"));
-
     assert(ds != NULL);
     assert(*name != '\0');
     assert(bindIdx >= 0);
@@ -255,19 +261,30 @@ Bind(Ns_DString *ds, CONST char *name, int bindIdx, void *arg)
  */
 
 static int
-Prepare(Dbi_Handle *handle, CONST char *sql, int length,
-        unsigned int id, unsigned int nqueries,
-        void **stmtArg, void *driverArg)
+Prepare(Dbi_Handle *handle, Dbi_Statement *stmt)
 {
-    assert(*stmtArg == NULL);
+    Connection *conn = handle->driverData;
 
-    if (STREQ(sql, "NOPREPARE")) {
+    assert(conn != NULL);
+    assert(STREQ(conn->configData, "driver config data"));
+
+    /*
+     * Simulate prepare-failure.
+     */
+
+    if (STREQ(stmt->sql, "NOPREPARE")) {
         Dbi_SetException(handle, "TEST", "test: prepare failure");
         return NS_ERROR;
     }
-    if (nqueries > 0) {
-        *stmtArg = (void*) NS_TRUE;
+
+    /*
+     * Simulate preparing the statement on the second request.
+     */
+
+    if (stmt->nqueries > 0) {
+        stmt->driverData = (void *) NS_TRUE;
     }
+
     return NS_OK;
 }
 
@@ -289,10 +306,16 @@ Prepare(Dbi_Handle *handle, CONST char *sql, int length,
  */
 
 static void
-PrepareClose(void *stmtArg, void *driverArg)
+PrepareClose(Dbi_Handle *handle, Dbi_Statement *stmt)
 {
-    Ns_Log(Debug, "nsdbitest: PrepareClose: stmtArg: %d",
-           (int) stmtArg);
+    Connection *conn = handle->driverData;
+
+    assert(conn != NULL);
+    assert(STREQ(conn->configData, "driver config data"));
+
+    assert(stmt->driverData == (void *) NS_TRUE);
+
+    stmt->driverData = (void *) NS_FALSE;
 }
 
 
@@ -313,30 +336,31 @@ PrepareClose(void *stmtArg, void *driverArg)
  */
 
 static DBI_EXEC_STATUS
-Exec(Dbi_Handle *handle, CONST char *sql, int length,
-     CONST char **values, unsigned int *lengths, int nvalues,
-     int *ncolsPtr, int *nrowsPtr,
-     void *stmtArg, void *driverArg)
+Exec(Dbi_Handle *handle, Dbi_Statement *stmt,
+     CONST char **values, unsigned int *lengths, unsigned int nvalues,
+     int *ncolsPtr, int *nrowsPtr)
 {
-    Connection      *conn = handle->arg;
+    Connection      *conn = handle->driverData;
     char             cmd[64];
     DBI_EXEC_STATUS  dbistat = DBI_EXEC_ERROR;
     int              n, i, rest = 0;
 
-    assert(STREQ((char *) driverArg, "driver context"));
-
     assert(conn != NULL);
+    assert(STREQ(conn->configData, "driver config data"));
+
     assert(conn->connected == NS_TRUE);
     assert(Ns_DStringLength(&conn->ds) == 0);
 
+    assert((stmt->nqueries == 0 && stmt->driverData == (void *) NS_FALSE)
+           || stmt->nqueries > 0);
+
     assert(nvalues <= DBI_MAX_BIND);
-    assert(nvalues == 0
-           || (nvalues > 0 && values != NULL && lengths != NULL));
+    assert(nvalues == 0 || (nvalues > 0 && values != NULL && lengths != NULL));
 
     assert(ncolsPtr != NULL);
     assert(nrowsPtr != NULL);
 
-    n = sscanf(sql, "%s %d %d %n", cmd, ncolsPtr, nrowsPtr, &rest);
+    n = sscanf(stmt->sql, "%s %d %d %n", cmd, ncolsPtr, nrowsPtr, &rest);
 
     if (n >= 1) {
         if (STREQ(cmd, "DML")) {
@@ -351,9 +375,9 @@ Exec(Dbi_Handle *handle, CONST char *sql, int length,
             dbistat = DBI_EXEC_ROWS;
         } else if (STREQ(cmd, "ERROR")) {
             Dbi_SetException(handle, "TEST", "driver error");
-        } else if (STREQ(sql, "begin transaction")
-                   || STREQ(sql, "commit")
-                   || STREQ(sql, "rollback")) {
+        } else if (STREQ(stmt->sql, "begin transaction")
+                   || STREQ(stmt->sql, "commit")
+                   || STREQ(stmt->sql, "rollback")) {
             dbistat = DBI_EXEC_ROWS;
         } else {
             goto error;
@@ -362,7 +386,7 @@ Exec(Dbi_Handle *handle, CONST char *sql, int length,
     error:
         Dbi_SetException(handle, "TEST", "nsdbitest query syntax error");
     }
-    Tcl_DStringAppendElement(&conn->ds, sql + rest);
+    Tcl_DStringAppendElement(&conn->ds, stmt->sql + rest);
 
     return dbistat;
 }
@@ -390,13 +414,13 @@ Exec(Dbi_Handle *handle, CONST char *sql, int length,
 
 static int
 Value(Dbi_Handle *handle, int col, int row,
-      CONST char **valuePtr, int *lengthPtr, void *arg)
+      CONST char **valuePtr, int *lengthPtr)
 {
-    Connection *conn = handle->arg;
-
-    assert(STREQ((char *) arg, "driver context"));
+    Connection *conn = handle->driverData;
 
     assert(conn != NULL);
+    assert(STREQ(conn->configData, "driver config data"));
+
     assert(conn->connected == NS_TRUE);
     assert(Ns_DStringLength(&conn->ds) > 0);
 
@@ -435,13 +459,13 @@ Value(Dbi_Handle *handle, int col, int row,
 
 static int
 Column(Dbi_Handle *handle, int col,
-       CONST char **columnPtr, int *lengthPtr, void *arg)
+       CONST char **columnPtr, int *lengthPtr)
 {
-    Connection *conn = handle->arg;
-
-    assert(STREQ((char *) arg, "driver context"));
+    Connection *conn = handle->driverData;
 
     assert(conn != NULL);
+    assert(STREQ(conn->configData, "driver config data"));
+
     assert(conn->connected == NS_TRUE);
     assert(Ns_DStringLength(&conn->ds) > 0);
 
@@ -474,12 +498,12 @@ Column(Dbi_Handle *handle, int col,
  */
 
 static void
-Flush(Dbi_Handle *handle, void *arg)
+Flush(Dbi_Handle *handle)
 {
-    Connection *conn = handle->arg;
+    Connection *conn = handle->driverData;
 
-    assert(STREQ((char *) arg, "driver context"));
     assert(conn != NULL);
+    assert(STREQ(conn->configData, "driver config data"));
 
     Ns_DStringTrunc(&conn->ds, 0);
 }
@@ -490,8 +514,8 @@ Flush(Dbi_Handle *handle, void *arg)
  *
  * Reset --
  *
- *      Reset the db handle. For testing, ensure the handle arg, which
- *      we use here only to store the current result, is NULL.
+ *      Reset the db handle. For testing, ensure the result dstring
+ *      has zero length, as set by the flush proc previously.
  *
  * Results:
  *      Always NS_OK.
@@ -503,12 +527,13 @@ Flush(Dbi_Handle *handle, void *arg)
  */
 
 static int
-Reset(Dbi_Handle *handle, void *arg)
+Reset(Dbi_Handle *handle)
 {
-    Connection *conn = handle->arg;
+    Connection *conn = handle->driverData;
 
-    assert(STREQ((char *) arg, "driver context"));
     assert(conn != NULL);
+    assert(STREQ(conn->configData, "driver config data"));
+
     assert(Ns_DStringLength(&conn->ds) == 0);
 
     return NS_OK;

@@ -54,42 +54,64 @@ typedef struct ServerData {
     Tcl_HashTable      poolsTable;
 } ServerData;
 
+
 /*
  * The following structure defines a pool of database handles.
  */
 
 typedef struct Pool {
 
-    Ns_Mutex           lock;
-    Ns_Cond            getCond;
+    char                 *module;          /* Pool name.  */
 
-    struct Handle     *firstPtr;
-    struct Handle     *lastPtr;
+    Ns_Mutex              lock;
+    Ns_Cond               getCond;
 
-    char              *module;
-    Dbi_Driver        *driver;
+    struct Handle        *firstPtr;
+    struct Handle        *lastPtr;
 
-    int                nhandles;        /* Current number of handles in pool. */
-    int                maxhandles;      /* Max handles to keep in pool. */
-    int                maxwait;         /* Default seconds to wait for handle. */
-    time_t             maxidle;         /* Seconds before unused handle is closed.  */
-    time_t             maxopen;         /* Seconds before active handle is closed. */
-    int                maxqueries;      /* Close active handle after maxqueries. */
-    int                cachesize;       /* Size of prepared statement cache. */
+    int                   nhandles;        /* Current number of handles in pool. */
+    int                   maxhandles;      /* Max handles to keep in pool. */
+    int                   maxwait;         /* Default seconds to wait for handle. */
+    time_t                maxidle;         /* Seconds before unused handle is closed.  */
+    time_t                maxopen;         /* Seconds before active handle is closed. */
+    int                   maxqueries;      /* Close active handle after maxqueries. */
+    int                   cachesize;       /* Size of prepared statement cache. */
 
-    int                stale_on_close;  /* Epoch for bouncing handles. */
-    int                stopping;        /* Server is shutting down. */
+    int                   stale_on_close;  /* Epoch for bouncing handles. */
+    int                   stopping;        /* Server is shutting down. */
 
     struct {
-        unsigned int   handlegets;      /* Total No. requests for a handle. */
-        unsigned int   handlemisses;    /* Handle requests which timed out. */
-        unsigned int   handleopens;     /* Number of times connected to db. */
-        unsigned int   handlefailures;  /* Handle open attempts which failed. */
-        unsigned int   queries;         /* Total queries by all handles. */
-        unsigned int   otimecloses;     /* Handle closes due to maxopen. */
-        unsigned int   atimecloses;     /* Handle closed due to maxidle. */
-        unsigned int   querycloses;     /* Handle closes due to maxqueries. */
+        unsigned int      handlegets;      /* Total No. requests for a handle. */
+        unsigned int      handlemisses;    /* Handle requests which timed out. */
+        unsigned int      handleopens;     /* Number of times connected to db. */
+        unsigned int      handlefailures;  /* Handle open attempts which failed. */
+        unsigned int      queries;         /* Total queries by all handles. */
+        unsigned int      otimecloses;     /* Handle closes due to maxopen. */
+        unsigned int      atimecloses;     /* Handle closed due to maxidle. */
+        unsigned int      querycloses;     /* Handle closes due to maxqueries. */
     } stats;
+
+
+    /*
+     * Registered driver callbacks and data.
+     */
+
+    ClientData           configData;    /* Driver private config context. */
+
+    CONST char           *drivername;   /* Driver identifier. */
+    CONST char           *database;     /* Database identifier. */
+
+    Dbi_OpenProc         *openProc;
+    Dbi_CloseProc        *closeProc;
+    Dbi_ConnectedProc    *connectedProc;
+    Dbi_BindVarProc      *bindVarProc;
+    Dbi_PrepareProc      *prepareProc;
+    Dbi_PrepareCloseProc *prepareCloseProc;
+    Dbi_ExecProc         *execProc;
+    Dbi_ValueProc        *valueProc;
+    Dbi_ColumnProc       *columnProc;
+    Dbi_FlushProc        *flushProc;
+    Dbi_ResetProc        *resetProc;
 
 } Pool;
 
@@ -99,12 +121,16 @@ typedef struct Pool {
 
 typedef struct Handle {
 
-    /* Publicly visible in a Dbi_Handle. */
+    /*
+     * Publicly visible in a Dbi_Handle.
+     */
 
     struct Pool      *poolPtr;      /* The pool this handle belongs to. */
-    void             *arg;          /* Driver private handle context. */
+    ClientData        driverData;   /* Driver private handle context. */
 
-    /* Private to a Handle. */
+    /*
+     * Private to a Handle.
+     */
 
     struct Handle    *nextPtr;      /* Next handle in the pool. */
     char              cExceptionCode[6];
@@ -123,8 +149,8 @@ typedef struct Handle {
     int               currentCol;   /* The current column index. */
     int               currentRow;   /* The current row index. */
 
-    unsigned int      stmtid;       /* Unique ID for statements. */
-    Ns_Cache         *cache;        /* Cache of prepared Statement structs. */
+    unsigned int      stmtid;       /* Unique ID for cached statements. */
+    Ns_Cache         *cache;        /* Cache of statements and driver data. */
 
     struct {
         unsigned int  queries;      /* Total queries via current connection. */
@@ -132,15 +158,27 @@ typedef struct Handle {
 
 } Handle;
 
+
 /*
  * The following structure defines a prepared statement kept
  * in a per-handle cache.
  */
 
 typedef struct Statement {
+
+    /*
+     * Public in a Dbi_Statement.
+     */
+
+    char             *sql;          /* Driver specific SQL: &driverSql */
+    int               length;       /* Length of sql. */
     unsigned int      id;           /* Unique (per handle) statement ID. */
     unsigned int      nqueries;     /* Total queries for this statement. */
-    void             *arg;          /* Statement context for driver. */
+    ClientData        driverData;   /* Statement context for driver. */
+
+    /*
+     * Private to a Statement.
+     */
 
     Handle           *handlePtr;    /* Handle this Statement belongs to. */
     Tcl_HashEntry    *hPtr;         /* Entry in the id table. */
@@ -151,8 +189,8 @@ typedef struct Statement {
         CONST char   *name;         /* (Hash table key) */
     } vars[DBI_MAX_BIND];           /* Bind variables by index. */
 
-    int               length;       /* Length of sql. */
-    char              sql[1];       /* Driver specific SQL. */
+    char              driverSql[1]; /* Driver specific SQL. */
+
 } Statement;
 
 
@@ -162,9 +200,11 @@ typedef struct Statement {
 
 #define DbiLog(handle,level,msg,...)                            \
     Ns_Log(level, "dbi[%s:%s]: " msg,                           \
-           ((Handle *) handle)->poolPtr->driver->name,          \
+           ((Handle *) handle)->poolPtr->drivername,            \
            ((Handle *) handle)->poolPtr->module, __VA_ARGS__)
 
+
+static void MapPool(ServerData *sdataPtr, Pool *poolPtr, int isdefault);
 static ServerData *GetServer(CONST char *server);
 static void ReturnHandle(Handle * handle) NS_GNUC_NONNULL(1);
 static int CloseIfStale(Handle *, time_t now) NS_GNUC_NONNULL(1);
@@ -192,6 +232,54 @@ static Tcl_HashTable  serversTable;
 /*
  *----------------------------------------------------------------------
  *
+ * Dbi_Init --
+ *
+ *      Dbi library entry point. 
+ *
+ * Results:
+ *      None.
+ *
+ * Side effects:
+ *      Registers dbi commands for all servers.
+ *
+ *----------------------------------------------------------------------
+ */
+
+void
+Dbi_Init(void)
+{
+    ServerData    *sdataPtr;
+    Tcl_HashEntry *hPtr;
+    Ns_Set        *set;
+    char          *server;
+    int            i, new;
+
+    Tcl_InitHashTable(&serversTable, TCL_STRING_KEYS);
+    Ns_RegisterProcInfo(ScheduledPoolCheck, "dbi:idlecheck", PoolCheckArgProc);
+
+    set = Ns_ConfigGetSection("ns/servers");
+    for (i = 0; i < Ns_SetSize(set); i++) {
+        server = Ns_SetKey(set, i);
+
+        sdataPtr = ns_calloc(1, sizeof(ServerData));
+        sdataPtr->server = server;
+        Tcl_InitHashTable(&sdataPtr->poolsTable, TCL_STRING_KEYS);
+
+        hPtr = Tcl_CreateHashEntry(&serversTable, server, &new);
+        Tcl_SetHashValue(hPtr, sdataPtr);
+
+        if (Ns_TclRegisterTrace(server, DbiInitInterp, server,
+                                NS_TCL_TRACE_CREATE) != NS_OK) {
+            Ns_Log(Error, "dbi: error registering tcl commands for server '%s'",
+                   server);
+        }
+    }
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
  * Dbi_RegisterDriver --
  *
  *      Register dbi procs for a driver and create the configured pools.
@@ -207,58 +295,75 @@ static Tcl_HashTable  serversTable;
 
 int
 Dbi_RegisterDriver(CONST char *server, CONST char *module,
-                   Dbi_Driver *driver, int size)
+                   CONST char *driver, CONST char *database,
+                   Dbi_DriverProc *procs, ClientData configData)
 {
     ServerData      *sdataPtr;
+    Dbi_DriverProc  *procPtr;
     Pool            *poolPtr;
     Handle          *handlePtr;
     Tcl_HashEntry   *hPtr;
     Tcl_HashSearch   search;
-    Ns_Set          *set;
     char            *path;
-    int              i, new, isdefault;
-    static int       once = 0;
+    int              i, nprocs, isdefault;
+
+    poolPtr = ns_calloc(1, sizeof(Pool));
+    poolPtr->drivername = driver;
+    poolPtr->database = database;
+    poolPtr->configData = configData;
+
+    for (procPtr = procs, nprocs = 0; procPtr->proc != NULL; procPtr++) {
+        switch (procPtr->id) {
+        case Dbi_OpenProcId:
+            poolPtr->openProc = procPtr->proc;
+            break;
+        case Dbi_CloseProcId:
+            poolPtr->closeProc = procPtr->proc;
+            break;
+        case Dbi_ConnectedProcId:
+            poolPtr->connectedProc = procPtr->proc;
+            break;
+        case Dbi_BindVarProcId:
+            poolPtr->bindVarProc = procPtr->proc;
+            break;
+        case Dbi_PrepareProcId:
+            poolPtr->prepareProc = procPtr->proc;
+            break;
+        case Dbi_PrepareCloseProcId:
+            poolPtr->prepareCloseProc = procPtr->proc;
+            break;
+        case Dbi_ExecProcId:
+            poolPtr->execProc = procPtr->proc;
+            break;
+        case Dbi_ValueProcId:
+            poolPtr->valueProc = procPtr->proc;
+            break;
+        case Dbi_ColumnProcId:
+            poolPtr->columnProc = procPtr->proc;
+            break;
+        case Dbi_FlushProcId:
+            poolPtr->flushProc = procPtr->proc;
+            break;
+        case Dbi_ResetProcId:
+            poolPtr->resetProc = procPtr->proc;
+            break;        
+        default:
+            Ns_Log(Error, "dbi: Dbi_RegisterDriver: invalid Dbi_ProcId: %d",
+                   procPtr->id);
+            ns_free(poolPtr);
+            return NS_ERROR;
+        }
+        nprocs++;
+    }
 
     /*
      * Ensure all callbacks are present.
      */
 
-    if (sizeof(Dbi_Driver) < size || size <= 0) {
-        Ns_Log(Error, "dbi: Dbi_RegisterDriver: driver structure mismatch");
+    if (nprocs < Dbi_ResetProcId) {
+        Ns_Log(Error, "dbi: Dbi_RegisterDriver: driver callback(s) missing");
+        ns_free(poolPtr);
         return NS_ERROR;
-    }
-    for (i = sizeof(Dbi_Driver) -1; i > 1; i--) {
-        if (driver + i == NULL) {
-            Ns_Log(Error, "dbi: Dbi_RegisterDriver: driver function missing");
-            return NS_ERROR;
-        }
-    }
-
-    /*
-     * Initialise the nsdbi library.
-     * Gather list of servers now for the benfit of global modules.
-     */
-
-    if (!once) {
-        once = 1;
-
-        Ns_RegisterProcInfo(ScheduledPoolCheck, "dbi:check", PoolCheckArgProc);
-        Tcl_InitHashTable(&serversTable, TCL_STRING_KEYS);
-
-        set = Ns_ConfigGetSection("ns/servers");
-        for (i = 0; i < Ns_SetSize(set); i++) {
-            sdataPtr = ns_calloc(1, sizeof(ServerData));
-            sdataPtr->server = Ns_SetKey(set, i);
-            Tcl_InitHashTable(&sdataPtr->poolsTable, TCL_STRING_KEYS);
-            hPtr = Tcl_CreateHashEntry(&serversTable, sdataPtr->server, &new);
-            Tcl_SetHashValue(hPtr, sdataPtr);
-            if (Ns_TclRegisterTrace(sdataPtr->server, DbiInitInterp, sdataPtr->server,
-                                    NS_TCL_TRACE_CREATE) != NS_OK) {
-                Ns_Log(Error, "dbi: error register tcl commands for server '%s'",
-                       sdataPtr->server);
-                return NS_ERROR;
-            }
-        }
     }
 
     /*
@@ -271,11 +376,9 @@ Dbi_RegisterDriver(CONST char *server, CONST char *module,
         return NS_ERROR;
     }
 
-    poolPtr = ns_calloc(1, sizeof(Pool));
     Ns_MutexSetName2(&poolPtr->lock, "dbi", module);
     Ns_CondInit(&poolPtr->getCond);
-    poolPtr->driver = driver;
-    poolPtr->module = ns_strdup(module);
+    poolPtr->module     = ns_strdup(module);
     poolPtr->maxhandles = Ns_ConfigIntRange(path, "maxhandles", 2,          1, INT_MAX);
     poolPtr->maxwait    = Ns_ConfigIntRange(path, "maxwait",    10,         0, INT_MAX);
     poolPtr->maxidle    = Ns_ConfigIntRange(path, "maxidle",    0,          0, INT_MAX);
@@ -302,34 +405,40 @@ Dbi_RegisterDriver(CONST char *server, CONST char *module,
     }
 
     /*
-     * Map pool to all virtual servers if module is global.
+     * Make pool available to this virtual server, or to all virtual servers
+     * if module is global.
      */
 
-    isdefault = Ns_ConfigBool(path, "default", 0);
+    isdefault = Ns_ConfigBool(path, "default", 0); /* Default pool for this verver. */
 
     if (server != NULL) {
         hPtr = Tcl_FindHashEntry(&serversTable, server);
         assert(hPtr != NULL);
         sdataPtr = Tcl_GetHashValue(hPtr);
-        hPtr = Tcl_CreateHashEntry(&sdataPtr->poolsTable, module, &new);
-        Tcl_SetHashValue(hPtr, poolPtr);
-        if (isdefault) {
-            sdataPtr->defpoolPtr = (Dbi_Pool *) poolPtr;
-        }
+        MapPool(sdataPtr, poolPtr, isdefault);
     } else {
         hPtr = Tcl_FirstHashEntry(&serversTable, &search);
         while (hPtr != NULL) {
             sdataPtr = Tcl_GetHashValue(hPtr);
-            hPtr = Tcl_CreateHashEntry(&sdataPtr->poolsTable, module, &new);
-            Tcl_SetHashValue(hPtr, poolPtr);
-            if (isdefault) {
-                sdataPtr->defpoolPtr = (Dbi_Pool *) poolPtr;
-            }
+            MapPool(sdataPtr, poolPtr, isdefault);
             hPtr = Tcl_NextHashEntry(&search);
         }
     }
 
     return NS_OK;
+}
+
+static void
+MapPool(ServerData *sdataPtr, Pool *poolPtr, int isdefault)
+{
+    Tcl_HashEntry *hPtr;
+    int            new;
+
+    hPtr = Tcl_CreateHashEntry(&sdataPtr->poolsTable, poolPtr->module, &new);
+    Tcl_SetHashValue(hPtr, poolPtr);
+    if (isdefault) {
+        sdataPtr->defpoolPtr = (Dbi_Pool *) poolPtr;
+    }
 }
 
 
@@ -449,8 +558,7 @@ Dbi_ListPools(Ns_DString *ds, CONST char *server)
  *
  * Dbi_GetHandle --
  *
- *      Get a single handle from a pool within the given number of
- *      seconds.
+ *      Get a single handle from a pool within the given timeout.
  *
  * Results:
  *      NS_OK, NS_TIMEOUT or NS_ERROR.
@@ -462,7 +570,7 @@ Dbi_ListPools(Ns_DString *ds, CONST char *server)
  */
 
 int
-Dbi_GetHandle(Dbi_Handle **handlePtrPtr, Dbi_Pool *pool, Ns_Time *timeoutPtr)
+Dbi_GetHandle(Dbi_Pool *pool, Ns_Time *timeoutPtr, Dbi_Handle **handlePtrPtr)
 {
     Pool       *poolPtr = (Pool *) pool;
     Handle     *handlePtr;
@@ -585,13 +693,14 @@ Dbi_PutHandle(Dbi_Handle *handle)
  *      Parse the sql for bind variables.
  *
  * Results:
- *      NS_ERROR if max bind variables exceeded.
+ *      NS_ERROR if statement contains more than DBI_MAX_BIND
+ *      bind variables.
  *
  * Side effects:
  *      Statement is parsed by driver callback and any bind variables
  *      are converted to driver specific notation.
  *
- *      Statement is cached for handle.
+ *      Statement text is cached for handle.
  *
  *----------------------------------------------------------------------
  */
@@ -600,7 +709,8 @@ Dbi_Statement *
 Dbi_Prepare(Dbi_Handle *handle, CONST char *sql, int length)
 {
     Handle          *handlePtr = (Handle *) handle;
-    Dbi_Driver      *driver    = handlePtr->poolPtr->driver;
+    Pool            *poolPtr = handlePtr->poolPtr;
+    Dbi_Statement   *stmt;
     Statement       *stmtPtr;
     Ns_Entry        *entry;
     int              new;
@@ -619,24 +729,22 @@ Dbi_Prepare(Dbi_Handle *handle, CONST char *sql, int length)
     } else {
         stmtPtr = Ns_CacheGetValue(entry);
     }
+    stmt = (Dbi_Statement *) stmtPtr;
 
     /*
-     * Prepare the query.
+     * Prepare the query if not already done.
      */
 
-    if (stmtPtr->arg == NULL) {
+    DbiLog(handle, Debug, "Dbi_Prepare: calling Dbi_PrepareProc: id: %u nqueries: %d",
+           stmt->id, stmt->nqueries);
 
-        DbiLog(handle, Debug, "Dbi_Prepare: calling Dbi_PrepareProc: id: %u nqueries: %d",
-               stmtPtr->id, stmtPtr->nqueries);
-
-        if ((*driver->prepareProc)(handle, stmtPtr->sql, stmtPtr->length,
-                                   stmtPtr->id, stmtPtr->nqueries,
-                                   &stmtPtr->arg, driver->arg) != NS_OK) {
-            return NULL;
-        }
+    if (stmtPtr->driverData != NULL
+            && (*poolPtr->prepareProc)(handle, stmt) != NS_OK) {
+        /* FIXME: log error ??? */
+        return NULL;
     }
 
-    return (Dbi_Statement *) stmtPtr;
+    return stmt;
 }
 
 
@@ -719,7 +827,7 @@ Dbi_Exec(Dbi_Handle *handle, Dbi_Statement *stmt,
 {
     Statement       *stmtPtr   = (Statement *) stmt;
     Handle          *handlePtr = (Handle *) handle;
-    Dbi_Driver      *driver    = handlePtr->poolPtr->driver;
+    Pool            *poolPtr   = handlePtr->poolPtr;
     DBI_EXEC_STATUS  status;
 
     DbiLog(handle, Debug, "Dbi_Exec: calling Dbi_ExecProc: bound: %d sql: %s",
@@ -731,10 +839,9 @@ Dbi_Exec(Dbi_Handle *handle, Dbi_Statement *stmt,
             "bug: bind variables not bound with values");
     }
 
-    status = (*driver->execProc)(handle, stmtPtr->sql, stmtPtr->length,
-                                 values, lengths, stmtPtr->nbind,
-                                 &handlePtr->numCols, &handlePtr->numRows,
-                                 stmtPtr->arg, driver->arg);
+    status = (*poolPtr->execProc)(handle, stmt,
+                                  values, lengths, stmtPtr->nbind,
+                                  &handlePtr->numCols, &handlePtr->numRows);
     handlePtr->stats.queries++;
     stmtPtr->nqueries++;
 
@@ -774,12 +881,13 @@ Dbi_ExecDirect(Dbi_Handle *handle, CONST char *sql)
     CONST char    *values[DBI_MAX_BIND];
     unsigned int   lengths[DBI_MAX_BIND];
 
+    memset(values, 0, sizeof(values));
+    memset(lengths, 0, sizeof(lengths));
+
     stmt = Dbi_Prepare(handle, sql, strlen(sql));
     if (stmt == NULL) {
         return DBI_EXEC_ERROR;
     }
-    memset(&values, 0, sizeof(values));
-    memset(&lengths, 0, sizeof(lengths));
 
     return Dbi_Exec(handle, stmt, values, lengths);
 }
@@ -839,9 +947,9 @@ DBI_VALUE_STATUS
 Dbi_NextValue(Dbi_Handle *handle, CONST char **valuePtr, int *vlengthPtr,
               CONST char **columnPtr, int *clengthPtr)
 {
-    Handle     *handlePtr = (Handle *) handle;
-    Dbi_Driver *driver    = handlePtr->poolPtr->driver;
-    int         vlength, clength, status;
+    Handle *handlePtr = (Handle *) handle;
+    Pool   *poolPtr   = handlePtr->poolPtr;
+    int     vlength, clength, status;
 
     if (handlePtr->fetchingRows == NS_FALSE) {
         Ns_Log(Bug, "dbi: Dbi_NextValue: no pending rows");
@@ -853,8 +961,8 @@ Dbi_NextValue(Dbi_Handle *handle, CONST char **valuePtr, int *vlengthPtr,
            handlePtr->numCols, handlePtr->numRows,
            handlePtr->currentCol, handlePtr->currentRow);
 
-    status = (*driver->valueProc)(handle, handlePtr->currentCol, handlePtr->currentRow,
-                                  valuePtr, &vlength, driver->arg);
+    status = (*poolPtr->valueProc)(handle, handlePtr->currentCol, handlePtr->currentRow,
+                                   valuePtr, &vlength);
     if (status == NS_ERROR) {
         return DBI_VALUE_ERROR;
     }
@@ -866,8 +974,8 @@ Dbi_NextValue(Dbi_Handle *handle, CONST char **valuePtr, int *vlengthPtr,
         DbiLog(handlePtr, Debug, "Dbi_NextValue: calling Dbi_ColumnProc: "
                "column index: %d row index: %d",
                handlePtr->currentCol, handlePtr->currentRow);
-        status = (*driver->columnProc)(handle, handlePtr->currentCol,
-                                       columnPtr, &clength, driver->arg);
+        status = (*poolPtr->columnProc)(handle, handlePtr->currentCol,
+                                        columnPtr, &clength);
         if (status == NS_ERROR) {
             return DBI_VALUE_ERROR;
         }
@@ -913,15 +1021,15 @@ Dbi_NextValue(Dbi_Handle *handle, CONST char **valuePtr, int *vlengthPtr,
 void
 Dbi_Flush(Dbi_Handle  *handle)
 {
-    Handle     *handlePtr = (Handle *) handle;
-    Dbi_Driver *driver    = handlePtr->poolPtr->driver;
+    Handle *handlePtr = (Handle *) handle;
+    Pool   *poolPtr   = handlePtr->poolPtr;
 
     DbiLog(handlePtr, Debug, "Dbi_Flush: calling Dbi_FlushProc:"
            "fetching rows: %d cols: %d rows: %d currentCol: %d currentRow: %d",
            handlePtr->fetchingRows, handlePtr->numCols, handlePtr->numRows,
            handlePtr->currentCol, handlePtr->currentRow);
 
-    (*driver->flushProc)(handle, driver->arg);
+    (*poolPtr->flushProc)(handle);
 
     handlePtr->numCols = handlePtr->numRows = 0;
     handlePtr->currentCol = handlePtr->currentRow = 0;
@@ -952,13 +1060,13 @@ Dbi_Flush(Dbi_Handle  *handle)
 int
 Dbi_Reset(Dbi_Handle *handle)
 {
-    Dbi_Driver *driver = ((Handle *) handle)->poolPtr->driver;
-    int         status;
+    Pool *poolPtr = ((Handle *) handle)->poolPtr;
+    int   status;
 
     Dbi_Flush(handle);
 
     DbiLog(handle, Debug, "%s", "Dbi_Reset: calling Dbi_ResetProc");
-    status = (*driver->resetProc)(handle, driver->arg);
+    status = (*poolPtr->resetProc)(handle);
 
     if (Dbi_ExceptionPending(handle)) {
         DbiLog(handle, Error, "reset: %s: %s",
@@ -991,9 +1099,7 @@ Dbi_Reset(Dbi_Handle *handle)
 void
 Dbi_BouncePool(Dbi_Pool *pool)
 {
-    Pool *poolPtr = (Pool *) pool;
-
-    CheckPool(poolPtr, 1);
+    CheckPool((Pool *) pool, 1);
 }
 
 
@@ -1059,13 +1165,13 @@ Dbi_PoolName(Dbi_Pool *pool)
 CONST char *
 Dbi_DriverName(Dbi_Pool *pool)
 {
-    return ((Pool *) pool)->driver->name;
+    return ((Pool *) pool)->drivername;
 }
 
 CONST char *
 Dbi_DatabaseName(Dbi_Pool *pool)
 {
-    return ((Pool *) pool)->driver->database;
+    return ((Pool *) pool)->database;
 }
 
 
@@ -1143,7 +1249,7 @@ Dbi_Config(Dbi_Pool *pool, DBI_CONFIG_OPTION opt, int newValue)
  *
  * Side effects:
  *      Status code and message may be updated.
-*
+ *
  *----------------------------------------------------------------------
  */
 
@@ -1356,7 +1462,7 @@ ReturnHandle(Handle *handlePtr)
  *      NS_TRUE if connection closed, NS_FALSE otherwise.
  *
  * Side effects:
- *      None.
+ *      NB: Pool must be locked or handle otherwise protected.
  *
  *----------------------------------------------------------------------
  */
@@ -1366,7 +1472,6 @@ CloseIfStale(Handle *handlePtr, time_t now)
 {
     Dbi_Handle *handle  = (Dbi_Handle *) handlePtr;
     Pool       *poolPtr = handlePtr->poolPtr;
-    Dbi_Driver *driver  = poolPtr->driver;
     char       *reason  = NULL;
 
     if (Connected(handlePtr)) {
@@ -1390,8 +1495,7 @@ CloseIfStale(Handle *handlePtr, time_t now)
 
             CloseStatements(handlePtr->cache);
 
-            (*driver->closeProc)(handle, driver->arg);
-            handle->arg = NULL;
+            (*poolPtr->closeProc)(handle);
             handlePtr->atime = handlePtr->otime = 0;
             poolPtr->stats.queries += handlePtr->stats.queries;
             handlePtr->stats.queries = 0;
@@ -1532,7 +1636,7 @@ AtShutdown(Ns_Time *toPtr, void *arg)
         Ns_MutexUnlock(&poolPtr->lock);
     } else {
         Ns_DStringInit(&ds);
-        Ns_Log(Notice, "dbi[%s:%s]: %s", poolPtr->driver->name, poolPtr->module,
+        Ns_Log(Notice, "dbi[%s:%s]: %s", poolPtr->drivername, poolPtr->module,
                Dbi_Stats(&ds, (Dbi_Pool *) poolPtr));
         Ns_DStringFree(&ds);
         CheckPool(poolPtr, 1);
@@ -1559,15 +1663,14 @@ AtShutdown(Ns_Time *toPtr, void *arg)
 static int
 Connect(Handle *handlePtr)
 {
-    Dbi_Handle *handle  = (Dbi_Handle *) handlePtr;
-    Pool       *poolPtr = handlePtr->poolPtr;
-    Dbi_Driver *driver  = poolPtr->driver;
+    Dbi_Handle *handle    = (Dbi_Handle *) handlePtr;
+    Pool       *poolPtr   = handlePtr->poolPtr;
     char       *msg;
-    int         status  = NS_ERROR;
+    int         status = NS_ERROR;
 
     if (!poolPtr->stopping) {
         DbiLog(handle, Debug, "%s", "Connect: calling Dbi_OpenProc");
-        status = (*driver->openProc)(handle, driver->arg);
+        status = (*poolPtr->openProc)(poolPtr->configData, handle);
         poolPtr->stats.handleopens++;
         if (status != NS_OK) {
             poolPtr->stats.handlefailures++;
@@ -1608,10 +1711,10 @@ Connect(Handle *handlePtr)
 static int
 Connected(Handle *handlePtr)
 {
-    Dbi_Handle *handle = (Dbi_Handle *) handlePtr;
-    Dbi_Driver *driver = handlePtr->poolPtr->driver;
+    Dbi_Handle *handle  = (Dbi_Handle *) handlePtr;
+    Pool       *poolPtr = handlePtr->poolPtr;
 
-    return (*driver->connectedProc)(handle, driver->arg);
+    return (*poolPtr->connectedProc)(handle);
 }
 
 
@@ -1634,16 +1737,17 @@ Connected(Handle *handlePtr)
 static void
 FreeStatement(void *arg)
 {
-    Statement  *stmtPtr = arg;
-    Dbi_Driver *driver;
+    Statement *stmtPtr = arg;
+    Pool      *poolPtr;
 
     Tcl_DeleteHashTable(&stmtPtr->bindTable);
-    if (stmtPtr->arg != NULL) {
+    if (stmtPtr->driverData != NULL) {
         DbiLog(stmtPtr->handlePtr, Debug,
                "FreeStatement: calling Dbi_PrepareCloseProc: id: %u nqueries: %u",
                stmtPtr->id, stmtPtr->nqueries);
-        driver = stmtPtr->handlePtr->poolPtr->driver;
-        (*driver->prepareCloseProc)(stmtPtr->arg, driver->arg);
+        poolPtr = stmtPtr->handlePtr->poolPtr;
+        (*poolPtr->prepareCloseProc)((Dbi_Handle *) stmtPtr->handlePtr,
+                                     (Dbi_Statement *) stmtPtr);
     }
     ns_free(stmtPtr);
 }
@@ -1657,13 +1761,14 @@ FreeStatement(void *arg)
  *      Call the driver proc for each prepared statement in the cache,
  *      but don't flush the cache entries.
  *
- *      This is called just before a handle is closed.
+ *      This is called just before a handle is closed to free resources
+ *      held by prepared statements, which are tied to a specific handle.
  *
  * Results:
  *      None.
  *
  * Side effects:
- *      None.
+ *      NB: Pool must be locked or handles otherwise protected.
  *
  *----------------------------------------------------------------------
  */
@@ -1674,17 +1779,18 @@ CloseStatements(Ns_Cache *cache)
     Ns_CacheSearch  search;
     Ns_Entry       *entry;
     Statement      *stmtPtr;
-    Dbi_Driver     *driver;
+    Pool           *poolPtr;
 
     entry = Ns_CacheFirstEntry(cache, &search);
     while (entry != NULL) {
         stmtPtr = Ns_CacheGetValue(entry);
-        if (stmtPtr->arg != NULL) {
+        if (stmtPtr->driverData != NULL) {
             DbiLog(stmtPtr->handlePtr, Debug,
                    "CloseStatements: calling Dbi_PrepareCloseProc: id: %u nqueries: %u",
                    stmtPtr->id, stmtPtr->nqueries);
-            driver = stmtPtr->handlePtr->poolPtr->driver;
-            (*driver->prepareCloseProc)(stmtPtr->arg, driver->arg);
+            poolPtr = stmtPtr->handlePtr->poolPtr;
+            (*poolPtr->prepareCloseProc)((Dbi_Handle *) stmtPtr->handlePtr,
+                                         (Dbi_Statement *) stmtPtr);
         }
         entry = Ns_CacheNextEntry(&search);
     }
@@ -1723,7 +1829,7 @@ ParseBindVars(Handle *handlePtr, CONST char *origSql, int origLength)
 
     /*
      * Allocate a new Statement. Allocate a little extra memory
-     * for driver notation which may be (but is unlikely to be)
+     * for driver notation which may (but is unlikely to) be
      * larger than the original. Check for overrun at the end.
      */
 
@@ -1800,8 +1906,9 @@ ParseBindVars(Handle *handlePtr, CONST char *origSql, int origLength)
 
  done:
     if (status == NS_OK) {
-        stmtPtr->id = ++handlePtr->stmtid;
-        strncpy(stmtPtr->sql, Ns_DStringValue(&ds), Ns_DStringLength(&ds));
+        stmtPtr->id = handlePtr->stmtid++;
+        strncpy(stmtPtr->driverSql, Ns_DStringValue(&ds), Ns_DStringLength(&ds));
+        stmtPtr->sql = stmtPtr->driverSql;
         stmtPtr->length = Ns_DStringLength(&ds);
     } else {
         Tcl_DeleteHashTable(&stmtPtr->bindTable);
@@ -1817,7 +1924,7 @@ ParseBindVars(Handle *handlePtr, CONST char *origSql, int origLength)
 static int
 DefineBindVar(Statement *stmtPtr, CONST char *name, Ns_DString *dsPtr)
 {
-    Dbi_Driver    *driver = stmtPtr->handlePtr->poolPtr->driver;
+    Pool          *poolPtr = stmtPtr->handlePtr->poolPtr;
     Tcl_HashEntry *hPtr;
     int            new, index;
 
@@ -1842,7 +1949,7 @@ DefineBindVar(Statement *stmtPtr, CONST char *name, Ns_DString *dsPtr)
     stmtPtr->vars[index].name = Tcl_GetHashKey(&stmtPtr->bindTable, hPtr);
     stmtPtr->nbind++;
 
-    (*driver->bindVarProc)(dsPtr, name, index, driver->arg);
+    (*poolPtr->bindVarProc)(dsPtr, name, index);
 
     return NS_OK;
 }

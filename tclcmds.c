@@ -879,7 +879,7 @@ GetHandle(InterpData *idataPtr, Dbi_Pool *pool, Ns_Time *timeoutPtr)
         timeoutPtr = Ns_AbsoluteTime(&time, timeoutPtr);
     }
 
-    switch (Dbi_GetHandle(&handle, pool, timeoutPtr)) {
+    switch (Dbi_GetHandle(pool, timeoutPtr, &handle)) {
     case NS_OK:
         return handle;
         break;
@@ -935,7 +935,7 @@ CleanupHandle(InterpData *idataPtr, Dbi_Handle *handle)
  * BindVars --
  *
  *      Bind values to the variables of a statement, looking at the keys
- *      of the dictionary if given, or local variables otherwise.
+ *      of the array or set if given, or local variables otherwise.
  *
  * Results:
  *      TCL_OK or TCL_ERROR.
