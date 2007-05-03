@@ -36,6 +36,7 @@
  */
 
 #include "nsdbi.h"
+#include "nsdbidrv.h"
 
 NS_RCSID("@(#) $Header$");
 
@@ -50,8 +51,8 @@ extern Ns_TclInterpInitProc DbiInitInterp;
 
 typedef struct ServerData {
     CONST char        *server;
-    Dbi_Pool          *defpoolPtr;
-    Tcl_HashTable      poolsTable;
+    Dbi_Pool          *defpoolPtr;  /* The default pool. */
+    Tcl_HashTable      poolsTable;  /* All available pools. */
 } ServerData;
 
 
@@ -108,8 +109,8 @@ typedef struct Pool {
     Dbi_PrepareProc      *prepareProc;
     Dbi_PrepareCloseProc *prepareCloseProc;
     Dbi_ExecProc         *execProc;
-    Dbi_ValueProc        *valueProc;
-    Dbi_ColumnProc       *columnProc;
+    Dbi_NextValueProc    *nextValueProc;
+    Dbi_ColumnNameProc   *columnNameProc;
     Dbi_FlushProc        *flushProc;
     Dbi_ResetProc        *resetProc;
 
@@ -143,14 +144,19 @@ typedef struct Handle {
 
     /* Result status. */
 
-    int               fetchingRows; /* Is there a pending result set? */
-    int               numCols;      /* Number of columns in penfing result. */
-    int               numRows;      /* Number of rows in pending result. */
-    int               currentCol;   /* The current column index. */
-    int               currentRow;   /* The current row index. */
+    struct Statement *stmtPtr;      /* A statement being executed. */
 
-    unsigned int      stmtid;       /* Unique ID for cached statements. */
+    int               fetchingRows; /* Is there a pending result set? */
+    unsigned int      colIdx;       /* Current column index being fetched. */
+    unsigned int      rowIdx;       /* Current row index being fetched.  */
+
+/*     unsigned int      numCols;      /\* Number of columns in pending result. *\/ */
+/*     unsigned int      numRows;      /\* Number of rows in pending result. *\/ */
+/*     unsigned int      currentCol;   /\* The current column index. *\/ */
+/*     unsigned int      currentRow;   /\* The current row index. *\/ */
+
     Ns_Cache         *cache;        /* Cache of statements and driver data. */
+    unsigned int      stmtid;       /* Unique ID counter for cached statements. */
 
     struct {
         unsigned int  queries;      /* Total queries via current connection. */
@@ -181,6 +187,8 @@ typedef struct Statement {
      */
 
     Handle           *handlePtr;    /* Handle this Statement belongs to. */
+    unsigned int      numCols;      /* Number of columns in a result. */
+
     Tcl_HashEntry    *hPtr;         /* Entry in the id table. */
 
     Tcl_HashTable     bindTable;    /* Bind variables by name. */
@@ -198,7 +206,7 @@ typedef struct Statement {
  * Local functions defined in this file
  */
 
-#define DbiLog(handle,level,msg,...)                            \
+#define Log(handle,level,msg,...)                               \
     Ns_Log(level, "dbi[%s:%s]: " msg,                           \
            ((Handle *) handle)->poolPtr->drivername,            \
            ((Handle *) handle)->poolPtr->module, __VA_ARGS__)
@@ -296,16 +304,16 @@ Dbi_Init(void)
 int
 Dbi_RegisterDriver(CONST char *server, CONST char *module,
                    CONST char *driver, CONST char *database,
-                   Dbi_DriverProc *procs, ClientData configData)
+                   CONST Dbi_DriverProc *procs, ClientData configData)
 {
-    ServerData      *sdataPtr;
-    Dbi_DriverProc  *procPtr;
-    Pool            *poolPtr;
-    Handle          *handlePtr;
-    Tcl_HashEntry   *hPtr;
-    Tcl_HashSearch   search;
-    char            *path;
-    int              i, nprocs, isdefault;
+    ServerData            *sdataPtr;
+    CONST Dbi_DriverProc  *procPtr;
+    Pool                  *poolPtr;
+    Handle                *handlePtr;
+    Tcl_HashEntry         *hPtr;
+    Tcl_HashSearch         search;
+    char                  *path;
+    int                    i, nprocs, isdefault;
 
     poolPtr = ns_calloc(1, sizeof(Pool));
     poolPtr->drivername = driver;
@@ -335,11 +343,11 @@ Dbi_RegisterDriver(CONST char *server, CONST char *module,
         case Dbi_ExecProcId:
             poolPtr->execProc = procPtr->proc;
             break;
-        case Dbi_ValueProcId:
-            poolPtr->valueProc = procPtr->proc;
+        case Dbi_NextValueProcId:
+            poolPtr->nextValueProc = procPtr->proc;
             break;
-        case Dbi_ColumnProcId:
-            poolPtr->columnProc = procPtr->proc;
+        case Dbi_ColumnNameProcId:
+            poolPtr->columnNameProc = procPtr->proc;
             break;
         case Dbi_FlushProcId:
             poolPtr->flushProc = procPtr->proc;
@@ -357,7 +365,7 @@ Dbi_RegisterDriver(CONST char *server, CONST char *module,
     }
 
     /*
-     * Ensure all callbacks are present.
+     * All callbacks are (currently) required.
      */
 
     if (nprocs < Dbi_ResetProcId) {
@@ -378,6 +386,7 @@ Dbi_RegisterDriver(CONST char *server, CONST char *module,
 
     Ns_MutexSetName2(&poolPtr->lock, "dbi", module);
     Ns_CondInit(&poolPtr->getCond);
+
     poolPtr->module     = ns_strdup(module);
     poolPtr->maxhandles = Ns_ConfigIntRange(path, "maxhandles", 2,          1, INT_MAX);
     poolPtr->maxwait    = Ns_ConfigIntRange(path, "maxwait",    10,         0, INT_MAX);
@@ -385,6 +394,7 @@ Dbi_RegisterDriver(CONST char *server, CONST char *module,
     poolPtr->maxopen    = Ns_ConfigIntRange(path, "maxopen",    0,          0, INT_MAX);
     poolPtr->maxqueries = Ns_ConfigIntRange(path, "maxqueries", 0,          0, INT_MAX);
     poolPtr->cachesize  = Ns_ConfigIntRange(path, "cachesize",  1024*1024,  0, INT_MAX);
+
     if (poolPtr->maxidle || poolPtr->maxopen) {
         Ns_ScheduleProc(ScheduledPoolCheck, poolPtr, 0,
                         Ns_ConfigIntRange(path, "checkinterval", 600, 30, INT_MAX));
@@ -409,7 +419,7 @@ Dbi_RegisterDriver(CONST char *server, CONST char *module,
      * if module is global.
      */
 
-    isdefault = Ns_ConfigBool(path, "default", 0); /* Default pool for this verver. */
+    isdefault = Ns_ConfigBool(path, "default", 0); /* Default pool for this server. */
 
     if (server != NULL) {
         hPtr = Tcl_FindHashEntry(&serversTable, server);
@@ -564,7 +574,7 @@ Dbi_ListPools(Ns_DString *ds, CONST char *server)
  *      NS_OK, NS_TIMEOUT or NS_ERROR.
  *
  * Side effects:
- *      Database may be opened if needed.
+ *      New database handle may be opened if needed.
  *
  *----------------------------------------------------------------------
  */
@@ -693,7 +703,7 @@ Dbi_PutHandle(Dbi_Handle *handle)
  *      Parse the sql for bind variables.
  *
  * Results:
- *      NS_ERROR if statement contains more than DBI_MAX_BIND
+ *      NS_OK, or NS_ERROR if statement contains more than DBI_MAX_BIND
  *      bind variables.
  *
  * Side effects:
@@ -705,12 +715,11 @@ Dbi_PutHandle(Dbi_Handle *handle)
  *----------------------------------------------------------------------
  */
 
-Dbi_Statement *
+int
 Dbi_Prepare(Dbi_Handle *handle, CONST char *sql, int length)
 {
     Handle          *handlePtr = (Handle *) handle;
     Pool            *poolPtr = handlePtr->poolPtr;
-    Dbi_Statement   *stmt;
     Statement       *stmtPtr;
     Ns_Entry        *entry;
     int              new;
@@ -723,83 +732,25 @@ Dbi_Prepare(Dbi_Handle *handle, CONST char *sql, int length)
     if (new) {
         if ((stmtPtr = ParseBindVars(handlePtr, sql, length)) == NULL) {
             Ns_CacheFlushEntry(entry);
-            return NULL;
+            return NS_ERROR;
         }
         Ns_CacheSetValueSz(entry, stmtPtr, sizeof(Statement) + stmtPtr->length);
     } else {
         stmtPtr = Ns_CacheGetValue(entry);
     }
-    stmt = (Dbi_Statement *) stmtPtr;
 
     /*
      * Prepare the query if not already done.
      */
 
-    DbiLog(handle, Debug, "Dbi_Prepare: calling Dbi_PrepareProc: id: %u nqueries: %d",
-           stmt->id, stmt->nqueries);
+    Log(handle, Debug, "Dbi_PrepareProc: id: %u, nqueries: %u",
+        stmtPtr->id, stmtPtr->nqueries);
 
-    if (stmtPtr->driverData != NULL
-            && (*poolPtr->prepareProc)(handle, stmt) != NS_OK) {
-        /* FIXME: log error ??? */
-        return NULL;
-    }
-
-    return stmt;
-}
-
-
-/*
- *----------------------------------------------------------------------
- *
- * Dbi_GetNumVariables --
- *
- *      Return the number of bind variables found in the prepared
- *      statement.
- *
- * Results:
- *      Zero or more variables.
- *
- * Side effects:
- *      None.
- *
- *----------------------------------------------------------------------
- */
-
-int
-Dbi_GetNumVariables(Dbi_Statement *stmt)
-{
-    return ((Statement *) stmt)->nbind;
-}
-
-
-/*
- *----------------------------------------------------------------------
- *
- * Dbi_GetBindVariable --
- *
- *      Get the name of the bind variable at the given index.
- *
- *      Called by user code after a Dbi_Prepare to identify variables
- *      which need bound.
- *
- * Results:
- *      NS_OK if exists, NS_ERROR otherwise.
- *
- * Side effects:
- *      None.
- *
- *----------------------------------------------------------------------
- */
-
-int
-Dbi_GetBindVariable(Dbi_Statement *stmt, int idx, CONST char **namePtr)
-{
-    Statement *stmtPtr = (Statement *) stmt;
-
-    if (idx < 0 || idx >= stmtPtr->nbind) {
+    if ((*poolPtr->prepareProc)(handle, (Dbi_Statement *) stmtPtr,
+                                &stmtPtr->numCols) != NS_OK) {
         return NS_ERROR;
     }
-    *namePtr = stmtPtr->vars[idx].name;
+    handlePtr->stmtPtr = stmtPtr;
 
     return NS_OK;
 }
@@ -808,53 +759,171 @@ Dbi_GetBindVariable(Dbi_Statement *stmt, int idx, CONST char **namePtr)
 /*
  *----------------------------------------------------------------------
  *
- * Dbi_Exec --
+ * Dbi_NumVariables --
  *
- *      Execute an SQL statement.
+ *      Return the number of bind variables found in the prepared
+ *      statement.
  *
  * Results:
- *      DBI_EXEC_DML, DBI_EXEC_ROWS, or DBI_EXEC_ERROR.
+ *      Number of bind variables for current statement (which
+ *      may be zero).
  *
  * Side effects:
- *      SQL is sent to database for evaluation.
+ *      None.
  *
  *----------------------------------------------------------------------
  */
 
-DBI_EXEC_STATUS
-Dbi_Exec(Dbi_Handle *handle, Dbi_Statement *stmt,
-         CONST char **values, unsigned int *lengths)
+unsigned int
+Dbi_NumVariables(Dbi_Handle *handle)
 {
-    Statement       *stmtPtr   = (Statement *) stmt;
-    Handle          *handlePtr = (Handle *) handle;
-    Pool            *poolPtr   = handlePtr->poolPtr;
-    DBI_EXEC_STATUS  status;
+    Statement *stmtPtr = ((Handle *) handle)->stmtPtr;
 
-    DbiLog(handle, Debug, "Dbi_Exec: calling Dbi_ExecProc: bound: %d sql: %s",
-           stmtPtr->nbind, stmtPtr->sql);
+    assert(stmtPtr);
 
-    if (stmtPtr->nbind > 0
-        && (values == NULL || lengths == NULL)) {
+    return stmtPtr->nbind;
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * Dbi_VariableName --
+ *
+ *      Get the name of the bind variable at the given index for the
+ *      statement currently prepared for the handle.
+ *
+ * Results:
+ *      NS_OK or NS_ERROR.
+ *
+ * Side effects:
+ *      None.
+ *
+ *----------------------------------------------------------------------
+ */
+
+int
+Dbi_VariableName(Dbi_Handle *handle, unsigned int index, CONST char **namePtr)
+{
+    Statement *stmtPtr = ((Handle *) handle)->stmtPtr;
+
+    assert(stmtPtr);
+
+    if (index >= stmtPtr->nbind) {
         Dbi_SetException(handle, "DBI",
-            "bug: bind variables not bound with values");
+            "bug: variable index out of bounds: index: %u, variables: %u",
+            index, stmtPtr->nbind);
     }
+    *namePtr = stmtPtr->vars[index].name;
 
-    status = (*poolPtr->execProc)(handle, stmt,
-                                  values, lengths, stmtPtr->nbind,
-                                  &handlePtr->numCols, &handlePtr->numRows);
+    return NS_OK;
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * Dbi_NumColumns --
+ *
+ *      Return the number of columns in the result of the current
+ *      statement for the given handle.
+ *
+ * Results:
+ *      Number of columns, which may be 0 if the statement is DML
+ *      or DDL etc.
+ *
+ * Side effects:
+ *      None.
+ *
+ *----------------------------------------------------------------------
+ */
+
+unsigned int
+Dbi_NumColumns(Dbi_Handle *handle)
+{
+    Statement *stmtPtr = ((Handle *) handle)->stmtPtr;
+
+    assert(stmtPtr);
+
+    return stmtPtr->numCols;
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * Dbi_ColumnName --
+ *
+ *      Fetch the name if the column at index as a UTF8 string. The
+ *      string belongs to the driver and should be copied if needed.
+ *      The first column is at index 0.
+ *
+ * Results:
+ *      NS_OK or NS_ERROR.
+ *
+ * Side effects:
+ *      None.
+ *
+ *----------------------------------------------------------------------
+ */
+
+int
+Dbi_ColumnName(Dbi_Handle *handle, unsigned int index, CONST char **namePtr)
+{
+    Handle        *handlePtr = (Handle *) handle;
+    Pool          *poolPtr   = handlePtr->poolPtr;
+    Dbi_Statement *stmt      = (Dbi_Statement *) handlePtr->stmtPtr;    
+
+    assert(stmt);
+    assert(namePtr);
+
+    Log(handle, Debug, "Dbi_ColumnNameProc: column index: %u", index);
+
+    return (*poolPtr->columnNameProc)(handle, stmt, index, namePtr);
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * Dbi_Exec --
+ *
+ *      Execute the statement prepared for this handle with the given
+ *      values bound to any variables.
+ *
+ * Results:
+ *      NS_OK or NS_ERROR.
+ *
+ * Side effects:
+ *      Depends on statement.
+ *
+ *----------------------------------------------------------------------
+ */
+
+int
+Dbi_Exec(Dbi_Handle *handle, CONST char **values, unsigned int *lengths)
+{
+    Handle     *handlePtr = (Handle *) handle;
+    Statement  *stmtPtr   = handlePtr->stmtPtr;
+    Pool       *poolPtr   = handlePtr->poolPtr;
+
+    assert(stmtPtr);
+    assert(stmtPtr->nbind == 0
+           || (stmtPtr->nbind > 0 && (values != NULL && lengths != NULL)));
+
+    Log(handle, Debug, "Dbi_ExecProc: id: %u, nbind: %u, sql: %s",
+        stmtPtr->id, stmtPtr->nbind, stmtPtr->sql);
+
     handlePtr->stats.queries++;
     stmtPtr->nqueries++;
 
-    if (status == DBI_EXEC_ROWS) {
-        handlePtr->fetchingRows = NS_TRUE;
-        if (handlePtr->numRows > 0 && handlePtr->numCols < 1) {
-            Dbi_SetException(handle, "DBI",
-                "bug: driver returned rows but failed to set number of columns");
-            return DBI_EXEC_ERROR;
-        }
+    if ((*poolPtr->execProc)(handle, (Dbi_Statement *) stmtPtr,
+                             values, lengths, stmtPtr->nbind) != NS_OK) {
+        return NS_ERROR;
     }
+    handlePtr->fetchingRows = NS_TRUE;
 
-    return status;
+    return NS_OK;
 }
 
 
@@ -866,7 +935,7 @@ Dbi_Exec(Dbi_Handle *handle, Dbi_Statement *stmt,
  *      Prepare and execute an SQL statement without binding any values.
  *
  * Results:
- *      DBI_EXEC_ROWS, DBI_EXEC_DML, or DBI_EXEC_ERROR.
+ *      NS_OK or NS_ERROR.
  *
  * Side effects:
  *      SQL is sent to database for evaluation.
@@ -874,51 +943,18 @@ Dbi_Exec(Dbi_Handle *handle, Dbi_Statement *stmt,
  *----------------------------------------------------------------------
  */
 
-DBI_EXEC_STATUS
+int
 Dbi_ExecDirect(Dbi_Handle *handle, CONST char *sql)
 {
-    Dbi_Statement *stmt;
-    CONST char    *values[DBI_MAX_BIND];
-    unsigned int   lengths[DBI_MAX_BIND];
-
-    memset(values, 0, sizeof(values));
-    memset(lengths, 0, sizeof(lengths));
-
-    stmt = Dbi_Prepare(handle, sql, strlen(sql));
-    if (stmt == NULL) {
-        return DBI_EXEC_ERROR;
+    if (Dbi_Prepare(handle, sql, -1) != NS_OK) {
+        return NS_ERROR;
     }
-
-    return Dbi_Exec(handle, stmt, values, lengths);
-}
-
-
-/*
- *----------------------------------------------------------------------
- *
- * Dbi_NumColumns, Dbi_NumRows --
- *
- *      Return the number of columns or rows.
- *
- * Results:
- *      Number of columns or rows. 0 if none.
- *
- * Side effects:
- *      None.
- *
- *----------------------------------------------------------------------
- */
-
-int
-Dbi_NumColumns(Dbi_Handle *handle)
-{
-    return ((Handle *) handle)->numCols;
-}
-
-int
-Dbi_NumRows(Dbi_Handle *handle)
-{
-    return ((Handle *) handle)->numRows;
+    if (Dbi_NumVariables(handle) > 0) {
+        Dbi_SetException(handle, "DBI",
+            "bug: Dbi_ExecDirect: statement requires bind variables");
+        return NS_ERROR;
+    }
+    return Dbi_Exec(handle, NULL, NULL);
 }
 
 
@@ -927,15 +963,12 @@ Dbi_NumRows(Dbi_Handle *handle)
  *
  * Dbi_NextValue --
  *
- *      Fetch the result from the next column index of the next row.
- *      If columnPtr is not null, set the column name also.
- *      This routine is normally called repeatedly after a Dbi_Exec.
+ *      Fetch the next value of the result into the Dbi_Value structure.
+ *      The column and row pointers are updated, if provided.
+ *      When no more values are available, DBI_DONE is returned.
  *
  * Results:
- *      DBI_VALUE:       the next result value was successfully retrieved
- *      DBI_END_COL:     the result of the last column in current row
- *      DBI_END_ROWS:    the result of the last column in the last row
- *      DBI_VALUE_ERROR: an error occurred retrieving the result
+ *      DBI_VALUE, DBI_DONE, DBI_ERROR.
  *
  * Side effects:
  *      The current column/row counter is advanced.
@@ -943,59 +976,44 @@ Dbi_NumRows(Dbi_Handle *handle)
  *----------------------------------------------------------------------
  */
 
-DBI_VALUE_STATUS
-Dbi_NextValue(Dbi_Handle *handle, CONST char **valuePtr, int *vlengthPtr,
-              CONST char **columnPtr, int *clengthPtr)
+int
+Dbi_NextValue(Dbi_Handle *handle, Dbi_Value *value,
+              unsigned int *colIdxPtr, unsigned int *rowIdxPtr)
 {
-    Handle *handlePtr = (Handle *) handle;
-    Pool   *poolPtr   = handlePtr->poolPtr;
-    int     vlength, clength, status;
+    Handle        *handlePtr = (Handle *) handle;
+    Pool          *poolPtr   = handlePtr->poolPtr;
+    Dbi_Statement *stmt      = (Dbi_Statement *) handlePtr->stmtPtr;
+    int            status;
 
-    if (handlePtr->fetchingRows == NS_FALSE) {
-        Ns_Log(Bug, "dbi: Dbi_NextValue: no pending rows");
-        return DBI_VALUE_ERROR;
+    assert(stmt);
+    assert(value);
+
+    if (!handlePtr->fetchingRows) {
+        Dbi_SetException(handle, "DBI",
+            "bug: Dbi_NextValue: no pending rows");
+        return DBI_ERROR;
     }
 
-    DbiLog(handlePtr, Debug, "Dbi_NextValue: calling Dbi_ValueProc: "
-           "ncols: %d nrows: %d column index: %d row index: %d",
-           handlePtr->numCols, handlePtr->numRows,
-           handlePtr->currentCol, handlePtr->currentRow);
+    Log(handle, Debug, "Dbi_NextValueProc: id: %u, column: %u, row: %u",
+        stmt->id, handlePtr->colIdx, handlePtr->rowIdx);
 
-    status = (*poolPtr->valueProc)(handle, handlePtr->currentCol, handlePtr->currentRow,
-                                   valuePtr, &vlength);
-    if (status == NS_ERROR) {
-        return DBI_VALUE_ERROR;
-    }
-    if (vlengthPtr != NULL) {
-        *vlengthPtr = vlength;
-    }
+    status = (*poolPtr->nextValueProc)(handle, stmt,
+                 handlePtr->colIdx, handlePtr->rowIdx, value);
 
-    if (columnPtr != NULL) {
-        DbiLog(handlePtr, Debug, "Dbi_NextValue: calling Dbi_ColumnProc: "
-               "column index: %d row index: %d",
-               handlePtr->currentCol, handlePtr->currentRow);
-        status = (*poolPtr->columnProc)(handle, handlePtr->currentCol,
-                                        columnPtr, &clength);
-        if (status == NS_ERROR) {
-            return DBI_VALUE_ERROR;
+    if (status != DBI_VALUE) {
+        handlePtr->fetchingRows = NS_FALSE;
+    } else {
+        if (colIdxPtr) {
+            *colIdxPtr = handlePtr->colIdx;
         }
-        if (clengthPtr != NULL) {
-            *clengthPtr = clength;
+        if (rowIdxPtr) {
+            *rowIdxPtr = handlePtr->rowIdx;
+        }
+        if (++handlePtr->colIdx >= handlePtr->stmtPtr->numCols) {
+            handlePtr->colIdx = 0;
+            handlePtr->rowIdx++;
         }
     }
-
-    if (handlePtr->currentCol++ == handlePtr->numCols - 1) {
-        handlePtr->currentCol = 0; /* Reset for next row. */
-
-        if (handlePtr->currentRow == handlePtr->numRows - 1) {
-            handlePtr->fetchingRows = NS_FALSE;
-            status = DBI_END_ROWS;
-        } else {
-            handlePtr->currentRow++;
-            status = DBI_END_COL;
-        }
-    }
-
     return status;
 }
 
@@ -1009,7 +1027,7 @@ Dbi_NextValue(Dbi_Handle *handle, CONST char **valuePtr, int *vlengthPtr,
  *      and resetting the exception code.
  *
  * Results:
- *      NS_OK or NS_ERROR.
+ *      None.
  *
  * Side effects:
  *      Rows waiting in the result set are dumped, perhaps by simply
@@ -1021,20 +1039,20 @@ Dbi_NextValue(Dbi_Handle *handle, CONST char **valuePtr, int *vlengthPtr,
 void
 Dbi_Flush(Dbi_Handle  *handle)
 {
-    Handle *handlePtr = (Handle *) handle;
-    Pool   *poolPtr   = handlePtr->poolPtr;
+    Handle        *handlePtr = (Handle *) handle;
+    Pool          *poolPtr   = handlePtr->poolPtr;
+    Dbi_Statement *stmt      = (Dbi_Statement *) handlePtr->stmtPtr;    
 
-    DbiLog(handlePtr, Debug, "Dbi_Flush: calling Dbi_FlushProc:"
-           "fetching rows: %d cols: %d rows: %d currentCol: %d currentRow: %d",
-           handlePtr->fetchingRows, handlePtr->numCols, handlePtr->numRows,
-           handlePtr->currentCol, handlePtr->currentRow);
+    if (stmt != NULL) {
+        Log(handle, Debug, "Dbi_FlushProc: id: %u, nqueries: %u",
+            stmt->id, stmt->nqueries);
 
-    (*poolPtr->flushProc)(handle);
+        (*poolPtr->flushProc)(handle, stmt);
 
-    handlePtr->numCols = handlePtr->numRows = 0;
-    handlePtr->currentCol = handlePtr->currentRow = 0;
-    handlePtr->fetchingRows = NS_FALSE;
-
+        handlePtr->fetchingRows = NS_FALSE;
+        handlePtr->colIdx = 0;
+        handlePtr->rowIdx = 0;
+    }
     Dbi_ResetException(handle);
 }
 
@@ -1060,19 +1078,23 @@ Dbi_Flush(Dbi_Handle  *handle)
 int
 Dbi_Reset(Dbi_Handle *handle)
 {
-    Pool *poolPtr = ((Handle *) handle)->poolPtr;
-    int   status;
+    Handle *handlePtr = (Handle *) handle;
+    Pool   *poolPtr   = handlePtr->poolPtr;
+    int     status;
 
     Dbi_Flush(handle);
 
-    DbiLog(handle, Debug, "%s", "Dbi_Reset: calling Dbi_ResetProc");
+    Log(handle, Debug, "Dbi_ResetProc: nqueries: %u",
+        handlePtr->stats.queries);
+
     status = (*poolPtr->resetProc)(handle);
 
     if (Dbi_ExceptionPending(handle)) {
-        DbiLog(handle, Error, "reset: %s: %s",
-               Dbi_ExceptionCode(handle), Dbi_ExceptionMsg(handle));
+        Log(handle, Error, "reset: %s: %s",
+            Dbi_ExceptionCode(handle), Dbi_ExceptionMsg(handle));
         Dbi_ResetException(handle);
     }
+    handlePtr->stmtPtr = NULL;
 
     return status;
 }
@@ -1490,19 +1512,23 @@ CloseIfStale(Handle *handlePtr, time_t now)
         }
         if (reason) {
 
-            DbiLog(handle, Notice, "closing %s handle, %d queries",
-                   reason, handlePtr->stats.queries);
+            Log(handle, Notice, "closing %s handle, %d queries",
+                reason, handlePtr->stats.queries);
 
             CloseStatements(handlePtr->cache);
 
             (*poolPtr->closeProc)(handle);
+            handlePtr->driverData = NULL;
+
             handlePtr->atime = handlePtr->otime = 0;
             poolPtr->stats.queries += handlePtr->stats.queries;
             handlePtr->stats.queries = 0;
+
+            return NS_TRUE;
         }
     }
 
-    return reason ? NS_TRUE : NS_FALSE;
+    return NS_FALSE;
 }
 
 
@@ -1663,27 +1689,31 @@ AtShutdown(Ns_Time *toPtr, void *arg)
 static int
 Connect(Handle *handlePtr)
 {
-    Dbi_Handle *handle    = (Dbi_Handle *) handlePtr;
-    Pool       *poolPtr   = handlePtr->poolPtr;
+    Dbi_Handle *handle  = (Dbi_Handle *) handlePtr;
+    Pool       *poolPtr = handlePtr->poolPtr;
     char       *msg;
-    int         status = NS_ERROR;
+    int         status  = NS_ERROR;
 
     if (!poolPtr->stopping) {
-        DbiLog(handle, Debug, "%s", "Connect: calling Dbi_OpenProc");
+
+        Log(handle, Debug, "Dbi_OpenProc: opens: %u",
+            poolPtr->stats.handleopens);
+
         status = (*poolPtr->openProc)(poolPtr->configData, handle);
         poolPtr->stats.handleopens++;
+
         if (status != NS_OK) {
             poolPtr->stats.handlefailures++;
-            DbiLog(handle, Error, "handle connection failed (%d): "
-                   "code: '%s' msg: '%s'",
-                   poolPtr->stats.handlefailures,
-                   Dbi_ExceptionCode(handle), Dbi_ExceptionMsg(handle));
+            Log(handle, Error, "handle connection failed (%d): "
+                "code: '%s' msg: '%s'",
+                poolPtr->stats.handlefailures,
+                Dbi_ExceptionCode(handle), Dbi_ExceptionMsg(handle));
         } else {
             handlePtr->atime = handlePtr->otime = time(NULL);
             msg = Dbi_ExceptionMsg(handle);
-            DbiLog(handle, Notice, "opened handle %d/%d%s%s",
-                   handlePtr->n, poolPtr->maxhandles,
-                   msg ? ": " : "", msg ? msg : "");
+            Log(handle, Notice, "opened handle %d/%d%s%s",
+                handlePtr->n, poolPtr->maxhandles,
+                msg ? ": " : "", msg ? msg : "");
             Dbi_ResetException(handle);
         }
     }
@@ -1737,18 +1767,22 @@ Connected(Handle *handlePtr)
 static void
 FreeStatement(void *arg)
 {
-    Statement *stmtPtr = arg;
-    Pool      *poolPtr;
+    Statement  *stmtPtr = arg;
+    Pool       *poolPtr;
+    Dbi_Handle *handle;
 
-    Tcl_DeleteHashTable(&stmtPtr->bindTable);
     if (stmtPtr->driverData != NULL) {
-        DbiLog(stmtPtr->handlePtr, Debug,
-               "FreeStatement: calling Dbi_PrepareCloseProc: id: %u nqueries: %u",
-               stmtPtr->id, stmtPtr->nqueries);
+
         poolPtr = stmtPtr->handlePtr->poolPtr;
-        (*poolPtr->prepareCloseProc)((Dbi_Handle *) stmtPtr->handlePtr,
-                                     (Dbi_Statement *) stmtPtr);
+        handle = (Dbi_Handle *) stmtPtr->handlePtr;
+
+        Log(stmtPtr->handlePtr, Debug,
+            "Dbi_PrepareCloseProc(FreeStatement): nqueries: %u",
+            stmtPtr->nqueries);
+
+        (*poolPtr->prepareCloseProc)(handle, (Dbi_Statement *) stmtPtr);
     }
+    Tcl_DeleteHashTable(&stmtPtr->bindTable);
     ns_free(stmtPtr);
 }
 
@@ -1779,23 +1813,27 @@ CloseStatements(Ns_Cache *cache)
     Ns_CacheSearch  search;
     Ns_Entry       *entry;
     Statement      *stmtPtr;
+    Handle         *handlePtr;
     Pool           *poolPtr;
 
     entry = Ns_CacheFirstEntry(cache, &search);
     while (entry != NULL) {
         stmtPtr = Ns_CacheGetValue(entry);
+
         if (stmtPtr->driverData != NULL) {
-            DbiLog(stmtPtr->handlePtr, Debug,
-                   "CloseStatements: calling Dbi_PrepareCloseProc: id: %u nqueries: %u",
-                   stmtPtr->id, stmtPtr->nqueries);
-            poolPtr = stmtPtr->handlePtr->poolPtr;
-            (*poolPtr->prepareCloseProc)((Dbi_Handle *) stmtPtr->handlePtr,
-                                         (Dbi_Statement *) stmtPtr);
+
+            handlePtr = stmtPtr->handlePtr;
+            poolPtr = handlePtr->poolPtr;
+
+            Log(handlePtr, Debug,
+                "Dbi_PrepareCloseProc(CloseStatements): nqueries: %u",
+                stmtPtr->nqueries);
+
+            (*poolPtr->prepareCloseProc)((Dbi_Handle *) handlePtr, (Dbi_Statement *) stmtPtr);
         }
         entry = Ns_CacheNextEntry(&search);
     }
 }
-
 
 
 /*
@@ -1833,6 +1871,9 @@ ParseBindVars(Handle *handlePtr, CONST char *origSql, int origLength)
      * larger than the original. Check for overrun at the end.
      */
 
+    if (origLength < 0) {
+        origLength = strlen(origSql);
+    }
     stmtPtr = ns_calloc(1, sizeof(Statement) + origLength + 32);
     stmtPtr->handlePtr = handlePtr;
     Tcl_InitHashTable(&stmtPtr->bindTable, TCL_STRING_KEYS);

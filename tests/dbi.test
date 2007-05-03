@@ -68,18 +68,18 @@ test stats.1 {pool stats} -body {
 
 
 test prepare-1 {simulate driver prepare callback failure} -body {
-    dbi_rows {NOPREPARE}
+    dbi_rows {PREPERR 1 1}
 } -returnCodes error -result {test: prepare failure}
 
 
 
 test dml-1 {dml} -body {
-    dbi_dml {DML 0 3}
-} -result 3
+    dbi_dml {DML 0 0}
+} -result ""
 
 test dml-2 {dml error} -body {
     dbi_dml {ROWS 1 1}
-} -returnCodes error -result {query was not a DML or DDL command}
+} -returnCodes error -result {query was not a DML or DDL command.}
 
 
 
@@ -105,12 +105,8 @@ test 0or1row-3 {not found} -body {
     unset -nocomplain 0
 } -result x
 
-test 0or1row-4 {no columns} -body {
-    dbi_0or1row {ROWS 0 1}
-} -returnCodes error -result {bug: driver returned rows but failed to set number of columns}
-
 test 0or1row-5 {query error} -body {
-    dbi_0or1row {ERROR}
+    dbi_0or1row {EXECERR 1 1}
 } -returnCodes error -result {driver error}
 
 
@@ -142,7 +138,7 @@ test 1row-4 {1row not found} -body {
 } -returnCodes error -result {query was not a statement returning rows}
 
 test 1row-5 {query error} -body {
-    dbi_1row {ERROR}
+    dbi_1row {EXECERR 1 1}
 } -returnCodes error -result {driver error}
 
 
@@ -151,24 +147,28 @@ test rows-1 {found 1 row, 1 column} -body {
     dbi_rows {ROWS 1 1 v}
 } -result v
 
-test rows-2 {found 1 row, 3 columns} -body {
+test rows-2 {found 1 rows, 2 columns} -body {
+    dbi_rows {ROWS 2 1 v}
+} -result {v v}
+
+test rows-3 {found 1 row, 3 columns} -body {
     dbi_rows {ROWS 3 1 v}
 } -result {v v v}
 
-test rows-3 {found 2 rows, 1 column} -body {
+test rows-4 {found 2 rows, 1 column} -body {
     dbi_rows {ROWS 1 2 v}
 } -result {v v}
 
-test rows-4 {found 2 rows, 2 columns} -body {
+test rows-5 {found 2 rows, 2 columns} -body {
     dbi_rows {ROWS 2 2 v}
 } -result {v v v v}
 
-test rows-5 {no rows} -body {
-    dbi_rows {ROWS 0 1}
-} -returnCodes error -result {bug: driver returned rows but failed to set number of columns}
+test rows-6 {found 2 rows, 3 columns} -body {
+    dbi_rows {ROWS 3 2 v}
+} -result {v v v v v v}
 
-test rows-6 {query error} -body {
-    dbi_rows {ERROR}
+test rows-7 {query error} -body {
+    dbi_rows {EXECERR 1 1}
 } -returnCodes error -result {driver error}
 
 
@@ -331,10 +331,10 @@ test withhandle-4 {nested call} -body {
 
 test transaction-1 {basic transaction} -body {
     dbi_transaction {
-        dbi_dml {DML 0 1 foo}
-        dbi_dml {DML 0 2 bar}
+        dbi_dml {DML 0 0 foo}
+        dbi_dml {DML 0 0 bar}
     }
-} -result 2
+} -result ""
 
 test transaction-2 {transaction error, rollback} -body {
     dbi_transaction {

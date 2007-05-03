@@ -38,23 +38,30 @@
 #ifndef NSDBI_H
 #define NSDBI_H
 
-#include "ns.h"
+#include <ns.h>
 
+
+/*
+ * The following defines the maximum number of bind variables
+ * which may appear in a single statement.
+ */
 
 #define DBI_MAX_BIND 32
 
-typedef enum {
-    DBI_EXEC_ROWS = 1,
-    DBI_EXEC_DML,
-    DBI_EXEC_ERROR
-} DBI_EXEC_STATUS;
 
-typedef enum {
-    DBI_VALUE = 0,
-    DBI_END_COL,
-    DBI_END_ROWS,
-    DBI_VALUE_ERROR
-} DBI_VALUE_STATUS;
+/*
+ * The following are valid return values from Dbi_NextValue().
+ */
+
+#define DBI_VALUE     NS_OK
+#define DBI_ERROR     NS_ERROR
+#define DBI_DONE      (-2)
+
+
+/*
+ * The following are valid configuration options for a
+ * pool of handles.
+ */
 
 typedef enum {
     DBI_CONFIG_MAXHANDLES = 0,
@@ -72,7 +79,7 @@ typedef enum {
 typedef struct _Dbi_Pool *Dbi_Pool;
 
 /*
- * The following struct defines a handle in a pool.
+ * The following structure defines a handle in a pool.
  */
 
 typedef struct Dbi_Handle {
@@ -80,112 +87,28 @@ typedef struct Dbi_Handle {
     ClientData          driverData; /* Driver private handle context. */
 } Dbi_Handle;
 
-typedef struct Dbi_Statement {
-    CONST char         *sql;        /* SQL to execute. */
-    CONST int           length;     /* Length of SQL. */
-    CONST unsigned int  id;         /* Unique (per handle) statement ID. */
-    CONST unsigned int  nqueries;   /* Total queries for this statement. */
-    ClientData          driverData; /* Driver private statement context. */
-} Dbi_Statement;
-
 /*
- * The following enum defines nsdbi driver function ids.
+ * The following structure defines a single result value.
  */
 
-typedef enum {
-    Dbi_OpenProcId = 1,
-    Dbi_CloseProcId,
-    Dbi_ConnectedProcId,
-    Dbi_BindVarProcId,
-    Dbi_PrepareProcId,
-    Dbi_PrepareCloseProcId,
-    Dbi_ExecProcId,
-    Dbi_ValueProcId,
-    Dbi_ColumnProcId,
-    Dbi_FlushProcId,
-    Dbi_ResetProcId
-} Dbi_ProcId;
+typedef struct Dbi_Value {
+    CONST void   *data;
+    size_t        length;   /* Length of data in bytes. */
+    int           binary;   /* 1 if data is binary (utf8 otherwise) */
+} Dbi_Value;
+
 
 /*
- * The following structure is used to register driver callbacks.
+ * Functions for accquiring handles from pools.
  */
-
-typedef struct Dbi_DriverProc {
-    Dbi_ProcId     id;
-    void          *proc;
-} Dbi_DriverProc;
-
-/*
- * The following callbacks must be implemented by database drivers.
- */
-
-typedef int
-(Dbi_OpenProc)(ClientData configData, Dbi_Handle *)
-    NS_GNUC_NONNULL(1);
-
-typedef void
-(Dbi_CloseProc)(Dbi_Handle *)
-    NS_GNUC_NONNULL(1);
-
-typedef int
-(Dbi_ConnectedProc)(Dbi_Handle *)
-    NS_GNUC_NONNULL(1);
-
-typedef void
-(Dbi_BindVarProc)(Ns_DString *, CONST char *name, int bindIdx)
-    NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
-
-typedef int
-(Dbi_PrepareProc)(Dbi_Handle *, Dbi_Statement *)
-    NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
-
-typedef void
-(Dbi_PrepareCloseProc)(Dbi_Handle *, Dbi_Statement *)
-    NS_GNUC_NONNULL(1);
-
-typedef DBI_EXEC_STATUS
-(Dbi_ExecProc)(Dbi_Handle *, Dbi_Statement *,
-               CONST char **values, unsigned int *lengths, unsigned int nvalues,
-               int *ncolsPtr, int *nrowsPtr)
-    NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2)
-     NS_GNUC_NONNULL(6) NS_GNUC_NONNULL(7);
-
-typedef int
-(Dbi_ValueProc)(Dbi_Handle *, int col, int row,
-                CONST char **valuePtr, int *lengthPtr)
-    NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(4) NS_GNUC_NONNULL(5);
-
-typedef int
-(Dbi_ColumnProc)(Dbi_Handle *, int col,
-                 CONST char **columnPtr, int *lengthPtr)
-    NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(3) NS_GNUC_NONNULL(4);
-
-typedef void
-(Dbi_FlushProc)(Dbi_Handle *)
-    NS_GNUC_NONNULL(1);
-
-typedef int
-(Dbi_ResetProc)(Dbi_Handle *)
-    NS_GNUC_NONNULL(1);
-
-
-
-
-NS_EXTERN int
-Dbi_RegisterDriver(CONST char *server, CONST char *module,
-                   CONST char *driver, CONST char *database,
-                   Dbi_DriverProc *procs, ClientData configData)
-    NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2)
-     NS_GNUC_NONNULL(3) NS_GNUC_NONNULL(4)
-     NS_GNUC_NONNULL(5);
-
-NS_EXTERN Dbi_Pool *
-Dbi_GetPool(CONST char *server, CONST char *poolname)
-    NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
 
 NS_EXTERN Dbi_Pool *
 Dbi_DefaultPool(CONST char *server)
     NS_GNUC_NONNULL(1);
+
+NS_EXTERN Dbi_Pool *
+Dbi_GetPool(CONST char *server, CONST char *poolname)
+    NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
 
 NS_EXTERN int
 Dbi_ListPools(Ns_DString *ds, CONST char *server)
@@ -199,47 +122,59 @@ NS_EXTERN void
 Dbi_PutHandle(Dbi_Handle *handle)
     NS_GNUC_NONNULL(1);
 
-NS_EXTERN Dbi_Statement *
-Dbi_Prepare(Dbi_Handle *, CONST char *sql, int length)
-    NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
+NS_EXTERN int
+Dbi_Reset(Dbi_Handle *)
+    NS_GNUC_NONNULL(1);
+
+/*
+ * Functions for preparing and describing queries.
+ */
 
 NS_EXTERN int
-Dbi_GetNumVariables(Dbi_Statement *stmt)
+Dbi_Prepare(Dbi_Handle *, CONST char *query, int length)
+    NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
+
+NS_EXTERN unsigned int
+Dbi_NumVariables(Dbi_Handle *)
     NS_GNUC_NONNULL(1);
 
 NS_EXTERN int
-Dbi_GetBindVariable(Dbi_Statement *stmt, int idx, CONST char **namePtr)
+Dbi_VariableName(Dbi_Handle *, unsigned int index, CONST char **namePtr)
     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(3);
 
-NS_EXTERN DBI_EXEC_STATUS
-Dbi_Exec(Dbi_Handle *, Dbi_Statement *,
-         CONST char **values, unsigned int *lengths)
-    NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
-
-NS_EXTERN DBI_EXEC_STATUS
-Dbi_ExecDirect(Dbi_Handle *, CONST char *sql)
-    NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
-
-NS_EXTERN int
-Dbi_NumColumns(Dbi_Handle *handle)
+NS_EXTERN unsigned int
+Dbi_NumColumns(Dbi_Handle *)
     NS_GNUC_NONNULL(1);
 
 NS_EXTERN int
-Dbi_NumRows(Dbi_Handle *handle)
+Dbi_ColumnName(Dbi_Handle *, unsigned int index, CONST char **namePtr)
+    NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(3);
+
+
+/*
+ * Functions for executing queries.
+ */
+
+NS_EXTERN int
+Dbi_Exec(Dbi_Handle *, CONST char **values, unsigned int *lengths)
     NS_GNUC_NONNULL(1);
 
-NS_EXTERN DBI_VALUE_STATUS
-Dbi_NextValue(Dbi_Handle *, CONST char **valuePtr, int *vlengthPtr,
-              CONST char **columnPtr, int *clengthPtr)
+NS_EXTERN int
+Dbi_ExecDirect(Dbi_Handle *, CONST char *query)
+    NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
+
+NS_EXTERN int
+Dbi_NextValue(Dbi_Handle *, Dbi_Value *value,
+              unsigned int *colIdxPtr, unsigned int *rowIdxPtr)
     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
 
 NS_EXTERN void
 Dbi_Flush(Dbi_Handle *)
     NS_GNUC_NONNULL(1);
 
-NS_EXTERN int
-Dbi_Reset(Dbi_Handle *)
-    NS_GNUC_NONNULL(1);
+/*
+ * Functions for managing pools.
+ */
 
 NS_EXTERN void
 Dbi_BouncePool(Dbi_Pool *pool)
@@ -264,6 +199,10 @@ Dbi_DatabaseName(Dbi_Pool *)
 NS_EXTERN int
 Dbi_Config(Dbi_Pool *, DBI_CONFIG_OPTION opt, int newValue)
     NS_GNUC_NONNULL(1);
+
+/*
+ * Functions for dealing with exceptions.
+ */
 
 NS_EXTERN void
 Dbi_SetException(Dbi_Handle *handle, CONST char *sqlstate, CONST char *fmt, ...)
