@@ -49,17 +49,17 @@ include $(NAVISERVER)/include/Makefile.module
 
 
 test: all
-	LD_LIBRARY_PATH="./:$LD_LIBRARY_PATH" $(NSD) -c -d -t tests/config.tcl tests/all.tcl $(TESTFLAGS) $(TCLTESTARGS)
+	LD_LIBRARY_PATH="./:$$LD_LIBRARY_PATH" $(NSD) -c -d -t tests/config.tcl tests/all.tcl $(TESTFLAGS) $(TCLTESTARGS)
 
 runtest: all
-	LD_LIBRARY_PATH="./:$LD_LIBRARY_PATH" $(NSD) -c -d -t tests/config.tcl
+	LD_LIBRARY_PATH="./:$$LD_LIBRARY_PATH" $(NSD) -c -d -t tests/config.tcl
 
 gdbtest: all
 	@echo "set args -c -d -t tests/config.tcl tests/all.tcl $(TESTFLAGS) $(TCLTESTARGS)" > gdb.run
-	LD_LIBRARY_PATH="./:$LD_LIBRARY_PATH" gdb -x gdb.run $(NSD)
+	LD_LIBRARY_PATH="./:$$LD_LIBRARY_PATH" gdb -x gdb.run $(NSD)
 	rm gdb.run
 
 gdbruntest: all
 	@echo "set args -c -d -t tests/config.tcl" > gdb.run
-	LD_LIBRARY_PATH="./:$LD_LIBRARY_PATH" gdb -x gdb.run $(NSD)
+	LD_LIBRARY_PATH="./:$${LD_LIBRARY_PATH}" gdb -x gdb.run $(NSD)
 	rm gdb.run
