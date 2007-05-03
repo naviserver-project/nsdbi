@@ -20,12 +20,10 @@ rename tcltest::test tcltest::__test
 
 proc tcltest::test args {
 
-    ns_log debug >>>>> \
+    ns_log debug >->-> \
         [format "%-16s" "[lindex $args 0]:"] ([lindex $args 1])
 
     uplevel 1 tcltest::__test $args
-
-    ns_log debug <<<<< [lindex $args 0]
 }
 
 runAllTests
