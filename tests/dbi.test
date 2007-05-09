@@ -322,22 +322,22 @@ test withhandle-4 {two queries, different handles} -body {
 test withhandle-4 {nested call} -body {
     dbi_eval {
         dbi_eval {
-            dbi_rows {ROWS 2 2 bar}
+            dbi_rows {ROWS 2 2 v}
         }
     }
-} -returnCodes error -result {dbi_eval already in progress}
+} -result {v v v v}
 
 
 
 test transaction-1 {basic transaction} -body {
-    dbi_transaction {
+    dbi_eval -transaction repeatable {
         dbi_dml {DML 0 0 foo}
         dbi_dml {DML 0 0 bar}
     }
 } -result ""
 
 test transaction-2 {transaction error, rollback} -body {
-    dbi_transaction {
+    dbi_eval -transaction repeatable {
         dbi_rows {ROWS 2 2 foo}
         error "some transaction error"
     }

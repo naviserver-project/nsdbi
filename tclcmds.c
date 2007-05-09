@@ -39,17 +39,22 @@
 NS_RCSID("@(#) $Header$");
 
 
+#define MAX_NESTING_DEPTH 32
+
+
 /*
  * The following struct maintains state for the currently
  * executing command.
+ *
+ * The handle cache may contain the same handle in more than
+ * one entry as 'depth' is used as a form of reference counting.
  */
 
 typedef struct InterpData {
-    Tcl_Interp       *interp;
-    CONST char       *server;
-    Dbi_Handle       *handle;      /* Current handle. */
-    Dbi_Pool         *pool;        /* Pool of current handle. */
-    int               transaction; /* In transaction. */
+    Tcl_Interp *interp;
+    CONST char *server;
+    int         depth;                      /* Nesting depth for dbi_eval */
+    Dbi_Handle *handles[MAX_NESTING_DEPTH]; /* Handle cache, indexed by depth. */
 } InterpData;
 
 
@@ -64,21 +69,16 @@ static Tcl_ObjCmdProc
     ZeroOrOneRowObjCmd,
     OneRowObjCmd,
     EvalObjCmd,
-    TransactionObjCmd,
     CtlObjCmd;
 
 static void FreeData(ClientData arg, Tcl_Interp *interp);
 
 static int RowCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[],
                   int *rowPtr);
-static int EvalCmd(ClientData arg, Tcl_Interp *interp,
-                   int objc, Tcl_Obj *CONST objv[],
-                   int transaction);
 
 static int Exec(InterpData *idataPtr, Tcl_Obj *poolObj, Ns_Time *timeoutPtr,
                 CONST char *array, CONST char *setid, Tcl_Obj *queryObj, int dml,
                 Dbi_Handle **handlePtrPtr);
-static int ExecDirect(Tcl_Interp *interp, Dbi_Handle *handle, CONST char *sql);
 static int BindVars(Tcl_Interp *interp, Dbi_Handle *,
                     CONST char **values, unsigned int *lengths,
                     CONST char *array, CONST char *setid);
@@ -97,6 +97,19 @@ static int NextValue(Dbi_Handle *handle, Tcl_Obj **valueObjPtrPtr,
  */
 
 static Tcl_ObjCmdProc *formatCmd; /* Tcl 'format' command. */
+
+/*
+ * The following are the values that can be passed to the
+ * dbi_eval '-transaction' option.
+ */
+
+static Ns_ObjvTable levels[] = {
+    {"readuncommitted", Dbi_ReadUncommitted}, {"uncommitted", Dbi_ReadUncommitted},
+    {"readcommitted",   Dbi_ReadCommitted},   {"committed",   Dbi_ReadCommitted},
+    {"repeatableread",  Dbi_RepeatableRead},  {"repeatable",  Dbi_RepeatableRead},
+    {"serializable",    Dbi_Serializable},
+    {NULL, 0}
+};
 
 
 
@@ -144,13 +157,13 @@ DbiInitInterp(Tcl_Interp *interp, void *arg)
         {"dbi_1row",        OneRowObjCmd},
         {"dbi_dml",         DmlObjCmd},
         {"dbi_eval",        EvalObjCmd},
-        {"dbi_transaction", TransactionObjCmd},
         {"dbi_ctl",         CtlObjCmd}
     };
 
     idataPtr = ns_calloc(1, sizeof(InterpData));
     idataPtr->server = server;
     idataPtr->interp = interp;
+    idataPtr->depth = -1;
     Tcl_SetAssocData(interp, "dbi:data", FreeData, idataPtr);
 
     for (i = 0; i < (sizeof(cmds) / sizeof(cmds[0])); i++) {
@@ -582,12 +595,12 @@ FormatObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[]
 /*
  *----------------------------------------------------------------------
  *
- * EvalObjCmd, TransactionObjCmd --
+ * EvalObjCmd --
  *
- *      Implements dbi_eval / dbi_transaction.
+ *      Implements dbi_eval.
  *
  *      Evaluate the dbi commands in the given block of Tcl with a
- *      single database handle.
+ *      single database handle. Use a new transaction if specified.
  *
  * Results:
  *      Standard Tcl result.
@@ -601,30 +614,19 @@ FormatObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[]
 static int
 EvalObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
 {
-    return EvalCmd(arg, interp, objc, objv, 0);
-}
-
-static int
-TransactionObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
-{
-    return EvalCmd(arg, interp, objc, objv, 1);
-}
-
-static int
-EvalCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[],
-        int transaction)
-{
     InterpData      *idataPtr = arg;
     Dbi_Pool        *pool;
     Dbi_Handle      *handle;
     Ns_Time         *timeoutPtr = NULL;
     Tcl_Obj         *scriptObj, *poolObj = NULL;
-    int              status;
+    int              isolation = -1;
+    int              status = TCL_ERROR;
 
     Ns_ObjvSpec opts[] = {
-        {"-pool",     Ns_ObjvObj,   &poolObj,    NULL},
-        {"-timeout",  Ns_ObjvTime,  &timeoutPtr, NULL},
-        {"--",        Ns_ObjvBreak, NULL,        NULL},
+        {"-pool",        Ns_ObjvObj,   &poolObj,    NULL},
+        {"-timeout",     Ns_ObjvTime,  &timeoutPtr, NULL},
+        {"-transaction", Ns_ObjvIndex, &isolation,  levels},
+        {"--",           Ns_ObjvBreak, NULL,        NULL},
         {NULL, NULL, NULL, NULL}
     };
     Ns_ObjvSpec args[] = {
@@ -635,20 +637,14 @@ EvalCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[],
         return TCL_ERROR;
     }
 
-    /*
-     * Don't allow nested calls to this Tcl command.  We might support
-     * true nested transactions one day and don't want people getting
-     * the wrong idea.
-     */
-
-    if (idataPtr->handle != NULL) {
-        Tcl_AppendResult(interp, Tcl_GetString(objv[0]),
-                         " already in progress", NULL);
+    if (idataPtr->depth++ == MAX_NESTING_DEPTH) {
+        Ns_TclPrintfResult(interp, "exceeded maximum nesting depth: %d",
+                           idataPtr->depth--);
         return TCL_ERROR;
     }
 
     /*
-     * Grab a free handle.
+     * Grab a free handle, possibly from cache..
      */
 
     if ((pool = GetPool(idataPtr, poolObj)) == NULL
@@ -656,54 +652,45 @@ EvalCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[],
         return TCL_ERROR;
     }
 
-    if (transaction) {
-        if (ExecDirect(interp, handle, "begin") != TCL_OK) {
-            Dbi_PutHandle(handle);
-            return TCL_ERROR;
-        }
-        idataPtr->transaction = 1;
+    /*
+     * Begin a new transaction.
+     */
+
+    if (isolation != -1
+            && Dbi_Begin(handle, isolation) != NS_OK) {
+        SqlError(interp, handle);
+        goto done;
     }
 
     /*
      * Cache the handle and run the script.
      */
 
-    idataPtr->pool = pool;
-    idataPtr->handle = handle;
+    idataPtr->handles[idataPtr->depth] = handle;
     status = Tcl_EvalObjEx(interp, scriptObj, 0);
-    idataPtr->handle = NULL;
-    idataPtr->pool = NULL;
+    idataPtr->handles[idataPtr->depth] = NULL;
 
     /*
      * Commit or rollback an active transaction.
      */
 
-    if (transaction) {
-        idataPtr->transaction = 0;
+    if (isolation != -1) {
         if (status != TCL_OK) {
             status = TCL_ERROR;
             Tcl_AddErrorInfo(interp, "\n    dbi transaction status:\nrollback");
-            (void) ExecDirect(interp, handle, "rollback");
-        } else if (ExecDirect(interp, handle, "commit") != TCL_OK) {
+            if (Dbi_Rollback(handle) != NS_OK) {
+                SqlError(interp, handle);
+            }
+        } else if (Dbi_Commit(handle) != NS_OK) {
             status = TCL_ERROR;
         }
     }
 
-    Dbi_PutHandle(handle);
+ done:
+    idataPtr->depth--;
+    CleanupHandle(idataPtr, handle);
 
     return status;
-}
-
-static int
-ExecDirect(Tcl_Interp *interp, Dbi_Handle *handle, CONST char *sql)
-{
-    if (Dbi_ExecDirect(handle, sql) != NS_OK) {
-        SqlError(interp, handle);
-        return TCL_ERROR;
-    } else {
-        Dbi_Flush(handle);
-    }
-    return TCL_OK;
 }
 
 
@@ -1010,8 +997,11 @@ BindVars(Tcl_Interp *interp, Dbi_Handle *handle,
  *
  * GetPool --
  *
- *      Return a Dbi_Pool given a pool name or the default pool if no
- *      name is given.
+ *      Return a pool using one of 3 methods:
+ *
+ *        - Look up the pool using the given pool name
+ *        - Use the pool of the most recently cached handle
+ *        - Use the server default pool
  *
  * Results:
  *      Pointer to pool or NULL if no default pool.
@@ -1030,8 +1020,9 @@ GetPool(InterpData *idataPtr, Tcl_Obj *poolObj)
     const char  *poolType = "dbi:pool";
 
     if (poolObj == NULL) {
-        if (idataPtr->pool != NULL) {
-            pool = idataPtr->pool;
+        if (idataPtr->depth != -1
+                && idataPtr->handles[idataPtr->depth] != NULL) {
+            pool = idataPtr->handles[idataPtr->depth]->pool;
         } else {
             pool = Dbi_DefaultPool(idataPtr->server);
             if (pool == NULL) {
@@ -1077,14 +1068,17 @@ GetHandle(InterpData *idataPtr, Dbi_Pool *pool, Ns_Time *timeoutPtr)
     Tcl_Interp *interp = idataPtr->interp;
     Dbi_Handle *handle;
     Ns_Time     time;
+    int         i;
 
     /*
-     * First check the handle cache.
+     * First check the handle cache for a handle from the right pool.
      */
 
-    if (idataPtr->handle != NULL
-        && idataPtr->handle->pool == pool) {
-        return idataPtr->handle;
+    for (i = idataPtr->depth; i > -1; i--) {
+        handle = idataPtr->handles[i];
+        if (handle != NULL && handle->pool == pool) {
+            return handle;
+        }
     }
 
     /*
@@ -1131,16 +1125,25 @@ GetHandle(InterpData *idataPtr, Dbi_Pool *pool, Ns_Time *timeoutPtr)
 static void
 CleanupHandle(InterpData *idataPtr, Dbi_Handle *handle)
 {
-    if (idataPtr->handle != NULL) {
-        /*
-         * Handle is cached -- reset.
-         */
-        Dbi_Flush(handle);
+    int i;
 
-    } else if (handle != NULL) {
+    if (handle != NULL) {
+
         /*
-         * Handle was acquired for this command only -- return to pool.
+         * Search for the handle in the cache and flush.
          */
+
+        for (i = idataPtr->depth; i > -1; i--) {
+            if (idataPtr->handles[i] == handle) {
+                Dbi_Flush(handle);
+                return;
+            }
+        }
+
+        /*
+         * Return the handle to the system.
+         */
+
         Dbi_PutHandle(handle);
     }
 }

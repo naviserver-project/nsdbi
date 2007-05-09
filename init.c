@@ -111,6 +111,7 @@ typedef struct Pool {
     Dbi_ExecProc         *execProc;
     Dbi_NextValueProc    *nextValueProc;
     Dbi_ColumnNameProc   *columnNameProc;
+    Dbi_TransactionProc  *transProc;
     Dbi_FlushProc        *flushProc;
     Dbi_ResetProc        *resetProc;
 
@@ -126,40 +127,39 @@ typedef struct Handle {
      * Publicly visible in a Dbi_Handle.
      */
 
-    struct Pool      *poolPtr;      /* The pool this handle belongs to. */
-    ClientData        driverData;   /* Driver private handle context. */
+    struct Pool       *poolPtr;      /* The pool this handle belongs to. */
+    ClientData         driverData;   /* Driver private handle context. */
 
     /*
      * Private to a Handle.
      */
 
-    struct Handle    *nextPtr;      /* Next handle in the pool. */
-    char              cExceptionCode[6];
-    Ns_DString        dsExceptionMsg;
-    time_t            otime;        /* Time when handle was connected to db. */
-    time_t            atime;        /* Time when handle was last used. */
-    int               n;            /* Handle n of maxhandles when acquired. */
-    int               stale_on_close;
-    int               reason;       /* Why the handle is being disconnected. */
+    struct Handle     *nextPtr;      /* Next handle in the pool. */
+
+    Dbi_Isolation      isolation;   /* Isolation level of transactions. */
+    int                transDepth;   /* Nesting depth of transactions.*/
+
+    char               cExceptionCode[6];
+    Ns_DString         dsExceptionMsg;
+    time_t             otime;        /* Time when handle was connected to db. */
+    time_t             atime;        /* Time when handle was last used. */
+    int                n;            /* Handle n of maxhandles when acquired. */
+    int                stale_on_close;
+    int                reason;       /* Why the handle is being disconnected. */
 
     /* Result status. */
 
-    struct Statement *stmtPtr;      /* A statement being executed. */
+    struct Statement  *stmtPtr;      /* A statement being executed. */
 
-    int               fetchingRows; /* Is there a pending result set? */
-    unsigned int      colIdx;       /* Current column index being fetched. */
-    unsigned int      rowIdx;       /* Current row index being fetched.  */
+    int                fetchingRows; /* Is there a pending result set? */
+    unsigned int       colIdx;       /* Current column index being fetched. */
+    unsigned int       rowIdx;       /* Current row index being fetched.  */
 
-/*     unsigned int      numCols;      /\* Number of columns in pending result. *\/ */
-/*     unsigned int      numRows;      /\* Number of rows in pending result. *\/ */
-/*     unsigned int      currentCol;   /\* The current column index. *\/ */
-/*     unsigned int      currentRow;   /\* The current row index. *\/ */
-
-    Ns_Cache         *cache;        /* Cache of statements and driver data. */
-    unsigned int      stmtid;       /* Unique ID counter for cached statements. */
+    Ns_Cache          *cache;        /* Cache of statements and driver data. */
+    unsigned int       stmtid;       /* Unique ID counter for cached statements. */
 
     struct {
-        unsigned int  queries;      /* Total queries via current connection. */
+        unsigned int   queries;      /* Total queries via current connection. */
     } stats;
 
 } Handle;
@@ -188,11 +188,11 @@ typedef struct Statement {
 
     Handle           *handlePtr;    /* Handle this Statement belongs to. */
     unsigned int      numCols;      /* Number of columns in a result. */
+    unsigned int      numVars;      /* Number of bind variables. */
 
     Tcl_HashEntry    *hPtr;         /* Entry in the id table. */
 
     Tcl_HashTable     bindTable;    /* Bind variables by name. */
-    int               nbind;        /* Number of bind variables. */
     struct {
         CONST char   *name;         /* (Hash table key) */
     } vars[DBI_MAX_BIND];           /* Bind variables by index. */
@@ -349,6 +349,9 @@ Dbi_RegisterDriver(CONST char *server, CONST char *module,
         case Dbi_ColumnNameProcId:
             poolPtr->columnNameProc = procPtr->proc;
             break;
+        case Dbi_TransactionProcId:
+            poolPtr->transProc = procPtr->proc;
+            break;
         case Dbi_FlushProcId:
             poolPtr->flushProc = procPtr->proc;
             break;
@@ -411,6 +414,7 @@ Dbi_RegisterDriver(CONST char *server, CONST char *module,
         Ns_DStringInit(&handlePtr->dsExceptionMsg);
         handlePtr->cache = Ns_CacheCreateSz(module, TCL_STRING_KEYS,
                                             poolPtr->cachesize, FreeStatement);
+        handlePtr->transDepth = -1;
         ReturnHandle(handlePtr);
     }
 
@@ -722,6 +726,7 @@ Dbi_Prepare(Dbi_Handle *handle, CONST char *sql, int length)
     Pool            *poolPtr = handlePtr->poolPtr;
     Statement       *stmtPtr;
     Ns_Entry        *entry;
+    unsigned int     numVars;
     int              new;
 
     /*
@@ -743,13 +748,19 @@ Dbi_Prepare(Dbi_Handle *handle, CONST char *sql, int length)
      * Prepare the query if not already done.
      */
 
-    Log(handle, Debug, "Dbi_PrepareProc: id: %u, nqueries: %u",
-        stmtPtr->id, stmtPtr->nqueries);
+    Log(handle, Debug, "Dbi_PrepareProc: id: %u, nqueries: %u, sql: %s",
+        stmtPtr->id, stmtPtr->nqueries, stmtPtr->sql);
 
     if ((*poolPtr->prepareProc)(handle, (Dbi_Statement *) stmtPtr,
-                                &stmtPtr->numCols) != NS_OK) {
+                                &numVars, &stmtPtr->numCols) != NS_OK) {
         return NS_ERROR;
     }
+    if (numVars != stmtPtr->numVars) {
+        Dbi_SetException(handle, "DBI",
+            "bug: dbi found %u variables, driver found: %u",
+            stmtPtr->numVars, numVars);
+    }
+
     handlePtr->stmtPtr = stmtPtr;
 
     return NS_OK;
@@ -781,7 +792,7 @@ Dbi_NumVariables(Dbi_Handle *handle)
 
     assert(stmtPtr);
 
-    return stmtPtr->nbind;
+    return stmtPtr->numVars;
 }
 
 
@@ -809,10 +820,10 @@ Dbi_VariableName(Dbi_Handle *handle, unsigned int index, CONST char **namePtr)
 
     assert(stmtPtr);
 
-    if (index >= stmtPtr->nbind) {
+    if (index >= stmtPtr->numVars) {
         Dbi_SetException(handle, "DBI",
             "bug: variable index out of bounds: index: %u, variables: %u",
-            index, stmtPtr->nbind);
+            index, stmtPtr->numVars);
     }
     *namePtr = stmtPtr->vars[index].name;
 
@@ -908,17 +919,17 @@ Dbi_Exec(Dbi_Handle *handle, CONST char **values, unsigned int *lengths)
     Pool       *poolPtr   = handlePtr->poolPtr;
 
     assert(stmtPtr);
-    assert(stmtPtr->nbind == 0
-           || (stmtPtr->nbind > 0 && (values != NULL && lengths != NULL)));
+    assert(stmtPtr->numVars == 0
+           || (stmtPtr->numVars > 0 && (values != NULL && lengths != NULL)));
 
-    Log(handle, Debug, "Dbi_ExecProc: id: %u, nbind: %u, sql: %s",
-        stmtPtr->id, stmtPtr->nbind, stmtPtr->sql);
+    Log(handle, Debug, "Dbi_ExecProc: id: %u, variables: %u",
+        stmtPtr->id, stmtPtr->numVars);
 
     handlePtr->stats.queries++;
     stmtPtr->nqueries++;
 
     if ((*poolPtr->execProc)(handle, (Dbi_Statement *) stmtPtr,
-                             values, lengths, stmtPtr->nbind) != NS_OK) {
+                             values, lengths, stmtPtr->numVars) != NS_OK) {
         return NS_ERROR;
     }
     handlePtr->fetchingRows = NS_TRUE;
@@ -1014,6 +1025,137 @@ Dbi_NextValue(Dbi_Handle *handle, Dbi_Value *value,
             handlePtr->rowIdx++;
         }
     }
+    return status;
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * Dbi_Begin --
+ *
+ *      Begin a new transaction or establish a new save point if
+ *      a transaction is already in progress.
+ *
+ * Results:
+ *      NS_OK or NS_ERROR.
+ *
+ * Side effects:
+ *      None.
+ *
+ *----------------------------------------------------------------------
+ */
+
+int
+Dbi_Begin(Dbi_Handle *handle, Dbi_Isolation isolation)
+{
+    Handle *handlePtr = (Handle *) handle;
+    Pool   *poolPtr   = handlePtr->poolPtr;
+    int     status;
+
+    if (handlePtr->transDepth++ == 0) {
+        handlePtr->isolation = isolation;
+    } else if (handlePtr->isolation > isolation) {
+        Dbi_SetException(handle, "DBI",
+            "Transaction already in progress, cannot increase the isolation level.");
+        return NS_ERROR;
+    }
+
+    Log(handle, Debug, "Dbi_TransactionProc: Dbi_TransactionBegin: depth: %d, isolation: %d",
+        handlePtr->transDepth, isolation);
+
+    status = (*poolPtr->transProc)(handle,
+                                   (unsigned int) handlePtr->transDepth,
+                                   Dbi_TransactionBegin, isolation);
+
+    if (status != NS_OK) {
+        handlePtr->transDepth--;
+    }
+
+    return status;
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * Dbi_Commit --
+ *
+ *      Commit the active transaction or up to the most recent
+ *      savepoint of the active transaction.
+ *
+ * Results:
+ *      NS_OK or NS_ERROR.
+ *
+ * Side effects:
+ *      None.
+ *
+ *----------------------------------------------------------------------
+ */
+
+int
+Dbi_Commit(Dbi_Handle *handle)
+{
+    Handle *handlePtr = (Handle *) handle;
+    Pool   *poolPtr   = handlePtr->poolPtr;
+    int     status;
+
+    if (handlePtr->transDepth == -1) {
+        Dbi_SetException(handle, "DBI",
+                         "No transaction in progress to commit.");
+        return NS_ERROR;
+    }
+
+    Log(handle, Debug, "Dbi_TransactionProc: Dbi_TransactionCommit: depth: %d",
+        handlePtr->transDepth);
+
+    status = (*poolPtr->transProc)(handle,
+                                   (unsigned int) handlePtr->transDepth,
+                                   Dbi_TransactionCommit, handlePtr->isolation);
+    handlePtr->transDepth--;
+
+    return status;
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * Dbi_Rollback --
+ *
+ *      Rollback the active transaction or the most recent savepoint
+ *      within the active transaction.
+ *
+ * Results:
+ *      NS_OK or NS_ERROR.
+ *
+ * Side effects:
+ *      Work done by the database will be undone.
+ *
+ *----------------------------------------------------------------------
+ */
+
+int
+Dbi_Rollback(Dbi_Handle *handle)
+{
+    Handle *handlePtr = (Handle *) handle;
+    Pool   *poolPtr   = handlePtr->poolPtr;
+    int     status;
+
+    if (handlePtr->transDepth == -1) {
+        Dbi_SetException(handle, "DBI",
+                         "No transaction in progress to rollback.");
+        return NS_ERROR;
+    }
+
+    Log(handle, Debug, "Dbi_TransactionProc: Dbi_TransactionRollback: depth: %d",
+        handlePtr->transDepth);
+
+    status = (*poolPtr->transProc)(handle,
+                                   (unsigned int) handlePtr->transDepth,
+                                   Dbi_TransactionRollback, handlePtr->isolation);
+    handlePtr->transDepth--;
+
     return status;
 }
 
@@ -1969,7 +2111,7 @@ DefineBindVar(Statement *stmtPtr, CONST char *name, Ns_DString *dsPtr)
     Tcl_HashEntry *hPtr;
     int            new, index;
 
-    index = stmtPtr->nbind;
+    index = (int) stmtPtr->numVars;
     if (index >= DBI_MAX_BIND) {
         Dbi_SetException((Dbi_Handle *) stmtPtr->handlePtr,
                          "HY000", "max bind variables exceeded: %d",
@@ -1988,7 +2130,7 @@ DefineBindVar(Statement *stmtPtr, CONST char *name, Ns_DString *dsPtr)
         Tcl_SetHashValue(hPtr, (void *) index);
     }
     stmtPtr->vars[index].name = Tcl_GetHashKey(&stmtPtr->bindTable, hPtr);
-    stmtPtr->nbind++;
+    stmtPtr->numVars++;
 
     (*poolPtr->bindVarProc)(dsPtr, name, index);
 

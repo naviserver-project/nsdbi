@@ -59,6 +59,18 @@
 
 
 /*
+ * The following define SQL transaction isolation levels.
+ */
+
+typedef enum {
+    Dbi_ReadUncommitted = 0,
+    Dbi_ReadCommitted,
+    Dbi_RepeatableRead,
+    Dbi_Serializable
+} Dbi_Isolation;
+
+
+/*
  * The following are valid configuration options for a
  * pool of handles.
  */
@@ -83,7 +95,7 @@ typedef struct _Dbi_Pool *Dbi_Pool;
  */
 
 typedef struct Dbi_Handle {
-    CONST Dbi_Pool     *pool;       /* The pool this handle belongs to. */
+    Dbi_Pool           *pool;       /* The pool this handle belongs to. */
     ClientData          driverData; /* Driver private handle context. */
 } Dbi_Handle;
 
@@ -170,6 +182,22 @@ Dbi_NextValue(Dbi_Handle *, Dbi_Value *value,
 
 NS_EXTERN void
 Dbi_Flush(Dbi_Handle *)
+    NS_GNUC_NONNULL(1);
+
+/*
+ * Functions for managing transactions.
+ */
+
+NS_EXTERN int
+Dbi_Begin(Dbi_Handle *, Dbi_Isolation isolation)
+    NS_GNUC_NONNULL(1);
+
+NS_EXTERN int
+Dbi_Commit(Dbi_Handle *)
+    NS_GNUC_NONNULL(1);
+
+NS_EXTERN int
+Dbi_Rollback(Dbi_Handle *)
     NS_GNUC_NONNULL(1);
 
 /*

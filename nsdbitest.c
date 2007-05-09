@@ -76,6 +76,7 @@ static Dbi_PrepareCloseProc PrepareClose;
 static Dbi_ExecProc         Exec;
 static Dbi_NextValueProc    NextValue;
 static Dbi_ColumnNameProc   ColumnName;
+static Dbi_TransactionProc  Transaction;
 static Dbi_FlushProc        Flush;
 static Dbi_ResetProc        Reset;
 
@@ -94,6 +95,7 @@ static CONST Dbi_DriverProc procs[] = {
     {Dbi_ExecProcId,         Exec},
     {Dbi_NextValueProcId,    NextValue},
     {Dbi_ColumnNameProcId,   ColumnName},
+    {Dbi_TransactionProcId,  Transaction},
     {Dbi_FlushProcId,        Flush},
     {Dbi_ResetProcId,        Reset},
     {0, NULL}
@@ -281,13 +283,15 @@ Bind(Ns_DString *ds, CONST char *name, int bindIdx)
  */
 
 static int
-Prepare(Dbi_Handle *handle, Dbi_Statement *stmt, unsigned int *numColsPtr)
+Prepare(Dbi_Handle *handle, Dbi_Statement *stmt,
+        unsigned int *numVarsPtr, unsigned int *numColsPtr)
 {
     Connection *conn = handle->driverData;
     int         n, numCols, numRows, rest = 0;
 
     assert(handle);
     assert(stmt);
+    assert(numVarsPtr);
     assert(numColsPtr);
 
     assert((stmt->nqueries <= 1 && !stmt->driverData)
@@ -582,6 +586,30 @@ ColumnName(Dbi_Handle *handle, Dbi_Statement *stmt,
     sprintf(conn->columnBuf, "%u", index);
     *columnPtr = conn->columnBuf;
 
+    return NS_OK;
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * Transaction --
+ *
+ *      Simulate transaction begin, commit, rollback and savepoints.
+ *
+ * Results:
+ *      NS_OK or NS_ERROR.
+ *
+ * Side effects:
+ *      None.
+ *
+ *----------------------------------------------------------------------
+ */
+
+static int
+Transaction(Dbi_Handle *handle, unsigned int depth,
+            Dbi_TransactionCmd cmd, Dbi_Isolation isolation)
+{
     return NS_OK;
 }
 

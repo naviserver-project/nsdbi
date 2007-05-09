@@ -41,6 +41,18 @@
 #include "nsdbi.h"
 
 
+
+/*
+ * The following define the phases of a transaction that a driver
+ * Dbi_TransactionProc must handle.
+ */
+
+typedef enum {
+    Dbi_TransactionBegin,
+    Dbi_TransactionCommit,
+    Dbi_TransactionRollback
+} Dbi_TransactionCmd;
+
 /*
  * The following structure describes a statement to be executed one
  * or more times with it's associated handle.
@@ -55,7 +67,6 @@ typedef struct Dbi_Statement {
     ClientData          driverData; /* Driver private statement context. */
 
 } Dbi_Statement;
-
 
 /*
  * The following enum defines ids for calback functions
@@ -72,6 +83,7 @@ typedef enum {
     Dbi_ExecProcId,
     Dbi_NextValueProcId,
     Dbi_ColumnNameProcId,
+    Dbi_TransactionProcId,
     Dbi_FlushProcId,
     Dbi_ResetProcId
 } Dbi_ProcId;
@@ -108,8 +120,10 @@ Dbi_BindVarProc(Ns_DString *, CONST char *name, int bindIdx)
     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
 
 typedef int
-Dbi_PrepareProc(Dbi_Handle *, Dbi_Statement *, unsigned int *numColsPtr)
-    NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2) NS_GNUC_NONNULL(3);
+Dbi_PrepareProc(Dbi_Handle *, Dbi_Statement *,
+                unsigned int *numVarsPtr, unsigned int *numColsPtr)
+    NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2)
+    NS_GNUC_NONNULL(3) NS_GNUC_NONNULL(4);
 
 typedef void
 Dbi_PrepareCloseProc(Dbi_Handle *, Dbi_Statement *)
@@ -129,6 +143,11 @@ typedef int
 Dbi_ColumnNameProc(Dbi_Handle *, Dbi_Statement *,
                    unsigned int index, CONST char **columnPtr)
     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2) NS_GNUC_NONNULL(4);
+
+typedef int
+Dbi_TransactionProc(Dbi_Handle *, unsigned int depth,
+                    Dbi_TransactionCmd cmd, Dbi_Isolation isolation)
+    NS_GNUC_NONNULL(1);
 
 typedef int
 Dbi_FlushProc(Dbi_Handle *, Dbi_Statement *)
