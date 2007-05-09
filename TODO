@@ -46,8 +46,8 @@
          dbi ...
      }
 
-If it's not absolutely necessary it would be nice to skip this. Is it better
-to compose reuseable chunks of SQL in Tcl, or to use the db, views etc.?
+   If it's not absolutely necessary it would be nice to skip this. Is it better
+   to compose reuseable chunks of SQL in Tcl, or to use the db, views etc.?
 
 
 *) Result assertions don't roll back transactions. e.g.:
@@ -56,7 +56,7 @@ to compose reuseable chunks of SQL in Tcl, or to use the db, views etc.?
 
    We were expecting rows, but got a DML result because of a bad query. A Tcl
    error will be thrown, but the DML is not rolled back. This would require
-   opening an closing a transaction for every query. Is this slow?
+   opening and closing a transaction for every query. Is this slow?
 
 
 *) Result caching: Caching the results from a db query is easy, but flushing
