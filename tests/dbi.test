@@ -248,6 +248,34 @@ test bindvars-8 {bound vars get reset} -body {
     unset -nocomplain x
 } -result {{1 0:x} v {{2 0:x} v}}
 
+test bindvars-9 {null bind var} -body {
+	set x ""
+	dbi_rows {ROWS 1 1 :x}
+} -cleanup {
+	unset -nocomplain x
+} -result {{{} 0:x}}
+
+test bindvars-10 {multiple null bind vars} -body {
+	set x ""
+	set y Y
+	set z ""
+	dbi_rows {ROWS 1 1 :x :y :z}
+} -cleanup {
+	unset -nocomplain x y z
+} -result {{{} Y {} {0:x 1:y 2:z}}}
+
+
+
+
+test binary-1 {binary variables and result values} -body {
+	set x [binary format a1 ""]
+	set y [binary format a8 ""]
+	lindex [dbi_rows {BINARY 1 2 :x :y}] 1
+} -cleanup {
+	unset -nocomplain x y
+} -result [binary format a8 ""]
+
+
 
 
 test bindarray-1 {bind array vars} -body {

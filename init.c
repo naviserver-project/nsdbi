@@ -912,7 +912,7 @@ Dbi_ColumnName(Dbi_Handle *handle, unsigned int index, CONST char **namePtr)
  */
 
 int
-Dbi_Exec(Dbi_Handle *handle, CONST char **values, unsigned int *lengths)
+Dbi_Exec(Dbi_Handle *handle, Dbi_Value *values)
 {
     Handle     *handlePtr = (Handle *) handle;
     Statement  *stmtPtr   = handlePtr->stmtPtr;
@@ -920,7 +920,7 @@ Dbi_Exec(Dbi_Handle *handle, CONST char **values, unsigned int *lengths)
 
     assert(stmtPtr);
     assert(stmtPtr->numVars == 0
-           || (stmtPtr->numVars > 0 && (values != NULL && lengths != NULL)));
+           || (stmtPtr->numVars > 0 && values != NULL));
 
     Log(handle, Debug, "Dbi_ExecProc: id: %u, variables: %u",
         stmtPtr->id, stmtPtr->numVars);
@@ -929,7 +929,7 @@ Dbi_Exec(Dbi_Handle *handle, CONST char **values, unsigned int *lengths)
     stmtPtr->nqueries++;
 
     if ((*poolPtr->execProc)(handle, (Dbi_Statement *) stmtPtr,
-                             values, lengths, stmtPtr->numVars) != NS_OK) {
+                             values, stmtPtr->numVars) != NS_OK) {
         return NS_ERROR;
     }
     handlePtr->fetchingRows = NS_TRUE;
@@ -965,7 +965,7 @@ Dbi_ExecDirect(Dbi_Handle *handle, CONST char *sql)
             "bug: Dbi_ExecDirect: statement requires bind variables");
         return NS_ERROR;
     }
-    return Dbi_Exec(handle, NULL, NULL);
+    return Dbi_Exec(handle, NULL);
 }
 
 

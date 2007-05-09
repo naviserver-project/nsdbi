@@ -104,7 +104,7 @@ typedef struct Dbi_Handle {
  */
 
 typedef struct Dbi_Value {
-    CONST void   *data;
+    CONST char   *data;     /* NULL for null SQL values. */
     size_t        length;   /* Length of data in bytes. */
     int           binary;   /* 1 if data is binary (utf8 otherwise) */
 } Dbi_Value;
@@ -168,7 +168,7 @@ Dbi_ColumnName(Dbi_Handle *, unsigned int index, CONST char **namePtr)
  */
 
 NS_EXTERN int
-Dbi_Exec(Dbi_Handle *, CONST char **values, unsigned int *lengths)
+Dbi_Exec(Dbi_Handle *, Dbi_Value *values)
     NS_GNUC_NONNULL(1);
 
 NS_EXTERN int

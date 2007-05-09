@@ -101,6 +101,7 @@ static CONST Dbi_DriverProc procs[] = {
     {0, NULL}
 };
 
+
 
 /*
  *----------------------------------------------------------------------
@@ -401,15 +402,15 @@ PrepareClose(Dbi_Handle *handle, Dbi_Statement *stmt)
 
 static int
 Exec(Dbi_Handle *handle, Dbi_Statement *stmt,
-     CONST char **values, unsigned int *lengths, unsigned int nvalues)
+     Dbi_Value *values, unsigned int numValues)
 {
     Connection *conn = handle->driverData;
-    int         i;
+    int         i, j;
 
     assert(stmt);
 
-    assert(nvalues <= DBI_MAX_BIND);
-    assert(nvalues == 0 || (nvalues > 0 && values != NULL && lengths != NULL));
+    assert(numValues <= DBI_MAX_BIND);
+    assert(numValues == 0 || (numValues > 0 && values != NULL));
 
      assert((stmt->nqueries == 0 && !stmt->driverData)
            || stmt->nqueries > 0);
@@ -429,10 +430,40 @@ Exec(Dbi_Handle *handle, Dbi_Statement *stmt,
         /*
          * Record bound values, which we report as the first column
          * of the first row during fetch.
+         *
+         * For binary values we record the length in bytes.
          */
 
-        for (i = 0; i < nvalues; i++) {
-            Tcl_DStringAppendElement(&conn->ds, values[i]);
+        for (i = 0; i < numValues; i++) {
+
+            /* check nulls and lengths */
+            assert((values[i].length && values[i].data)
+                   || (!values[i].length && !values[i].data));
+
+            if (values[i].binary) {
+                Ns_DStringPrintf(&conn->ds, " %u", values[i].length);
+            } else {
+                Tcl_DStringAppendElement(&conn->ds, values[i].data);
+            }
+        }
+        return NS_OK;
+
+    } else if (STREQ(conn->cmd, "BINARY")) {
+
+        /*
+         * Ensure all bind variables are marked binary and contain
+         * nothing but 0 bytes.
+         */
+
+        for (i = 0; i < numValues; i++) {
+            if (!values[i].binary) {
+                Ns_Fatal("BINARY: values[%d].binary not 1", i);
+            }
+            for (j = 0; j < values[i].length; j++) {
+                if (values[i].data[j] != '\0') {
+                    Ns_Fatal("BINARY: values[%d].data[%d] not '\\0'", i, j);
+                }
+            }
         }
         return NS_OK;
 
@@ -460,14 +491,6 @@ Exec(Dbi_Handle *handle, Dbi_Statement *stmt,
     } else if (STREQ(conn->cmd, "NEXTERR")) {
 
         /* Pass through to NextValue . */
-
-        return NS_OK;
-
-    } else if (STREQ(stmt->sql, "begin")
-               || STREQ(stmt->sql, "commit")
-               || STREQ(stmt->sql, "rollback")) {
-
-        /* Pass through dbi generated transaction queries. */
 
         return NS_OK;
 
@@ -505,7 +528,8 @@ static int
 NextValue(Dbi_Handle *handle, Dbi_Statement *stmt,
           unsigned int colIdx, unsigned int rowIdx, Dbi_Value *value)
 {
-    Connection *conn = handle->driverData;
+    Connection        *conn = handle->driverData;
+    static CONST char  binary[8];
 
     assert(stmt);
     assert(value);
@@ -537,10 +561,16 @@ NextValue(Dbi_Handle *handle, Dbi_Statement *stmt,
         value->data   = Ns_DStringValue(&conn->ds);
         value->length = Ns_DStringLength(&conn->ds);
     } else {
-        value->data   = "v";
-        value->length = 1;
+        if (STREQ(conn->cmd, "BINARY")) {
+            value->data   = binary;
+            value->length = sizeof(binary);
+            value->binary = 1;
+        } else {
+            value->data   = "v";
+            value->length = 1;
+            value->binary = 0;
+        }
     }
-    value->binary = 0;
 
     if (colIdx == 0 && rowIdx == conn->numRows) {
         return DBI_DONE;

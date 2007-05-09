@@ -131,8 +131,8 @@ Dbi_PrepareCloseProc(Dbi_Handle *, Dbi_Statement *)
 
 typedef int
 Dbi_ExecProc(Dbi_Handle *, Dbi_Statement *,
-             CONST char **values, unsigned int *lengths, unsigned int nvalues)
-    NS_GNUC_NONNULL(1);
+             Dbi_Value *values, unsigned int numValues)
+    NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
 
 typedef int
 Dbi_NextValueProc(Dbi_Handle *, Dbi_Statement *,

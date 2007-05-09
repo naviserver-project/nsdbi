@@ -79,8 +79,7 @@ static int RowCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST o
 static int Exec(InterpData *idataPtr, Tcl_Obj *poolObj, Ns_Time *timeoutPtr,
                 CONST char *array, CONST char *setid, Tcl_Obj *queryObj, int dml,
                 Dbi_Handle **handlePtrPtr);
-static int BindVars(Tcl_Interp *interp, Dbi_Handle *,
-                    CONST char **values, unsigned int *lengths,
+static int BindVars(Tcl_Interp *interp, Dbi_Handle *, Dbi_Value *values,
                     CONST char *array, CONST char *setid);
 
 static Dbi_Pool *GetPool(InterpData *, Tcl_Obj *poolObj);
@@ -96,7 +95,8 @@ static int NextValue(Dbi_Handle *handle, Tcl_Obj **valueObjPtrPtr,
  * Static variables defined in this file.
  */
 
-static Tcl_ObjCmdProc *formatCmd; /* Tcl 'format' command. */
+static Tcl_ObjCmdProc *formatCmd;        /* Tcl 'format' command. */
+static Tcl_ObjType    *bytearrayTypePtr;
 
 /*
  * The following are the values that can be passed to the
@@ -140,11 +140,17 @@ DbiInitInterp(Tcl_Interp *interp, void *arg)
 
     if (!once) {
         once = 1;
+
         if (!Tcl_GetCommandInfo(interp, "format", &info)) {
             Ns_TclLogError(interp);
             return TCL_ERROR;
         }
         formatCmd = info.objProc;
+
+        bytearrayTypePtr = Tcl_GetObjType("bytearray");
+        if (bytearrayTypePtr == NULL) {
+            Tcl_Panic("dbi: \"bytearray\" type not defined");
+        }
     }
 
     static struct {
@@ -859,8 +865,7 @@ Exec(InterpData *idataPtr, Tcl_Obj *poolObj, Ns_Time *timeoutPtr,
     Tcl_Interp       *interp = idataPtr->interp;
     Dbi_Pool         *pool;
     Dbi_Handle       *handle;
-    CONST char       *values[DBI_MAX_BIND];
-    unsigned int      lengths[DBI_MAX_BIND];
+    Dbi_Value         values[DBI_MAX_BIND];
     unsigned int      numCols;
     char             *query;
     int               qlength;
@@ -903,10 +908,10 @@ Exec(InterpData *idataPtr, Tcl_Obj *poolObj, Ns_Time *timeoutPtr,
      * Bind values to variable as required and execute the statement.
      */
 
-    if (BindVars(interp, handle, values, lengths, array, setid) != TCL_OK) {
+    if (BindVars(interp, handle, values, array, setid) != TCL_OK) {
         goto error;
     }
-    if (Dbi_Exec(handle, values, lengths) != NS_OK) {
+    if (Dbi_Exec(handle, values) != NS_OK) {
         SqlError(interp, handle);
         goto error;
     }
@@ -938,17 +943,16 @@ Exec(InterpData *idataPtr, Tcl_Obj *poolObj, Ns_Time *timeoutPtr,
  */
 
 static int
-BindVars(Tcl_Interp *interp, Dbi_Handle *handle,
-         CONST char **values, unsigned int *lengths,
+BindVars(Tcl_Interp *interp, Dbi_Handle *handle, Dbi_Value *values,
          CONST char *array, CONST char *setid)
 {
     Ns_Set         *set = NULL;
     Tcl_Obj        *valueObj;
-    CONST char     *key, *value;
-    unsigned int    nbind;
-    int             i, length;
+    CONST char     *key, *data;
+    unsigned int    numVars;
+    int             i, length, binary;
 
-    if (!(nbind = Dbi_NumVariables(handle))) {
+    if (!(numVars = Dbi_NumVariables(handle))) {
         return TCL_OK;
     }
 
@@ -958,34 +962,45 @@ BindVars(Tcl_Interp *interp, Dbi_Handle *handle,
         }
     }
 
-    for (i = 0; i < nbind; i++) {
+    for (i = 0; i < numVars; i++) {
 
         if (Dbi_VariableName(handle, i, &key) != NS_OK) {
             SqlError(interp, handle);
             return TCL_ERROR;
         }
 
-        value = NULL;
+        data = NULL;
+        binary = 0;
 
         if (set != NULL) {
-            if ((value = Ns_SetGet(set, key)) != NULL) {
-                length = strlen(value);
+            if ((data = Ns_SetGet(set, key)) != NULL) {
+                length = strlen(data);
             }
         } else {
             valueObj = Tcl_GetVar2Ex(interp, array ? array : key,
                                      array ? key : NULL, TCL_LEAVE_ERR_MSG);
             if (valueObj != NULL) {
-                value = Tcl_GetStringFromObj(valueObj, &length);
+                if (valueObj->typePtr == bytearrayTypePtr) {
+                    data = (char *) Tcl_GetByteArrayFromObj(valueObj, &length);
+                    binary = 1;
+                } else {
+                    data = Tcl_GetStringFromObj(valueObj, &length);
+                }
             }
         }
-        if (value == NULL) {
+        if (data == NULL) {
             Tcl_AddObjErrorInfo(interp, "\ndbi: bind variable not found: ", -1);
             Tcl_AddObjErrorInfo(interp, key, -1);
             return TCL_ERROR;
         }
 
-        values[i] = value;
-        lengths[i] = length;
+        /*
+         * Coerce the empty string to null.
+         */
+
+        values[i].data   = length ? data : NULL;
+        values[i].length = length;
+        values[i].binary = binary;
     }
 
     return TCL_OK;
@@ -1186,7 +1201,7 @@ NextValue(Dbi_Handle *handle, Tcl_Obj **valueObjPtrPtr,
 
     case DBI_VALUE:
         *valueObjPtrPtr = value.binary
-            ? Tcl_NewByteArrayObj(value.data, value.length)
+            ? Tcl_NewByteArrayObj((unsigned char *) value.data, value.length)
             : Tcl_NewStringObj(value.data, value.length);
         return DBI_VALUE;
 
