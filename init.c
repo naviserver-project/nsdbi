@@ -207,8 +207,7 @@ typedef struct Statement {
  */
 
 #define Log(handle,level,msg,...)                               \
-    Ns_Log(level, "dbi[%s:%s]: " msg,                           \
-           ((Handle *) handle)->poolPtr->drivername,            \
+    Ns_Log(level, "dbi[%s]: " msg,                              \
            ((Handle *) handle)->poolPtr->module, __VA_ARGS__)
 
 
@@ -756,7 +755,7 @@ Dbi_Prepare(Dbi_Handle *handle, CONST char *sql, int length)
         return NS_ERROR;
     }
     if (numVars != stmtPtr->numVars) {
-        Dbi_SetException(handle, "DBI",
+        Dbi_SetException(handle, "HY000",
             "bug: dbi found %u variables, driver found: %u",
             stmtPtr->numVars, numVars);
     }
@@ -821,7 +820,7 @@ Dbi_VariableName(Dbi_Handle *handle, unsigned int index, CONST char **namePtr)
     assert(stmtPtr);
 
     if (index >= stmtPtr->numVars) {
-        Dbi_SetException(handle, "DBI",
+        Dbi_SetException(handle, "HY000",
             "bug: variable index out of bounds: index: %u, variables: %u",
             index, stmtPtr->numVars);
     }
@@ -961,7 +960,7 @@ Dbi_ExecDirect(Dbi_Handle *handle, CONST char *sql)
         return NS_ERROR;
     }
     if (Dbi_NumVariables(handle) > 0) {
-        Dbi_SetException(handle, "DBI",
+        Dbi_SetException(handle, "HY000",
             "bug: Dbi_ExecDirect: statement requires bind variables");
         return NS_ERROR;
     }
@@ -1000,7 +999,7 @@ Dbi_NextValue(Dbi_Handle *handle, Dbi_Value *value,
     assert(value);
 
     if (!handlePtr->fetchingRows) {
-        Dbi_SetException(handle, "DBI",
+        Dbi_SetException(handle, "HY000",
             "bug: Dbi_NextValue: no pending rows");
         return DBI_ERROR;
     }
@@ -1056,7 +1055,7 @@ Dbi_Begin(Dbi_Handle *handle, Dbi_Isolation isolation)
     if (handlePtr->transDepth++ == 0) {
         handlePtr->isolation = isolation;
     } else if (handlePtr->isolation > isolation) {
-        Dbi_SetException(handle, "DBI",
+        Dbi_SetException(handle, "HY000",
             "Transaction already in progress, cannot increase the isolation level.");
         return NS_ERROR;
     }
@@ -1101,7 +1100,7 @@ Dbi_Commit(Dbi_Handle *handle)
     int     status;
 
     if (handlePtr->transDepth == -1) {
-        Dbi_SetException(handle, "DBI",
+        Dbi_SetException(handle, "HY000",
                          "No transaction in progress to commit.");
         return NS_ERROR;
     }
@@ -1143,7 +1142,7 @@ Dbi_Rollback(Dbi_Handle *handle)
     int     status;
 
     if (handlePtr->transDepth == -1) {
-        Dbi_SetException(handle, "DBI",
+        Dbi_SetException(handle, "HY000",
                          "No transaction in progress to rollback.");
         return NS_ERROR;
     }
@@ -1232,9 +1231,7 @@ Dbi_Reset(Dbi_Handle *handle)
     status = (*poolPtr->resetProc)(handle);
 
     if (Dbi_ExceptionPending(handle)) {
-        Log(handle, Error, "reset: %s: %s",
-            Dbi_ExceptionCode(handle), Dbi_ExceptionMsg(handle));
-        Dbi_ResetException(handle);
+        Dbi_LogException(handle, Error);
     }
     handlePtr->stmtPtr = NULL;
 
@@ -1553,6 +1550,32 @@ Dbi_ExceptionPending(Dbi_Handle *handle)
 /*
  *----------------------------------------------------------------------
  *
+ * Dbi_LogException --
+ *
+ *      Log the current handle exception.
+ *
+ * Results:
+ *      None.
+ *
+ * Side effects:
+ *      None.
+ *
+ *----------------------------------------------------------------------
+ */
+
+void
+Dbi_LogException(Dbi_Handle *handle, Ns_LogSeverity severity)
+{
+    Log(handle, severity, "%s: %s",
+        Dbi_ExceptionCode(handle),
+        Dbi_ExceptionMsg(handle));
+    Dbi_ResetException(handle);
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
  * GetServer --
  *
  *      Get per-server data.
@@ -1846,10 +1869,7 @@ Connect(Handle *handlePtr)
 
         if (status != NS_OK) {
             poolPtr->stats.handlefailures++;
-            Log(handle, Error, "handle connection failed (%d): "
-                "code: '%s' msg: '%s'",
-                poolPtr->stats.handlefailures,
-                Dbi_ExceptionCode(handle), Dbi_ExceptionMsg(handle));
+            Dbi_LogException(handle, Error);
         } else {
             handlePtr->atime = handlePtr->otime = time(NULL);
             msg = Dbi_ExceptionMsg(handle);

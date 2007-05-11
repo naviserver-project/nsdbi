@@ -233,24 +233,28 @@ Dbi_Config(Dbi_Pool *, DBI_CONFIG_OPTION opt, int newValue)
  */
 
 NS_EXTERN void
-Dbi_SetException(Dbi_Handle *handle, CONST char *sqlstate, CONST char *fmt, ...)
+Dbi_SetException(Dbi_Handle *, CONST char *sqlstate, CONST char *fmt, ...)
      NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2) NS_GNUC_PRINTF(3, 4);
 
 NS_EXTERN void
-Dbi_ResetException(Dbi_Handle *handle)
+Dbi_ResetException(Dbi_Handle *)
      NS_GNUC_NONNULL(1);
 
 NS_EXTERN char *
-Dbi_ExceptionCode(Dbi_Handle *handle)
+Dbi_ExceptionCode(Dbi_Handle *)
      NS_GNUC_NONNULL(1);
 
 NS_EXTERN char *
-Dbi_ExceptionMsg(Dbi_Handle *handle)
+Dbi_ExceptionMsg(Dbi_Handle *)
     NS_GNUC_NONNULL(1);
 
 NS_EXTERN int
-Dbi_ExceptionPending(Dbi_Handle *handle)
+Dbi_ExceptionPending(Dbi_Handle *)
      NS_GNUC_NONNULL(1);
+
+NS_EXTERN void
+Dbi_LogException(Dbi_Handle *, Ns_LogSeverity severity)
+    NS_GNUC_NONNULL(1);
 
 
 #endif /* NSDBI_H */
