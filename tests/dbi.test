@@ -173,16 +173,6 @@ test rows-7 {query error} -body {
 
 
 
-test format-1 {single row} -body {
-    dbi_format {ROWS 2 1 v} {<%s-%s>}
-} -result {<v-v>}
-
-test format-2 {2 rows} -body {
-    dbi_format {ROWS 2 2 v} {<%s-%s>}
-} -result {<v-v><v-v>}
-
-
-
 test pool-global {query from non-default global pool} -body {
     dbi_rows -pool global1 {ROWS 1 1 v}
 } -result v
