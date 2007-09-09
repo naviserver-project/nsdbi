@@ -170,3 +170,63 @@
 
    The hard part is coming up with an API which is actually workable.
 
+----
+
+Performance:
+
+2007-08-17
+
+% time {dbi_format {ROWS 8 8} {%s %s %s %s %s %s %s %s}} 100000
+65.38317 microseconds per iteration
+
+FormatObjCmd:       89
+  Tcl_FormatObjCmd: 33
+  NextValue:        28
+
+
+
+% time {dbi_format2 {ROWS 8 8} {%s %s %s %s %s %s %s %s}} 100000
+73.69833 microseconds per iteration
+
+(Using Tcl_AppendFormat from Tcl 8.5)
+
+
+
+% time {dbi_subst {ROWS 8 8} {$0 $1 $2 $3 $4 $5 $6 $7}} 100000
+138.35802 microseconds per iteration
+
+(Using Tcl_SubstObj)
+
+SubstObjCmd:        93
+  TclSubsObj:       33
+  NextValue:        15
+  Tcl_SetVar2Ex:    15
+
+
+
+% time {dbi_subst2 {ROWS 8 8} {$0 $1 $2 $3 $4 $5 $6 $7}} 100000
+112.98358 microseconds per iteration
+
+(Using hand-rolled subst w/row values set as tcl vars)
+
+Subs2ObjCmd:  ???
+
+
+
+% time {dbi_rows {ROWS 8 8}} 100000
+41.31552 microseconds per iteration
+
+(Using Tcl_ListObjAppendElement)
+
+
+% time {dbi_foreach {ROWS 8 8}} 100000
+60.45297 microseconds per iteration
+
+(Using dbi_rows and append implemented in tcl)
+
+
+% time {dbi_rows {ROWS 8 8}} 100000
+35.88996 microseconds per iteration
+
+(Fetching values from driver but not doing any other work).
+
