@@ -742,6 +742,7 @@ Dbi_Prepare(Dbi_Handle *handle, CONST char *sql, int length)
     } else {
         stmtPtr = Ns_CacheGetValue(entry);
     }
+    handlePtr->stmtPtr = stmtPtr;
 
     /*
      * Prepare the query if not already done.
@@ -752,17 +753,20 @@ Dbi_Prepare(Dbi_Handle *handle, CONST char *sql, int length)
 
     if ((*poolPtr->prepareProc)(handle, (Dbi_Statement *) stmtPtr,
                                 &numVars, &stmtPtr->numCols) != NS_OK) {
-        return NS_ERROR;
+        goto error;
     }
     if (numVars != stmtPtr->numVars) {
         Dbi_SetException(handle, "HY000",
             "bug: dbi found %u variables, driver found: %u",
             stmtPtr->numVars, numVars);
+        goto error;
     }
 
-    handlePtr->stmtPtr = stmtPtr;
-
     return NS_OK;
+
+ error:
+    handlePtr->stmtPtr = NULL;
+    return NS_ERROR;
 }
 
 
@@ -974,11 +978,10 @@ Dbi_ExecDirect(Dbi_Handle *handle, CONST char *sql)
  * Dbi_NextValue --
  *
  *      Fetch the next value of the result into the Dbi_Value structure.
- *      The column and row pointers are updated, if provided.
- *      When no more values are available, DBI_DONE is returned.
+ *      To be called repeatedly until *endPtr is set to 1.
  *
  * Results:
- *      DBI_VALUE, DBI_DONE, DBI_ERROR.
+ *      NS_OK or NS_ERROR.
  *
  * Side effects:
  *      The current column/row counter is advanced.
@@ -987,8 +990,7 @@ Dbi_ExecDirect(Dbi_Handle *handle, CONST char *sql)
  */
 
 int
-Dbi_NextValue(Dbi_Handle *handle, Dbi_Value *value,
-              unsigned int *colIdxPtr, unsigned int *rowIdxPtr)
+Dbi_NextValue(Dbi_Handle *handle, Dbi_Value *value, int *endPtr)
 {
     Handle        *handlePtr = (Handle *) handle;
     Pool          *poolPtr   = handlePtr->poolPtr;
@@ -997,33 +999,29 @@ Dbi_NextValue(Dbi_Handle *handle, Dbi_Value *value,
 
     assert(stmt);
     assert(value);
+    assert(endPtr);
 
     if (!handlePtr->fetchingRows) {
         Dbi_SetException(handle, "HY000",
             "bug: Dbi_NextValue: no pending rows");
-        return DBI_ERROR;
+        return NS_ERROR;
     }
+
+    value->colIdx = handlePtr->colIdx;
+    value->rowIdx = handlePtr->rowIdx;
 
     Log(handle, Debug, "Dbi_NextValueProc: id: %u, column: %u, row: %u",
         stmt->id, handlePtr->colIdx, handlePtr->rowIdx);
 
-    status = (*poolPtr->nextValueProc)(handle, stmt,
-                 handlePtr->colIdx, handlePtr->rowIdx, value);
+    status = (*poolPtr->nextValueProc)(handle, stmt, value, endPtr);
 
-    if (status != DBI_VALUE) {
+    if (status != NS_OK || *endPtr) {
         handlePtr->fetchingRows = NS_FALSE;
-    } else {
-        if (colIdxPtr) {
-            *colIdxPtr = handlePtr->colIdx;
-        }
-        if (rowIdxPtr) {
-            *rowIdxPtr = handlePtr->rowIdx;
-        }
-        if (++handlePtr->colIdx >= handlePtr->stmtPtr->numCols) {
-            handlePtr->colIdx = 0;
-            handlePtr->rowIdx++;
-        }
+    } else if (++handlePtr->colIdx >= handlePtr->stmtPtr->numCols) {
+        handlePtr->colIdx = 0;
+        handlePtr->rowIdx++;
     }
+
     return status;
 }
 

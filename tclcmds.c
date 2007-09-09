@@ -65,6 +65,9 @@ typedef struct InterpData {
 static Tcl_ObjCmdProc
     RowsObjCmd,
     FormatObjCmd,
+    Format2ObjCmd,
+    SubstObjCmd,
+    Subst2ObjCmd,
     DmlObjCmd,
     ZeroOrOneRowObjCmd,
     OneRowObjCmd,
@@ -88,9 +91,12 @@ static void CleanupHandle(InterpData *idataPtr, Dbi_Handle *handle);
 
 static void SqlError(Tcl_Interp*, Dbi_Handle *);
 
-static int NextValue(Dbi_Handle *handle, Tcl_Obj **valueObjPtrPtr,
-                     unsigned int *colIdxPtr, unsigned int *rowIdxPtr);
+/* static int NextValue(Dbi_Handle *handle, Tcl_Obj **valueObjPtrPtr, */
+/*                      unsigned int *colIdxPtr, unsigned int *rowIdxPtr); */
+static int NextValue(Tcl_Interp *interp, Dbi_Handle *handle, Tcl_Obj **valueObjPtr, unsigned int *colIdxPtr);
 
+static int AppendFormatToObj(Tcl_Interp *interp, Tcl_Obj *appendObj, CONST char *format,
+                             int objc, Tcl_Obj *CONST objv[]);
 /*
  * Static variables defined in this file.
  */
@@ -111,6 +117,25 @@ static Ns_ObjvTable levels[] = {
     {NULL, 0}
 };
 
+/*
+ * The following defines the subst object type to cache
+ * a subst-spec internal rep for the dbi_subst2 command.
+ */
+
+static void PushTextToken(Tcl_Parse *parsePtr, char *string, int length);
+static int GetParseFromObj(Tcl_Interp *interp, Tcl_Obj *substObj,
+                           Tcl_Parse **parsePtrPtr, int *numVarsPtr);
+static void MapVariablesToColumns(Dbi_Handle *handle, Tcl_Parse *parsePtr,
+                                  int *varColMap);
+static Tcl_FreeInternalRepProc FreeSubst;
+
+static Tcl_ObjType substType = {
+    "dbi:subst",
+    FreeSubst,
+    (Tcl_DupInternalRepProc *) NULL,
+    (Tcl_UpdateStringProc *) NULL,
+    Ns_TclSetFromAnyError
+};
 
 
 /*
@@ -159,6 +184,9 @@ DbiInitInterp(Tcl_Interp *interp, void *arg)
     } cmds[] = {
         {"dbi_rows",        RowsObjCmd},
         {"dbi_format",      FormatObjCmd},
+        {"dbi_format2",     Format2ObjCmd},
+        {"dbi_subst",       SubstObjCmd},
+        {"dbi_subst2",      Subst2ObjCmd},
         {"dbi_0or1row",     ZeroOrOneRowObjCmd},
         {"dbi_1row",        OneRowObjCmd},
         {"dbi_dml",         DmlObjCmd},
@@ -210,7 +238,7 @@ RowsObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
     Tcl_Obj      *resObj, *valueObj, *queryObj, *poolObj = NULL;
     Ns_Time      *timeoutPtr = NULL;
     CONST char   *array = NULL, *setid = NULL;
-    int           status = TCL_ERROR;
+    int           status;
 
     Ns_ObjvSpec opts[] = {
         {"-pool",      Ns_ObjvObj,    &poolObj,    NULL},
@@ -242,26 +270,16 @@ RowsObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
      */
 
     resObj = Tcl_GetObjResult(interp);
-    while (1) {
-        switch (NextValue(handle, &valueObj, NULL, NULL)) {
-        case DBI_VALUE:
-            if (Tcl_ListObjAppendElement(interp, resObj, valueObj) != TCL_OK) {
-                Tcl_DecrRefCount(valueObj);
-                goto done;
-            }
+
+    while ((status = NextValue(interp, handle, &valueObj, NULL)) == TCL_OK
+               && valueObj != NULL) {
+        if (Tcl_ListObjAppendElement(interp, resObj, valueObj) != TCL_OK) {
+            Tcl_DecrRefCount(valueObj);
+            status = TCL_ERROR;
             break;
-
-        case DBI_DONE:
-            status = TCL_OK;
-            goto done;
-
-        default:
-            SqlError(interp, handle);
-            goto done;
         }
     }
 
- done:
     CleanupHandle(idataPtr, handle);
 
     return status;
@@ -372,11 +390,12 @@ RowCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[],
 {
     InterpData   *idataPtr = arg;
     Dbi_Handle   *handle;
-    unsigned int  colIdx, rowIdx;
+    Dbi_Value     value;
+    unsigned int  colIdx, colMax;
     Tcl_Obj      *valueObj, *queryObj, *poolObj = NULL;
     Ns_Time      *timeoutPtr = NULL;
     CONST char   *column, *array = NULL, *setid = NULL;
-    int           found = 0, status = TCL_ERROR;
+    int           found, end, status;
 
     Ns_ObjvSpec opts[] = {
         {"-pool",      Ns_ObjvObj,    &poolObj,    NULL},
@@ -408,39 +427,44 @@ RowCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[],
      * and set the values of that row as variables in the callers frame..
      */
 
-    while (1) {
+    colMax = Dbi_NumColumns(handle) -1;
+    found  = 0;
 
-        switch (NextValue(handle, &valueObj, &colIdx, &rowIdx)) {
-
-        case DBI_DONE:
-            status = TCL_OK;
-            goto done;
-
-        case DBI_VALUE:
-            if (rowIdx == 1) {
-                Tcl_SetResult(interp, "query returned more than one row", TCL_STATIC);
-                goto done;
-            }
-            if (Dbi_ColumnName(handle, colIdx, &column) != NS_OK) {
-                Tcl_DecrRefCount(valueObj);
-                SqlError(interp, handle);
-                goto done;
-            }
-            if (Tcl_SetVar2Ex(interp, column, NULL, valueObj,
-                              TCL_LEAVE_ERR_MSG) == NULL) {
-                Tcl_DecrRefCount(valueObj);
-                goto done;
-            }
-            found++;
-            break;
-
-        default:
-            SqlError(interp, handle);
-            goto done;
+    do {
+        if ((status = NextValue(interp, handle, &valueObj, &colIdx)) != TCL_OK
+                || valueObj == NULL) {
+            goto cleanup;
         }
+        if (Dbi_ColumnName(handle, colIdx, &column) != NS_OK) {
+            SqlError(interp, handle);
+            goto cleanup;
+        }
+        if (Tcl_SetVar2Ex(interp, column, NULL, valueObj,
+                          TCL_LEAVE_ERR_MSG) == NULL) {
+            Tcl_DecrRefCount(valueObj);
+            goto cleanup;
+        }
+        found++;
+
+    } while (colIdx < colMax);
+
+    /*
+     * Expect end=1 when we attempt to fetch from the next row.
+     */
+
+    if (Dbi_NextValue(handle, &value, &end) != NS_OK) {
+        SqlError(interp, handle);
+        goto cleanup;
+    }
+    if (!end) {
+        Tcl_SetResult(interp, "query returned more than one row", TCL_STATIC);
+        goto cleanup;
     }
 
- done:
+    status = TCL_OK;
+
+ cleanup:
+
     *foundRowPtr = found ? 1 : 0;
     CleanupHandle(idataPtr, handle);
 
@@ -471,12 +495,12 @@ FormatObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[]
     Dbi_Handle   *handle;
     Tcl_Obj     **vobjv;
     int           vobjc;
-    unsigned int  numCols, colIdx = 0, rowIdx = 0;
+    unsigned int  colMax, colIdx;
     Tcl_Obj      *resObj, *valueObj, *valueListObj;
     Tcl_Obj      *queryObj, *formatObj, *poolObj = NULL;
     Ns_Time      *timeoutPtr = NULL;
     char         *array = NULL, *setid = NULL;
-    int           found, dbistat, status = TCL_ERROR;
+    int           status = TCL_ERROR;
 
     Ns_ObjvSpec opts[] = {
         {"-pool",        Ns_ObjvObj,    &poolObj,    NULL},
@@ -508,93 +532,665 @@ FormatObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[]
      * Format each row and append to result.
      */
 
-    numCols      = Dbi_NumColumns(handle);
-    resObj       = Tcl_NewObj();
+    colMax = Dbi_NumColumns(handle) -1;
+
+    resObj = Tcl_NewObj();
+    Tcl_IncrRefCount(resObj);
+
     valueListObj = Tcl_NewListObj(1, objv);
     if (Tcl_ListObjAppendElement(interp, valueListObj, formatObj)
             != TCL_OK) {
-        goto done;
+        goto cleanup;
     }
 
     while (1) {
-        found = 0;
-        do {
-            dbistat = NextValue(handle, &valueObj, &colIdx, &rowIdx);
 
-            if (dbistat == DBI_ERROR) {
-                SqlError(interp, handle);
+        /*
+         * Append a row of objects to the format command arg list.
+         */
+
+        do {
+            if (NextValue(interp, handle, &valueObj, &colIdx) != TCL_OK) {
+                goto cleanup;
+            }
+            if (valueObj == NULL) {
+                if (colIdx == 0) {
+                    status = TCL_OK;
+                }
                 goto done;
             }
-            if (dbistat == DBI_DONE) {
-                break;
-            }
-
             if (Tcl_ListObjAppendElement(interp, valueListObj, valueObj)
                     != TCL_OK) {
                 Tcl_DecrRefCount(valueObj);
+                goto cleanup;
+            }
+
+        } while (colIdx != colMax);
+
+        /*
+         * Evaluate the constructed format command.
+         */
+
+        if (Tcl_ListObjGetElements(interp, valueListObj, &vobjc, &vobjv) != TCL_OK
+                || (*formatCmd)(NULL, interp, vobjc, vobjv) != TCL_OK) {
+            goto cleanup;
+        }
+        Tcl_AppendObjToObj(resObj, Tcl_GetObjResult(interp));
+
+        /*
+         * Reset the format arg list, leaving the formatObj intact
+         * at the head.
+         */
+
+        if (Tcl_ListObjReplace(interp, valueListObj, 2, colMax+1,
+                               0, NULL) != TCL_OK) {
+            goto cleanup;
+        }
+    }
+
+ done:
+    Tcl_SetObjResult(interp, resObj);
+    status = TCL_OK;
+
+ cleanup:
+    CleanupHandle(idataPtr, handle);
+    Tcl_DecrRefCount(valueListObj);
+    Tcl_DecrRefCount(resObj);
+
+    return status;
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * Format2ObjCmd --
+ *
+ *      Implements dbi_format2.
+ *
+ * Results:
+ *      Standard Tcl result.
+ *
+ * Side effects:
+ *      None.
+ *
+ *----------------------------------------------------------------------
+ */
+
+static int
+Format2ObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
+{
+    InterpData   *idataPtr = arg;
+    Dbi_Handle   *handle;
+    Tcl_Obj     **vobjv;
+    int           vobjc;
+    unsigned int  colMax, colIdx;
+    Tcl_Obj      *resObj, *valueObj, *valueListObj;
+    Tcl_Obj      *queryObj, *poolObj = NULL;
+    Ns_Time      *timeoutPtr = NULL;
+    char         *format, *array = NULL, *setid = NULL;
+    int           status = TCL_ERROR;
+
+    Ns_ObjvSpec opts[] = {
+        {"-pool",        Ns_ObjvObj,    &poolObj,    NULL},
+        {"-timeout",     Ns_ObjvTime,   &timeoutPtr, NULL},
+        {"-bindarray",   Ns_ObjvString, &array,      NULL},
+        {"-bindset",     Ns_ObjvString, &setid,      NULL},
+        {"--",           Ns_ObjvBreak,  NULL,        NULL},
+        {NULL, NULL, NULL, NULL}
+    };
+    Ns_ObjvSpec args[] = {
+        {"query",        Ns_ObjvObj,    &queryObj,   NULL},
+        {"formatString", Ns_ObjvString, &format,     NULL},
+        {NULL, NULL, NULL, NULL}
+    };
+    if (Ns_ParseObjv(opts, args, interp, 1, objc, objv) != NS_OK) {
+        return TCL_ERROR;
+    }
+
+    /*
+     * Get handle then prepare, bind, and run the qeuery.
+     */
+
+    if (Exec(idataPtr, poolObj, timeoutPtr, array, setid, queryObj, 0,
+             &handle) != TCL_OK) {
+        return TCL_ERROR;
+    }
+
+    /*
+     * Format each row and append to result.
+     */
+
+    colMax = Dbi_NumColumns(handle) -1;
+
+    resObj = Tcl_NewObj();
+    Tcl_IncrRefCount(resObj);
+    valueListObj = Tcl_NewListObj(0, NULL);
+
+    while (1) {
+
+        /*
+         * Append a row of objects to the format command arg list.
+         */
+
+        do {
+            if (NextValue(interp, handle, &valueObj, &colIdx) != TCL_OK) {
+                goto cleanup;
+            }
+            if (valueObj == NULL) {
+                if (colIdx == 0) {
+                    status = TCL_OK;
+                }
                 goto done;
             }
-            found++;
+            if (Tcl_ListObjAppendElement(interp, valueListObj, valueObj)
+                    != TCL_OK) {
+                Tcl_DecrRefCount(valueObj);
+                goto cleanup;
+            }
 
-        } while (colIdx +1 != numCols);
+        } while (colIdx != colMax);
 
-        if (found) {
-            if (Tcl_ListObjGetElements(interp, valueListObj, &vobjc, &vobjv) != TCL_OK
-                    || (*formatCmd)(NULL, interp, vobjc, vobjv) != TCL_OK) {
+        /*
+         * Format the row.
+         */
+
+        if (Tcl_ListObjGetElements(interp, valueListObj, &vobjc, &vobjv) != TCL_OK
+            || AppendFormatToObj(interp, resObj, format, vobjc, vobjv) != TCL_OK) {
+            goto cleanup;
+        }
+
+        /*
+         * Reset the format arg list.
+         */
+
+        Tcl_SetListObj(valueListObj, 0, NULL);
+    }
+
+ done:
+    Tcl_SetObjResult(interp, resObj);
+    status = TCL_OK;
+
+ cleanup:
+    CleanupHandle(idataPtr, handle);
+    Tcl_DecrRefCount(valueListObj);
+    Tcl_DecrRefCount(resObj);
+
+    return status;
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * SubstObjCmd --
+ *
+ *      Implements dbi_subst.
+ *
+ * Results:
+ *      Standard Tcl result.
+ *
+ * Side effects:
+ *      None.
+ *
+ *----------------------------------------------------------------------
+ */
+
+static int
+SubstObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
+{
+    InterpData   *idataPtr = arg;
+    Dbi_Handle   *handle;
+    unsigned int  colMax, colIdx;
+    Tcl_Obj      *resObj, *rowObj, *valueObj;
+    Tcl_Obj      *queryObj, *substObj, *poolObj = NULL;
+    Ns_Time      *timeoutPtr = NULL;
+    CONST char   *columnName;
+    char         *array = NULL, *setid = NULL;
+    int           status = TCL_ERROR;
+
+    Ns_ObjvSpec opts[] = {
+        {"-pool",        Ns_ObjvObj,    &poolObj,    NULL},
+        {"-timeout",     Ns_ObjvTime,   &timeoutPtr, NULL},
+        {"-bindarray",   Ns_ObjvString, &array,      NULL},
+        {"-bindset",     Ns_ObjvString, &setid,      NULL},
+        {"--",           Ns_ObjvBreak,  NULL,        NULL},
+        {NULL, NULL, NULL, NULL}
+    };
+    Ns_ObjvSpec args[] = {
+        {"query",        Ns_ObjvObj,    &queryObj,   NULL},
+        {"row-subst",    Ns_ObjvObj,    &substObj,  NULL},
+        {NULL, NULL, NULL, NULL}
+    };
+    if (Ns_ParseObjv(opts, args, interp, 1, objc, objv) != NS_OK) {
+        return TCL_ERROR;
+    }
+
+    /*
+     * Get handle then prepare, bind, and run the qeuery.
+     */
+
+    if (Exec(idataPtr, poolObj, timeoutPtr, array, setid, queryObj, 0,
+             &handle) != TCL_OK) {
+        return TCL_ERROR;
+    }
+
+    /*
+     * Subst for each row and append to result.
+     */
+
+    colMax = Dbi_NumColumns(handle) -1;
+    resObj = Tcl_NewObj();
+    Tcl_IncrRefCount(resObj);
+
+    while (1) {
+
+        /*
+         * Set each value in the row as a Tcl variable.
+         */
+
+        do {
+            if (NextValue(interp, handle, &valueObj, &colIdx) != TCL_OK) {
+                goto cleanup;
+            }
+            if (valueObj == NULL) {
+                if (colIdx == 0) {
+                    status = TCL_OK;
+                }
                 goto done;
             }
-            Tcl_AppendObjToObj(resObj, Tcl_GetObjResult(interp));
+            if (Dbi_ColumnName(handle, colIdx, &columnName) != NS_OK) {
+                SqlError(interp, handle);
+                goto cleanup;
+            }
+            if (Tcl_SetVar2Ex(interp, columnName, NULL, valueObj,
+                              TCL_LEAVE_ERR_MSG) == NULL) {
+                Tcl_DecrRefCount(valueObj);
+                goto cleanup;
+            }
 
-            if (Tcl_ListObjReplace(interp, valueListObj, 2, numCols,
-                                   0, NULL) != TCL_OK) {
+        } while (colIdx != colMax);
+
+        /*
+         * Subst the row variables.
+         */
+
+        rowObj = Tcl_SubstObj(interp, substObj,
+                              TCL_SUBST_VARIABLES | TCL_SUBST_BACKSLASHES);
+        if (rowObj == NULL) {
+            goto cleanup;
+        }
+        Tcl_AppendObjToObj(resObj, rowObj);
+    }
+
+ done:
+    Tcl_SetObjResult(interp, resObj);
+    status = TCL_OK;
+
+ cleanup:
+    CleanupHandle(idataPtr, handle);
+    Tcl_DecrRefCount(resObj);
+
+    return status;
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * Subst2ObjCmd --
+ *
+ *      Implements dbi_subst2.
+ *
+ * Results:
+ *      Standard Tcl result.
+ *
+ * Side effects:
+ *      None.
+ *
+ *----------------------------------------------------------------------
+ */
+
+static int
+Subst2ObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
+{
+    InterpData   *idataPtr = arg;
+    Dbi_Handle   *handle;
+/*     Dbi_Value     values[DBI_MAX_BIND], *valuePtr; */
+    Tcl_Parse    *parsePtr;
+    Tcl_Token    *tokenPtr;
+    unsigned int  colIdx, colMax;
+    Tcl_Obj      *resObj, *valueObj;
+    Tcl_Obj      *queryObj, *substObj, *poolObj = NULL;
+    Ns_Time      *timeoutPtr = NULL;
+    CONST char   *columnName;
+    char         *array = NULL, *setid = NULL;
+/*     int          *varColMap = NULL; */
+    int           numVarTokens, tokIdx, varIdx, status = TCL_ERROR;
+
+    Ns_ObjvSpec opts[] = {
+        {"-pool",        Ns_ObjvObj,    &poolObj,    NULL},
+        {"-timeout",     Ns_ObjvTime,   &timeoutPtr, NULL},
+        {"-bindarray",   Ns_ObjvString, &array,      NULL},
+        {"-bindset",     Ns_ObjvString, &setid,      NULL},
+        {"--",           Ns_ObjvBreak,  NULL,        NULL},
+        {NULL, NULL, NULL, NULL}
+    };
+    Ns_ObjvSpec args[] = {
+        {"query",        Ns_ObjvObj,    &queryObj,   NULL},
+        {"row-subst",    Ns_ObjvObj,    &substObj,  NULL},
+        {NULL, NULL, NULL, NULL}
+    };
+    if (Ns_ParseObjv(opts, args, interp, 1, objc, objv) != NS_OK) {
+        return TCL_ERROR;
+    }
+
+    /*
+     * Get handle then prepare, bind, and run the qeuery.
+     */
+
+    if (Exec(idataPtr, poolObj, timeoutPtr, array, setid, queryObj, 0,
+             &handle) != TCL_OK) {
+        return TCL_ERROR;
+    }
+
+    /*
+     * Convert the row-subst into a stream of text/variable tokens.
+     * Map the variable tokens to column indexes.
+     */
+
+    if (GetParseFromObj(interp, substObj,
+                        &parsePtr, &numVarTokens) != TCL_OK) {
+        goto cleanup;
+    }
+
+/*     varColMap = ns_malloc(numVarTokens * sizeof(int)); */
+/*     MapVariablesToColumns(handle, parsePtr, varColMap); */
+
+    /*
+     * ...
+     */
+
+    colMax = Dbi_NumColumns(handle) -1;
+    resObj = Tcl_NewObj();
+    Tcl_IncrRefCount(resObj);
+
+    while (1) {
+
+        /*
+         * Set each value in the row as a Tcl variable.
+         */
+
+        do {
+            if (NextValue(interp, handle, &valueObj, &colIdx) != TCL_OK) {
+                goto cleanup;
+            }
+            if (valueObj == NULL) {
+                if (colIdx == 0) {
+                    status = TCL_OK;
+                }
                 goto done;
             }
-        } else {
+            if (Dbi_ColumnName(handle, colIdx, &columnName) != NS_OK) {
+                SqlError(interp, handle);
+                goto cleanup;
+            }
+            if (Tcl_SetVar2Ex(interp, columnName, NULL, valueObj,
+                              TCL_LEAVE_ERR_MSG) == NULL) {
+                Tcl_DecrRefCount(valueObj);
+                goto cleanup;
+            }
+
+        } while (colIdx != colMax);
+
+        /*
+         * Subst the row variables.
+         */
+
+        for (tokIdx = 0; tokIdx < parsePtr->numTokens; tokIdx++) {
+
+            tokenPtr = &parsePtr->tokenPtr[tokIdx];
+
+            if (tokenPtr->type == TCL_TOKEN_VARIABLE) {
+                if (Tcl_EvalTokensStandard(interp, tokenPtr,
+                                           tokenPtr->numComponents) != TCL_OK) {
+                    goto cleanup;
+                }
+                Tcl_AppendObjToObj(resObj, Tcl_GetObjResult(interp));
+                /*
+                 * Skip past the components of the variable name (e.g. array indices).
+                 */
+                tokIdx += tokenPtr->numComponents;
+            } else {
+                Tcl_AppendToObj(resObj, tokenPtr->start, tokenPtr->size);
+            }
+        }
+    }
+
+ done:
+    Tcl_SetObjResult(interp, resObj);
+    status = TCL_OK;
+
+ cleanup:
+    CleanupHandle(idataPtr, handle);
+    Tcl_DecrRefCount(resObj);
+/*     if (varColMap) { */
+/*         ns_free(varColMap); */
+/*     } */
+
+    return status;
+}
+
+static int
+GetParseFromObj(Tcl_Interp *interp, Tcl_Obj *substObj,
+                Tcl_Parse **parsePtrPtr, int *numVarsPtr)
+{
+    Tcl_Parse  *parsePtr;
+    Tcl_Token  *tokenPtr;
+    char       *string, *p;
+    int         length, varIdx, numVarTokens;
+
+    /*
+     * Check for cached representation.
+     */
+
+    if (substObj->typePtr == &substType) {
+        *parsePtrPtr = substObj->internalRep.twoPtrValue.ptr1;
+        *numVarsPtr = (int) substObj->internalRep.twoPtrValue.ptr2;
+        return TCL_OK;
+    }
+
+    string = p = Tcl_GetStringFromObj(substObj, &length);
+
+    /*
+     * Initialise the parse struct as in Tcl generic/tclParse.c
+     */
+
+    parsePtr = ns_malloc(sizeof(Tcl_Parse));
+	parsePtr->tokenPtr = parsePtr->staticTokens;
+	parsePtr->numTokens = 0;
+	parsePtr->tokensAvailable = NUM_STATIC_TOKENS;
+	parsePtr->string = string;
+	parsePtr->end = (string + length);
+	parsePtr->interp = interp;
+	parsePtr->errorType = TCL_PARSE_SUCCESS;
+
+    /*
+     * Scan the string for dollar and backslash substitutions. Variables are
+     * added to the parse struct, backslash substitutions are performed now
+     * and added to the parse struct as text. Everything else is added as text.
+     */
+
+    numVarTokens = 0;
+
+    while (length) {
+        switch (*p) {
+        case '$':
+
+            /*
+             * First check for a pending run of text.
+             */
+
+            if (p != string) {
+                PushTextToken(parsePtr, string, p-string);
+                string = p;
+            }
+
+            /*
+             * Check for a valid variable name.
+             */
+
+            varIdx = parsePtr->numTokens;
+            if (Tcl_ParseVarName(interp, p, length, parsePtr, 1) != TCL_OK) {
+                Tcl_FreeParse(parsePtr);
+                ns_free(parsePtr);
+                return TCL_ERROR;
+            }
+
+            tokenPtr = &parsePtr->tokenPtr[varIdx];
+            if (tokenPtr->type == TCL_TOKEN_TEXT) {
+                /*
+                 * There isn't a variable name after all: the $ is
+                 * just a $.
+                 */
+                parsePtr->numTokens--;
+                p++; length--;
+                break;
+            }
+
+            /*
+             * Found a valid variable name.
+             * Advance past all it's components.
+             */
+
+            numVarTokens++;
+
+            p += tokenPtr->size;
+            length -= tokenPtr->size;
+            string = p;
+
+            break;
+
+        default:
+            p++; length--;
             break;
         }
     }
-    status = TCL_OK;
 
-/*     do { */
-/*         do { */
-/*             if (NextValue(handle, &valueObj, &colIdx, &rowIdx) != TCL_OK) { */
-/*                 SqlError(interp, handle); */
-/*                 goto done; */
-/*             } */
-/*             if (valueObj != NULL) { */
-/*                 if (Tcl_ListObjAppendElement(interp, valueListObj, valueObj) */
-/*                         != TCL_OK) { */
-/*                     Tcl_DecrRefCount(valueObj); */
-/*                     goto done; */
-/*                 } */
-/*             } */
+    /*
+     * Add any remaining trailing text, and make sure we found at
+     * least one variable.
+     */
 
-/*         } while (valueObj != NULL && (colIdx +1 != numCols)); */
-
-/*         if (Tcl_ListObjGetElements(interp, valueListObj, &vobjc, &vobjv) != TCL_OK */
-/*                || (*formatCmd)(NULL, interp, vobjc, vobjv) != TCL_OK) { */
-/*             goto done; */
-/*         } */
-/*         Tcl_AppendObjToObj(resObj, Tcl_GetObjResult(interp)); */
-
-/*         if (Tcl_ListObjReplace(interp, valueListObj, 2, numCols, */
-/*                                0, NULL) != TCL_OK) { */
-/*             goto done; */
-/*         } */
-
-/*     } while (valueObj != NULL); */
-
- done:
-    CleanupHandle(idataPtr, handle);
-
-    if (status == TCL_OK) {
-        Tcl_SetObjResult(interp, resObj);
-    } else {
-        Tcl_DecrRefCount(resObj);
+    if (p != string) {
+        PushTextToken(parsePtr, string, p-string);
     }
-    Tcl_DecrRefCount(valueListObj);
 
-    return status;
+    if (numVarTokens == 0) {
+        Tcl_SetResult(interp, "Invalid row-subst: no tokens", TCL_STATIC);
+        Tcl_FreeParse(parsePtr);
+        ns_free(parsePtr);
+        return TCL_ERROR;
+    }
+
+
+    Ns_TclSetTwoPtrValue(substObj, &substType, parsePtr, (void *) numVarTokens);
+
+    *parsePtrPtr = parsePtr;
+    *numVarsPtr = numVarTokens;
+
+    return TCL_OK;
+}
+
+/*
+ * Map variable tokens to result column indexes.
+ *
+ * Variables without matching columns are marked '-1' and will
+ * be substituted as Tcl variables when the result is processed.
+ */
+
+static void
+MapVariablesToColumns(Dbi_Handle *handle, Tcl_Parse *parsePtr, int *varColMap)
+{
+    Tcl_Token  *tokenPtr;
+    CONST char *tokenString, *colName;
+    int         tokenSize, tokIdx, varIdx, colIdx, numCols;
+
+    numCols = Dbi_NumColumns(handle);
+
+    for (tokIdx = 0, varIdx = 0; tokIdx < parsePtr->numTokens; tokIdx++) {
+
+        tokenPtr = &parsePtr->tokenPtr[tokIdx];
+
+        if (tokenPtr->type == TCL_TOKEN_VARIABLE) {
+            varColMap[varIdx] = -1;
+
+            /* Skip past leading '$' */
+            tokenString = tokenPtr->start +1;
+            tokenSize   = tokenPtr->size  -1;
+
+            Ns_Log(Warning, "---> MapVariablesToColumns: tokenString: %s, tokenSize: %d",
+                   tokenString, tokenSize);
+
+            /*
+             * Search for a column with a matching name.
+             */
+            for (colIdx = 0; colIdx < numCols; colIdx++) {
+                Dbi_ColumnName(handle, colIdx, &colName);
+                if (strncmp(colName, tokenString, tokenSize) == 0) {
+                    Ns_Log(Warning, "---> MapVariablesToColumns: mapped colIdx: %d", colIdx);
+                    varColMap[varIdx] = colIdx;
+                    break;
+                }
+            }
+            varIdx++;
+
+            /*
+             * Skip past the components of a variables name (array indices etc.)
+             */
+
+            tokIdx += tokenPtr->numComponents;
+        }
+    }
+}
+
+static void
+FreeSubst(Tcl_Obj *objPtr)
+{
+    Tcl_Parse *parsePtr;
+
+    parsePtr = objPtr->internalRep.twoPtrValue.ptr1;
+    Tcl_FreeParse(parsePtr);
+    ns_free(parsePtr);
+}
+
+static void
+PushTextToken(Tcl_Parse *parsePtr, char *string, int length)
+{
+    Tcl_Token *tokenPtr;
+    int        newCount;
+
+    if (parsePtr->numTokens == parsePtr->tokensAvailable) {
+        /*
+         * Expand the token array.
+         */
+        newCount = parsePtr->tokensAvailable * 2;
+        tokenPtr = (Tcl_Token *) ckalloc((unsigned) (newCount * sizeof(Tcl_Token)));
+        memcpy((void *) tokenPtr, (void *) parsePtr->tokenPtr,
+               (size_t) (parsePtr->tokensAvailable * sizeof(Tcl_Token)));
+        if (parsePtr->tokenPtr != parsePtr->staticTokens) {
+            ckfree((char *) parsePtr->tokenPtr);
+        }
+        parsePtr->tokenPtr = tokenPtr;
+        parsePtr->tokensAvailable = newCount;
+    }
+
+    tokenPtr = &parsePtr->tokenPtr[parsePtr->numTokens];
+    tokenPtr->type = TCL_TOKEN_TEXT;
+    tokenPtr->numComponents = 0;
+    tokenPtr->start = string;
+    tokenPtr->size = length;
+    parsePtr->numTokens++;
 }
 
 
@@ -994,13 +1590,10 @@ BindVars(Tcl_Interp *interp, Dbi_Handle *handle, Dbi_Value *values,
             return TCL_ERROR;
         }
 
-        /*
-         * Coerce the empty string to null.
-         */
-
-        values[i].data   = length ? data : NULL;
+        values[i].data = length ? data : NULL; /* Coerce the empty string to null. */
         values[i].length = length;
         values[i].binary = binary;
+        values[i].colIdx = i;
     }
 
     return TCL_OK;
@@ -1188,28 +1781,593 @@ SqlError(Tcl_Interp *interp, Dbi_Handle *handle)
 }
 
 static int
-NextValue(Dbi_Handle *handle, Tcl_Obj **valueObjPtrPtr,
-          unsigned int *colIdxPtr, unsigned int *rowIdxPtr)
+NextValue(Tcl_Interp *interp, Dbi_Handle *handle, Tcl_Obj **valueObjPtr,
+          unsigned int *colIdxPtr)
 {
     Dbi_Value value;
+    int       end;
 
-    assert(handle);
-    assert(valueObjPtrPtr);
-
-
-    switch (Dbi_NextValue(handle, &value, colIdxPtr, rowIdxPtr)) {
-
-    case DBI_VALUE:
-        *valueObjPtrPtr = value.binary
-            ? Tcl_NewByteArrayObj((unsigned char *) value.data, value.length)
-            : Tcl_NewStringObj(value.data, value.length);
-        return DBI_VALUE;
-
-    case DBI_DONE:
-        *valueObjPtrPtr = NULL;
-        return DBI_DONE;
-
-    default:
-        return DBI_ERROR;
+    if (Dbi_NextValue(handle, &value, &end) != NS_OK) {
+        SqlError(interp, handle);
+        return TCL_ERROR;
     }
+    if (end) {
+        *valueObjPtr = NULL;
+    } else if (value.binary) {
+        *valueObjPtr = Tcl_NewByteArrayObj((unsigned char *) value.data,
+                                           value.length);
+    } else {
+        *valueObjPtr = Tcl_NewStringObj(value.data, value.length);
+    }
+    if (colIdxPtr != NULL) {
+        *colIdxPtr = value.colIdx;
+    }
+    
+    return TCL_OK;
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * AppendFormatToObj --
+ *
+ *	This function appends a list of Tcl_Obj's to a Tcl_Obj according to
+ *	the formatting instructions embedded in the format string. The
+ *	formatting instructions are inspired by sprintf(). Returns TCL_OK when
+ *	successful. If there's an error in the arguments, TCL_ERROR is
+ *	returned, and an error message is written to the interp, if non-NULL.
+ *
+ * Results:
+ *	A standard Tcl result.
+ *
+ * Side effects:
+ *	None.
+ *
+ *----------------------------------------------------------------------
+ */
+
+static int
+AppendFormatToObj(
+    Tcl_Interp *interp,
+    Tcl_Obj *appendObj,
+    CONST char *format,
+    int objc,
+    Tcl_Obj *CONST objv[])
+{
+    CONST char *span = format;
+    int numBytes = 0;
+    int objIndex = 0;
+    int gotXpg = 0, gotSequential = 0;
+    int originalLength;
+    CONST char *msg;
+    CONST char *mixedXPG =
+        "cannot mix \"%\" and \"%n$\" conversion specifiers";
+    CONST char *badIndex[2] = {
+        "not enough arguments for all format specifiers",
+        "\"%n$\" argument index out of range"
+    };
+
+    if (Tcl_IsShared(appendObj)) {
+        Tcl_Panic("%s called with shared object", "Tcl_AppendFormatToObj");
+    }
+    Tcl_GetStringFromObj(appendObj, &originalLength);
+
+    /*
+     * Format string is NUL-terminated.
+     */
+
+    while (*format != '\0') {
+        char *end;
+        int gotMinus, gotHash, gotZero, gotSpace, gotPlus, sawFlag;
+        int width, gotPrecision, precision, useShort, useWide;
+        int newXpg, numChars, allocSegment = 0;
+        Tcl_Obj *segment;
+        Tcl_UniChar ch;
+        int step = Tcl_UtfToUniChar(format, &ch);
+
+        format += step;
+        if (ch != '%') {
+            numBytes += step;
+            continue;
+        }
+        if (numBytes) {
+            Tcl_AppendToObj(appendObj, span, numBytes);
+            numBytes = 0;
+        }
+
+        /*
+         * Saw a % : process the format specifier.
+         *
+         * Step 0. Handle special case of escaped format marker (i.e., %%).
+         */
+
+        step = Tcl_UtfToUniChar(format, &ch);
+        if (ch == '%') {
+            span = format;
+            numBytes = step;
+            format += step;
+            continue;
+        }
+
+        /*
+         * Step 1. XPG3 position specifier
+         */
+
+        newXpg = 0;
+        if (isdigit(UCHAR(ch))) {
+            int position = strtoul(format, &end, 10);
+            if (*end == '$') {
+                newXpg = 1;
+                objIndex = position - 1;
+                format = end + 1;
+                step = Tcl_UtfToUniChar(format, &ch);
+            }
+        }
+        if (newXpg) {
+            if (gotSequential) {
+                msg = mixedXPG;
+                goto errorMsg;
+            }
+            gotXpg = 1;
+        } else {
+            if (gotXpg) {
+                msg = mixedXPG;
+                goto errorMsg;
+            }
+            gotSequential = 1;
+        }
+        if ((objIndex < 0) || (objIndex >= objc)) {
+            msg = badIndex[gotXpg];
+            goto errorMsg;
+        }
+
+        /*
+         * Step 2. Set of flags.
+         */
+
+        gotMinus = gotHash = gotZero = gotSpace = gotPlus = 0;
+        sawFlag = 1;
+        do {
+            switch (ch) {
+            case '-':
+                gotMinus = 1;
+                break;
+            case '#':
+                gotHash = 1;
+                break;
+            case '0':
+                gotZero = 1;
+                break;
+            case ' ':
+                gotSpace = 1;
+                break;
+            case '+':
+                gotPlus = 1;
+                break;
+            default:
+                sawFlag = 0;
+            }
+            if (sawFlag) {
+                format += step;
+                step = Tcl_UtfToUniChar(format, &ch);
+            }
+        } while (sawFlag);
+
+        /*
+         * Step 3. Minimum field width.
+         */
+
+        width = 0;
+        if (isdigit(UCHAR(ch))) {
+            width = strtoul(format, &end, 10);
+            format = end;
+            step = Tcl_UtfToUniChar(format, &ch);
+        } else if (ch == '*') {
+            if (objIndex >= objc - 1) {
+                msg = badIndex[gotXpg];
+                goto errorMsg;
+            }
+            if (Tcl_GetIntFromObj(interp, objv[objIndex], &width) != TCL_OK) {
+                goto error;
+            }
+            if (width < 0) {
+                width = -width;
+                gotMinus = 1;
+            }
+            objIndex++;
+            format += step;
+            step = Tcl_UtfToUniChar(format, &ch);
+        }
+
+        /*
+         * Step 4. Precision.
+         */
+
+        gotPrecision = precision = 0;
+        if (ch == '.') {
+            gotPrecision = 1;
+            format += step;
+            step = Tcl_UtfToUniChar(format, &ch);
+        }
+        if (isdigit(UCHAR(ch))) {
+            precision = strtoul(format, &end, 10);
+            format = end;
+            step = Tcl_UtfToUniChar(format, &ch);
+        } else if (ch == '*') {
+            if (objIndex >= objc - 1) {
+                msg = badIndex[gotXpg];
+                goto errorMsg;
+            }
+            if (Tcl_GetIntFromObj(interp, objv[objIndex], &precision)
+                != TCL_OK) {
+                goto error;
+            }
+
+            /*
+             * TODO: Check this truncation logic.
+             */
+
+            if (precision < 0) {
+                precision = 0;
+            }
+            objIndex++;
+            format += step;
+            step = Tcl_UtfToUniChar(format, &ch);
+        }
+
+        /*
+         * Step 5. Length modifier.
+         */
+
+        useShort = useWide = 0;
+        if (ch == 'h') {
+            useShort = 1;
+            format += step;
+            step = Tcl_UtfToUniChar(format, &ch);
+        } else if (ch == 'l') {
+            format += step;
+            step = Tcl_UtfToUniChar(format, &ch);
+#ifndef TCL_WIDE_INT_IS_LONG
+            useWide = 1;
+#endif
+        }
+
+        format += step;
+        span = format;
+
+        /*
+         * Step 6. The actual conversion character.
+         */
+
+        segment = objv[objIndex];
+        if (ch == 'i') {
+            ch = 'd';
+        }
+        switch (ch) {
+        case '\0':
+            msg = "format string ended in middle of field specifier";
+            goto errorMsg;
+        case 's': {
+            numChars = Tcl_GetCharLength(segment);
+            if (gotPrecision && (precision < numChars)) {
+                segment = Tcl_GetRange(segment, 0, precision - 1);
+                Tcl_IncrRefCount(segment);
+                allocSegment = 1;
+            }
+            break;
+        }
+        case 'c': {
+            char buf[TCL_UTF_MAX];
+            int code, length;
+            if (Tcl_GetIntFromObj(interp, segment, &code) != TCL_OK) {
+                goto error;
+            }
+            length = Tcl_UniCharToUtf(code, buf);
+            segment = Tcl_NewStringObj(buf, length);
+            Tcl_IncrRefCount(segment);
+            allocSegment = 1;
+            break;
+        }
+
+        case 'u':
+        case 'd':
+        case 'o':
+        case 'x':
+        case 'X': {
+            short int s = 0;    /* Silence compiler warning; only defined and
+                                 * used when useShort is true. */
+            long l;
+            Tcl_WideInt w;
+            int isNegative = 0;
+
+            if (useWide) {
+                if (Tcl_GetWideIntFromObj(NULL, segment, &w) != TCL_OK) {
+                    goto error;
+                }
+                isNegative = (w < (Tcl_WideInt)0);
+            } else if (Tcl_GetLongFromObj(NULL, segment, &l) != TCL_OK) {
+                if (Tcl_GetWideIntFromObj(NULL, segment, &w) != TCL_OK) {
+                    goto error;
+                } else {
+                    l = Tcl_WideAsLong(w);
+                }
+                if (useShort) {
+                    s = (short int) l;
+                    isNegative = (s < (short int)0);
+                } else {
+                    isNegative = (l < (long)0);
+                }
+            } else if (useShort) {
+                s = (short int) l;
+                isNegative = (s < (short int)0);
+            } else {
+                isNegative = (l < (long)0);
+            }
+
+            segment = Tcl_NewObj();
+            allocSegment = 1;
+            Tcl_IncrRefCount(segment);
+
+            if ((isNegative || gotPlus) && (ch == 'd')) {
+                Tcl_AppendToObj(segment, (isNegative ? "-" : "+"), 1);
+            }
+
+            if (gotHash) {
+                switch (ch) {
+                case 'o':
+                    Tcl_AppendToObj(segment, "0", 1);
+                    precision--;
+                    break;
+                case 'x':
+                case 'X':
+                    Tcl_AppendToObj(segment, "0x", 2);
+                    break;
+                }
+            }
+
+            switch (ch) {
+            case 'd': {
+                int length;
+                Tcl_Obj *pure;
+                CONST char *bytes;
+
+                if (useShort) {
+                    pure = Tcl_NewIntObj((int)(s));
+                } else if (useWide) {
+                    pure = Tcl_NewWideIntObj(w);
+                } else {
+                    pure = Tcl_NewLongObj(l);
+                }
+                Tcl_IncrRefCount(pure);
+                bytes = Tcl_GetStringFromObj(pure, &length);
+
+                /*
+                 * Already did the sign above.
+                 */
+
+                if (*bytes == '-') {
+                    length--;
+                    bytes++;
+                }
+
+                /*
+                 * Canonical decimal string reps for integers are composed
+                 * entirely of one-byte encoded characters, so "length" is the
+                 * number of chars.
+                 */
+
+                if (gotPrecision) {
+                    while (length < precision) {
+                        Tcl_AppendToObj(segment, "0", 1);
+                        length++;
+                    }
+                    gotZero = 0;
+                }
+                if (gotZero) {
+                    length += Tcl_GetCharLength(segment);
+                    while (length < width) {
+                        Tcl_AppendToObj(segment, "0", 1);
+                        length++;
+                    }
+                }
+                Tcl_AppendToObj(segment, bytes, -1);
+                Tcl_DecrRefCount(pure);
+                break;
+            }
+
+            case 'u':
+            case 'o':
+            case 'x':
+            case 'X': {
+                Tcl_WideUInt bits = (Tcl_WideUInt)0;
+                int length, numBits = 4, numDigits = 0, base = 16;
+                int index = 0, shift = 0;
+                Tcl_Obj *pure;
+                char *bytes;
+
+                if (ch == 'u') {
+                    base = 10;
+                }
+                if (ch == 'o') {
+                    base = 8;
+                    numBits = 3;
+                }
+                if (useShort) {
+                    unsigned short int us = (unsigned short int) s;
+
+                    bits = (Tcl_WideUInt) us;
+                    while (us) {
+                        numDigits++;
+                        us /= base;
+                    }
+                } else if (useWide) {
+                    Tcl_WideUInt uw = (Tcl_WideUInt) w;
+
+                    bits = uw;
+                    while (uw) {
+                        numDigits++;
+                        uw /= base;
+                    }
+                } else {
+                    unsigned long int ul = (unsigned long int) l;
+
+                    bits = (Tcl_WideUInt) ul;
+                    while (ul) {
+                        numDigits++;
+                        ul /= base;
+                    }
+                }
+
+                /*
+                 * Need to be sure zero becomes "0", not "".
+                 */
+
+                if ((numDigits == 0) && !((ch == 'o') && gotHash)) {
+                    numDigits = 1;
+                }
+                pure = Tcl_NewObj();
+                Tcl_SetObjLength(pure, numDigits);
+                bytes = Tcl_GetString(pure);
+                length = numDigits;
+                while (numDigits--) {
+                    int digitOffset;
+
+                    digitOffset = (int) (bits % base);
+                    if (digitOffset > 9) {
+                        bytes[numDigits] = 'a' + digitOffset - 10;
+                    } else {
+                        bytes[numDigits] = '0' + digitOffset;
+                    }
+                    bits /= base;
+                }
+                if (gotPrecision) {
+                    while (length < precision) {
+                        Tcl_AppendToObj(segment, "0", 1);
+                        length++;
+                    }
+                    gotZero = 0;
+                }
+                if (gotZero) {
+                    length += Tcl_GetCharLength(segment);
+                    while (length < width) {
+                        Tcl_AppendToObj(segment, "0", 1);
+                        length++;
+                    }
+                }
+                Tcl_AppendObjToObj(segment, pure);
+                Tcl_DecrRefCount(pure);
+                break;
+            }
+
+            }
+            break;
+        }
+
+        case 'e':
+        case 'E':
+        case 'f':
+        case 'g':
+        case 'G': {
+#define MAX_FLOAT_SIZE 320
+            char spec[2*TCL_INTEGER_SPACE + 9], *p = spec;
+            double d;
+            int length = MAX_FLOAT_SIZE;
+            char *bytes;
+
+            if (Tcl_GetDoubleFromObj(interp, segment, &d) != TCL_OK) {
+                /* TODO: Figure out ACCEPT_NAN here */
+                goto error;
+            }
+            *p++ = '%';
+            if (gotMinus) {
+                *p++ = '-';
+            }
+            if (gotHash) {
+                *p++ = '#';
+            }
+            if (gotZero) {
+                *p++ = '0';
+            }
+            if (gotSpace) {
+                *p++ = ' ';
+            }
+            if (gotPlus) {
+                *p++ = '+';
+            }
+            if (width) {
+                p += sprintf(p, "%d", width);
+            }
+            if (gotPrecision) {
+                *p++ = '.';
+                p += sprintf(p, "%d", precision);
+                length += precision;
+            }
+
+            /*
+             * Don't pass length modifiers!
+             */
+
+            *p++ = (char) ch;
+            *p = '\0';
+
+            segment = Tcl_NewObj();
+            allocSegment = 1;
+            Tcl_SetObjLength(segment, length);
+            bytes = Tcl_GetString(segment);
+            Tcl_SetObjLength(segment, sprintf(bytes, spec, d));
+            break;
+        }
+        default:
+            if (interp != NULL) {
+                char buf[40];
+
+                sprintf(buf, "bad field specifier \"%c\"", ch);
+                Tcl_SetObjResult(interp, Tcl_NewStringObj(buf, -1));
+            }
+            goto error;
+        }
+
+        switch (ch) {
+        case 'E':
+        case 'G':
+        case 'X': {
+            Tcl_SetObjLength(segment, Tcl_UtfToUpper(Tcl_GetString(segment)));
+        }
+        }
+
+        numChars = Tcl_GetCharLength(segment);
+        if (!gotMinus) {
+            while (numChars < width) {
+                Tcl_AppendToObj(appendObj, (gotZero ? "0" : " "), 1);
+                numChars++;
+            }
+        }
+        Tcl_AppendObjToObj(appendObj, segment);
+        if (allocSegment) {
+            Tcl_DecrRefCount(segment);
+        }
+        while (numChars < width) {
+            Tcl_AppendToObj(appendObj, (gotZero ? "0" : " "), 1);
+            numChars++;
+        }
+
+        objIndex += gotSequential;
+    }
+    if (numBytes) {
+        Tcl_AppendToObj(appendObj, span, numBytes);
+        numBytes = 0;
+    }
+
+    return TCL_OK;
+
+ errorMsg:
+    if (interp != NULL) {
+        Tcl_SetObjResult(interp, Tcl_NewStringObj(msg, -1));
+    }
+
+ error:
+    Tcl_SetObjLength(appendObj, originalLength);
+
+    return TCL_ERROR;
 }

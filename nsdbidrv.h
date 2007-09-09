@@ -136,8 +136,9 @@ Dbi_ExecProc(Dbi_Handle *, Dbi_Statement *,
 
 typedef int
 Dbi_NextValueProc(Dbi_Handle *, Dbi_Statement *,
-                  unsigned int colIdx, unsigned int rowIdx, Dbi_Value *value)
-    NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2) NS_GNUC_NONNULL(5);
+                  Dbi_Value *value, int *endPtr)
+    NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2)
+    NS_GNUC_NONNULL(3) NS_GNUC_NONNULL(4);
 
 typedef int
 Dbi_ColumnNameProc(Dbi_Handle *, Dbi_Statement *,

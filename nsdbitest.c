@@ -345,6 +345,7 @@ Prepare(Dbi_Handle *handle, Dbi_Statement *stmt,
     }
 
     *numColsPtr = conn->numCols;
+    *numVarsPtr = Dbi_NumVariables(handle);
 
     return NS_OK;
 }
@@ -516,7 +517,7 @@ Exec(Dbi_Handle *handle, Dbi_Statement *stmt,
  *      variable notation substituted.
  *
  * Results:
- *      DBI_VALUE, DBI_DONE, DBI_ERROR.
+ *      NS_OK or NS_ERROR.
  *
  * Side effects:
  *      None.
@@ -525,14 +526,14 @@ Exec(Dbi_Handle *handle, Dbi_Statement *stmt,
  */
 
 static int
-NextValue(Dbi_Handle *handle, Dbi_Statement *stmt,
-          unsigned int colIdx, unsigned int rowIdx, Dbi_Value *value)
+NextValue(Dbi_Handle *handle, Dbi_Statement *stmt, Dbi_Value *value, int *endPtr)
 {
     Connection        *conn = handle->driverData;
     static CONST char  binary[8];
 
     assert(stmt);
     assert(value);
+    assert(endPtr);
 
     assert(conn);
     assert(STREQ(conn->configData, "driver config data"));
@@ -545,7 +546,16 @@ NextValue(Dbi_Handle *handle, Dbi_Statement *stmt,
 
     if (STREQ(conn->cmd, "NEXTERR")) {
         conn->connected = NS_FALSE;
-        return DBI_ERROR;
+        return NS_ERROR;
+    }
+
+    /*
+     * Check to see if we've already returned the last value.
+     */
+
+    if (value->rowIdx >= conn->numRows) {
+        *endPtr = 1;
+        return NS_OK;
     }
 
     /*
@@ -554,12 +564,13 @@ NextValue(Dbi_Handle *handle, Dbi_Statement *stmt,
      * correctly.
      */
 
-    if (colIdx == 0 && rowIdx == 0) {
+    if (value->colIdx == 0 && value->rowIdx == 0) {
         if (conn->rest) {
             Tcl_DStringAppendElement(&conn->ds, conn->rest);
         }
         value->data   = Ns_DStringValue(&conn->ds);
         value->length = Ns_DStringLength(&conn->ds);
+        value->binary = 0;
     } else {
         if (STREQ(conn->cmd, "BINARY")) {
             value->data   = binary;
@@ -571,12 +582,9 @@ NextValue(Dbi_Handle *handle, Dbi_Statement *stmt,
             value->binary = 0;
         }
     }
+    *endPtr = 0;
 
-    if (colIdx == 0 && rowIdx == conn->numRows) {
-        return DBI_DONE;
-    }
-
-    return DBI_VALUE;
+    return NS_OK;
 }
 
 
