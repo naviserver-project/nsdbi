@@ -104,6 +104,13 @@ typedef struct Dbi_Value {
 
 
 /*
+ * Library initialisation.
+ */
+
+NS_EXTERN void
+Dbi_LibInit(void);
+
+/*
  * Functions for accquiring handles from pools.
  */
 

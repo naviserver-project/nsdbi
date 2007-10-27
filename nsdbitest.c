@@ -126,6 +126,7 @@ Ns_ModuleInit(CONST char *server, CONST char *module)
     CONST char *database  = "db";
     char *configData      = "driver config data";
 
+    Dbi_LibInit();
     return Dbi_RegisterDriver(server, module, name, database,
                               procs, configData);
 }
