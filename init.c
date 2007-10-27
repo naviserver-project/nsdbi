@@ -65,20 +65,22 @@ typedef struct Pool {
     char                 *module;          /* Pool name.  */
 
     Ns_Mutex              lock;
-    Ns_Cond               getCond;
+    Ns_Cond               cond;
 
     struct Handle        *firstPtr;
     struct Handle        *lastPtr;
 
-    int                   nhandles;        /* Current number of handles in pool. */
-    int                   maxhandles;      /* Max handles to keep in pool. */
+    int                   maxhandles;      /* Max handles to create for pool. */
+    int                   nhandles;        /* Current number of handles created. */
+    int                   idlehandles;     /* Number of unused handles in pool. */
+
     int                   maxwait;         /* Default seconds to wait for handle. */
     time_t                maxidle;         /* Seconds before unused handle is closed.  */
     time_t                maxopen;         /* Seconds before active handle is closed. */
     int                   maxqueries;      /* Close active handle after maxqueries. */
     int                   cachesize;       /* Size of prepared statement cache. */
 
-    int                   stale_on_close;  /* Epoch for bouncing handles. */
+    int                   epoch;  /* Epoch for bouncing handles. */
     int                   stopping;        /* Server is shutting down. */
 
     struct {
@@ -134,18 +136,18 @@ typedef struct Handle {
      * Private to a Handle.
      */
 
-    struct Handle     *nextPtr;      /* Next handle in the pool. */
+    struct Handle     *nextPtr;      /* Next handle in pool or thread cache. */
 
-    Dbi_Isolation      isolation;   /* Isolation level of transactions. */
+    Dbi_Isolation      isolation;    /* Isolation level of transactions. */
     int                transDepth;   /* Nesting depth of transactions.*/
 
     char               cExceptionCode[6];
     Ns_DString         dsExceptionMsg;
+
     time_t             otime;        /* Time when handle was connected to db. */
     time_t             atime;        /* Time when handle was last used. */
     int                n;            /* Handle n of maxhandles when acquired. */
-    int                stale_on_close;
-    int                reason;       /* Why the handle is being disconnected. */
+    int                epoch;
 
     /* Result status. */
 
@@ -222,7 +224,7 @@ static Statement *ParseBindVars(Handle *handlePtr, CONST char *sql, int length);
 static int DefineBindVar(Statement *stmtPtr, CONST char *name, Ns_DString *dsPtr);
 
 static Ns_Callback FreeStatement;
-static void CloseStatements(Ns_Cache *);
+static Ns_Callback FreeThreadHandles;
 
 static Ns_Callback     ScheduledPoolCheck;
 static Ns_ArgProc      PoolCheckArgProc;
@@ -233,13 +235,14 @@ static Ns_ShutdownProc AtShutdown;
  */
 
 static Tcl_HashTable  serversTable;
+static Ns_Tls         tls;          /* Per-thread handle cache. */
 
 
 
 /*
  *----------------------------------------------------------------------
  *
- * Dbi_Init --
+ * Dbi_LibInit --
  *
  *      Dbi library entry point. 
  *
@@ -253,32 +256,39 @@ static Tcl_HashTable  serversTable;
  */
 
 void
-Dbi_Init(void)
+Dbi_LibInit(void)
 {
     ServerData    *sdataPtr;
     Tcl_HashEntry *hPtr;
     Ns_Set        *set;
     char          *server;
     int            i, new;
+    static int     once = 0;
 
-    Tcl_InitHashTable(&serversTable, TCL_STRING_KEYS);
-    Ns_RegisterProcInfo(ScheduledPoolCheck, "dbi:idlecheck", PoolCheckArgProc);
+    if (!once) {
+        once = 1;
 
-    set = Ns_ConfigGetSection("ns/servers");
-    for (i = 0; i < Ns_SetSize(set); i++) {
-        server = Ns_SetKey(set, i);
+        Nsd_LibInit();
+        Tcl_InitHashTable(&serversTable, TCL_STRING_KEYS);
+        Ns_TlsAlloc(&tls, FreeThreadHandles);
+        Ns_RegisterProcInfo(ScheduledPoolCheck, "dbi:idlecheck", PoolCheckArgProc);
 
-        sdataPtr = ns_calloc(1, sizeof(ServerData));
-        sdataPtr->server = server;
-        Tcl_InitHashTable(&sdataPtr->poolsTable, TCL_STRING_KEYS);
+        set = Ns_ConfigGetSection("ns/servers");
+        for (i = 0; i < Ns_SetSize(set); i++) {
+            server = Ns_SetKey(set, i);
 
-        hPtr = Tcl_CreateHashEntry(&serversTable, server, &new);
-        Tcl_SetHashValue(hPtr, sdataPtr);
+            sdataPtr = ns_calloc(1, sizeof(ServerData));
+            sdataPtr->server = server;
+            Tcl_InitHashTable(&sdataPtr->poolsTable, TCL_STRING_KEYS);
 
-        if (Ns_TclRegisterTrace(server, DbiInitInterp, server,
-                                NS_TCL_TRACE_CREATE) != NS_OK) {
-            Ns_Log(Error, "dbi: error registering tcl commands for server '%s'",
-                   server);
+            hPtr = Tcl_CreateHashEntry(&serversTable, server, &new);
+            Tcl_SetHashValue(hPtr, sdataPtr);
+
+            if (Ns_TclRegisterTrace(server, DbiInitInterp, server,
+                                    NS_TCL_TRACE_CREATE) != NS_OK) {
+                Ns_Log(Error, "dbi: error registering tcl commands for server '%s'",
+                       server);
+            }
         }
     }
 }
@@ -308,11 +318,10 @@ Dbi_RegisterDriver(CONST char *server, CONST char *module,
     ServerData            *sdataPtr;
     CONST Dbi_DriverProc  *procPtr;
     Pool                  *poolPtr;
-    Handle                *handlePtr;
     Tcl_HashEntry         *hPtr;
     Tcl_HashSearch         search;
     char                  *path;
-    int                    i, nprocs, isdefault;
+    int                    nprocs, isdefault;
 
     poolPtr = ns_calloc(1, sizeof(Pool));
     poolPtr->drivername = driver;
@@ -387,10 +396,10 @@ Dbi_RegisterDriver(CONST char *server, CONST char *module,
     }
 
     Ns_MutexSetName2(&poolPtr->lock, "dbi", module);
-    Ns_CondInit(&poolPtr->getCond);
+    Ns_CondInit(&poolPtr->cond);
 
     poolPtr->module     = ns_strdup(module);
-    poolPtr->maxhandles = Ns_ConfigIntRange(path, "maxhandles", 2,          1, INT_MAX);
+    poolPtr->maxhandles = Ns_ConfigIntRange(path, "maxhandles", 0,          0, INT_MAX);
     poolPtr->maxwait    = Ns_ConfigIntRange(path, "maxwait",    10,         0, INT_MAX);
     poolPtr->maxidle    = Ns_ConfigIntRange(path, "maxidle",    0,          0, INT_MAX);
     poolPtr->maxopen    = Ns_ConfigIntRange(path, "maxopen",    0,          0, INT_MAX);
@@ -402,20 +411,6 @@ Dbi_RegisterDriver(CONST char *server, CONST char *module,
                         Ns_ConfigIntRange(path, "checkinterval", 600, 30, INT_MAX));
     }
     Ns_RegisterAtShutdown(AtShutdown, poolPtr);
-
-    /*
-     * Fill the pool with handles.
-     */
-
-    handlePtr = ns_calloc(poolPtr->maxhandles, sizeof(Handle));
-    for (i = 0; i < poolPtr->maxhandles; i++, handlePtr++) {
-        handlePtr->poolPtr = poolPtr;
-        Ns_DStringInit(&handlePtr->dsExceptionMsg);
-        handlePtr->cache = Ns_CacheCreateSz(module, TCL_STRING_KEYS,
-                                            poolPtr->cachesize, FreeStatement);
-        handlePtr->transDepth = -1;
-        ReturnHandle(handlePtr);
-    }
 
     /*
      * Make pool available to this virtual server, or to all virtual servers
@@ -586,47 +581,95 @@ int
 Dbi_GetHandle(Dbi_Pool *pool, Ns_Time *timeoutPtr, Dbi_Handle **handlePtrPtr)
 {
     Pool       *poolPtr = (Pool *) pool;
-    Handle     *handlePtr;
+    Handle     *handlePtr, *threadHandlePtr;
+    char        buf[100];
     Ns_Time     time;
     int         status;
 
     /*
-     * Wait until this thread can be the exclusive thread aquiring
-     * handles, watching for timeout.
+     * Check the thread-local handle cache for a non-pooled handle.
      */
 
-    if (timeoutPtr == NULL) {
-        Ns_GetTime(&time);
-        Ns_IncrTime(&time, poolPtr->maxwait, 0);
-        timeoutPtr = &time;
+    handlePtr = NULL;
+    threadHandlePtr = Ns_TlsGet(&tls);
+
+    while (threadHandlePtr != NULL) {
+        if (STREQ(poolPtr->module, threadHandlePtr->poolPtr->module)) {
+            handlePtr = threadHandlePtr;
+            break;
+        }
+        threadHandlePtr = threadHandlePtr->nextPtr;
     }
 
     status = NS_OK;
-    Ns_MutexLock(&poolPtr->lock);
-    poolPtr->stats.handlegets++;
-    while (status == NS_OK
-           && !poolPtr->stopping
-           && poolPtr->firstPtr == NULL) {
-        status = Ns_CondTimedWait(&poolPtr->getCond, &poolPtr->lock, timeoutPtr);
-    }
-    if (poolPtr->stopping) {
-        status = NS_ERROR;
-        handlePtr = NULL;
-    } else if (poolPtr->firstPtr == NULL) {
-        handlePtr = NULL;
-        poolPtr->stats.handlemisses++;
-    } else {
-        handlePtr = poolPtr->firstPtr;
-        poolPtr->firstPtr = handlePtr->nextPtr;
-        handlePtr->nextPtr = NULL;
-        if (poolPtr->lastPtr == handlePtr) {
-            poolPtr->lastPtr = NULL;
+
+    if (handlePtr == NULL) {
+
+        if (timeoutPtr == NULL) {
+            Ns_GetTime(&time);
+            Ns_IncrTime(&time, poolPtr->maxwait, 0);
+            timeoutPtr = &time;
         }
-        poolPtr->nhandles--;
-        handlePtr->n = poolPtr->maxhandles - poolPtr->nhandles;
-        handlePtr->stale_on_close = poolPtr->stale_on_close;
+
+        Ns_MutexLock(&poolPtr->lock);
+
+        poolPtr->stats.handlegets++;
+
+        while (status == NS_OK
+               && !poolPtr->stopping
+               && poolPtr->firstPtr == NULL
+               && (poolPtr->maxhandles > 0
+                   && poolPtr->nhandles >= poolPtr->maxhandles)) {
+            status = Ns_CondTimedWait(&poolPtr->cond, &poolPtr->lock, timeoutPtr);
+        }
+
+        if (poolPtr->stopping) {
+            status = NS_ERROR;
+            handlePtr = NULL;
+
+        } else if (poolPtr->firstPtr == NULL) {
+
+            if (poolPtr->maxhandles == 0
+                || poolPtr->nhandles < poolPtr->maxhandles) {
+
+                poolPtr->nhandles++;
+
+                snprintf(buf, sizeof(buf), "dbi:stmts:%s:%d",
+                         poolPtr->module, poolPtr->nhandles);
+
+                handlePtr = ns_calloc(1, sizeof *handlePtr);
+                handlePtr->poolPtr = poolPtr;
+                Ns_DStringInit(&handlePtr->dsExceptionMsg);
+                handlePtr->cache = Ns_CacheCreateSz(buf, TCL_STRING_KEYS,
+                                                    poolPtr->cachesize, FreeStatement);
+                handlePtr->transDepth = -1;
+                handlePtr->n = poolPtr->nhandles;
+                handlePtr->epoch = poolPtr->epoch;
+
+            } else {
+                handlePtr = NULL;
+                poolPtr->stats.handlemisses++;
+            }
+        } else {
+
+            handlePtr = poolPtr->firstPtr;
+            poolPtr->firstPtr = handlePtr->nextPtr;
+            handlePtr->nextPtr = NULL;
+            if (poolPtr->lastPtr == handlePtr) {
+                poolPtr->lastPtr = NULL;
+            }
+            poolPtr->idlehandles--;
+            handlePtr->n = poolPtr->maxhandles - poolPtr->idlehandles;
+        }
+
+        if (handlePtr != NULL && poolPtr->maxhandles == 0) {
+            handlePtr->nextPtr = Ns_TlsGet(&tls);
+            Ns_TlsSet(&tls, handlePtr);
+            handlePtr->n = -1;
+        }
+
+        Ns_MutexUnlock(&poolPtr->lock);
     }
-    Ns_MutexUnlock(&poolPtr->lock);
 
     /*
      * If we got a handle, make sure its connected, otherwise return it.
@@ -636,13 +679,13 @@ Dbi_GetHandle(Dbi_Pool *pool, Ns_Time *timeoutPtr, Dbi_Handle **handlePtrPtr)
         if (Connect(handlePtr) != NS_OK) {
             Ns_MutexLock(&poolPtr->lock);
             ReturnHandle(handlePtr);
-            Ns_CondSignal(&poolPtr->getCond);
+            Ns_CondSignal(&poolPtr->cond);
             Ns_MutexUnlock(&poolPtr->lock);
             status = NS_ERROR;
         }
     }
 
-    if (status == NS_OK) {
+    if (handlePtr != NULL) {
         *handlePtrPtr = (Dbi_Handle *) handlePtr;
     }
 
@@ -672,6 +715,7 @@ Dbi_PutHandle(Dbi_Handle *handle)
     Handle  *handlePtr = (Handle *) handle;
     Pool    *poolPtr   = (Pool *) handlePtr->poolPtr;
     time_t   now;
+    int      closed;
 
     /*
      * Cleanup the handle.
@@ -682,19 +726,24 @@ Dbi_PutHandle(Dbi_Handle *handle)
         Ns_Log(Warning, "Dbi_PutHandle: Reset failed...");
     }
 
-    /*
-     * Close the handle if it's stale, otherwise update
-     * the last access time.
-     */
+    if (handlePtr->n != -1) {
 
-    time(&now);
-    if (!CloseIfStale(handlePtr, now)) {
+        /*
+         * For non-thread handles which are going back to the pool
+         * check for staleness and possibly close.
+         */
+
+        time(&now);
         handlePtr->atime = now;
+
+        Ns_MutexLock(&poolPtr->lock);
+        closed = CloseIfStale(handlePtr, now);
+        ReturnHandle(handlePtr);
+        if (!closed) {
+            Ns_CondSignal(&poolPtr->cond);
+        }
+        Ns_MutexUnlock(&poolPtr->lock);
     }
-    Ns_MutexLock(&poolPtr->lock);
-    ReturnHandle(handlePtr);
-    Ns_CondSignal(&poolPtr->getCond);
-    Ns_MutexUnlock(&poolPtr->lock);
 }
 
 
@@ -1258,7 +1307,12 @@ Dbi_Reset(Dbi_Handle *handle)
 void
 Dbi_BouncePool(Dbi_Pool *pool)
 {
-    CheckPool((Pool *) pool, 1);
+    Pool *poolPtr = (Pool *) pool;
+
+    Ns_MutexLock(&poolPtr->lock);
+    CheckPool(poolPtr, 1);
+    Ns_CondBroadcast(&poolPtr->cond);
+    Ns_MutexUnlock(&poolPtr->lock);
 }
 
 
@@ -1292,7 +1346,7 @@ Dbi_Stats(Ns_DString *dest, Dbi_Pool *pool)
                      poolPtr->stats.handleopens, poolPtr->stats.handlefailures,
                      poolPtr->stats.queries,
                      poolPtr->stats.otimecloses, poolPtr->stats.atimecloses,
-                     poolPtr->stats.querycloses, poolPtr->stale_on_close);
+                     poolPtr->stats.querycloses, poolPtr->epoch);
     Ns_MutexUnlock(&poolPtr->lock);
 
     return Ns_DStringValue(dest);
@@ -1361,7 +1415,7 @@ Dbi_Config(Dbi_Pool *pool, DBI_CONFIG_OPTION opt, int newValue)
     switch (opt) {
     case DBI_CONFIG_MAXHANDLES:
         oldValue = poolPtr->maxhandles;
-        if (newValue >= 1) {
+        if (newValue >= 0) {
             poolPtr->maxhandles = newValue;
         }
         break;
@@ -1621,6 +1675,17 @@ ReturnHandle(Handle *handlePtr)
 {
     Pool *poolPtr = (Pool *) handlePtr->poolPtr;
 
+    if (poolPtr->stopping
+        || poolPtr->nhandles > poolPtr->maxhandles) {
+
+        Ns_CacheDestroy(handlePtr->cache);
+        Ns_DStringFree(&handlePtr->dsExceptionMsg);
+        ns_free(handlePtr);
+        poolPtr->nhandles--;
+
+        return;
+    }
+
     if (poolPtr->firstPtr == NULL) {
         poolPtr->firstPtr = poolPtr->lastPtr = handlePtr;
         handlePtr->nextPtr = NULL;
@@ -1632,7 +1697,7 @@ ReturnHandle(Handle *handlePtr)
         poolPtr->lastPtr = handlePtr;
         handlePtr->nextPtr = NULL;
     }
-    poolPtr->nhandles++;
+    poolPtr->idlehandles++;
 }
 
 
@@ -1662,7 +1727,7 @@ CloseIfStale(Handle *handlePtr, time_t now)
     if (Connected(handlePtr)) {
         if (poolPtr->stopping) {
             reason = "stopped";
-        } else if (poolPtr->stale_on_close > handlePtr->stale_on_close) {
+        } else if (poolPtr->epoch > handlePtr->epoch) {
             reason = "bounced";
         } else if (poolPtr->maxopen && (handlePtr->otime < (now - poolPtr->maxopen))) {
             reason = "aged";
@@ -1675,14 +1740,14 @@ CloseIfStale(Handle *handlePtr, time_t now)
         }
         if (reason) {
 
+            (void) Ns_CacheFlush(handlePtr->cache);
+
             Log(handle, Notice, "closing %s handle, %d queries",
                 reason, handlePtr->stats.queries);
 
-            CloseStatements(handlePtr->cache);
-
             (*poolPtr->closeProc)(handle);
-            handlePtr->driverData = NULL;
 
+            handlePtr->driverData = NULL;
             handlePtr->atime = handlePtr->otime = 0;
             poolPtr->stats.queries += handlePtr->stats.queries;
             handlePtr->stats.queries = 0;
@@ -1714,51 +1779,23 @@ CloseIfStale(Handle *handlePtr, time_t now)
 static void
 CheckPool(Pool *poolPtr, int stale)
 {
-    Handle       *handlePtr, *nextPtr;
-    Handle       *checkedPtr;
-    time_t        now;
+    Handle  *handlePtr, *nextPtr;
+    time_t   now;
 
-    time(&now);
-    checkedPtr = NULL;
-
-    /*
-     * Grab the entire list of handles from the pool.
-     */
-
-    Ns_MutexLock(&poolPtr->lock);
     if (stale) {
-        poolPtr->stale_on_close++;
+        poolPtr->epoch++;
     }
     handlePtr = poolPtr->firstPtr;
     poolPtr->firstPtr = poolPtr->lastPtr = NULL;
-    Ns_MutexUnlock(&poolPtr->lock);
+    poolPtr->idlehandles = 0;
 
-    /*
-     * Run through the list of handles, closing any
-     * which have gone stale, and then return them
-     * all to the pool.
-     */
+    time(&now);
 
-    if (handlePtr != NULL) {
-        while (handlePtr != NULL) {
-            poolPtr->nhandles--;
-            nextPtr = handlePtr->nextPtr;
-            CloseIfStale(handlePtr, now);
-            handlePtr->nextPtr = checkedPtr;
-            checkedPtr = handlePtr;
-            handlePtr = nextPtr;
-        }
-
-        Ns_MutexLock(&poolPtr->lock);
-        handlePtr = checkedPtr;
-        while (handlePtr != NULL) {
-            nextPtr = handlePtr->nextPtr;
-            
-            ReturnHandle(handlePtr);
-            handlePtr = nextPtr;
-        }
-        Ns_CondSignal(&poolPtr->getCond);
-        Ns_MutexUnlock(&poolPtr->lock);
+    while (handlePtr != NULL) {
+        nextPtr = handlePtr->nextPtr;
+        (void) CloseIfStale(handlePtr, now);
+        ReturnHandle(handlePtr);
+        handlePtr = nextPtr;
     }
 }
 
@@ -1784,7 +1821,10 @@ ScheduledPoolCheck(void *arg)
 {
     Pool *poolPtr = arg;
 
+    Ns_MutexLock(&poolPtr->lock);
     CheckPool(poolPtr, 0);
+    Ns_CondBroadcast(&poolPtr->cond);
+    Ns_MutexUnlock(&poolPtr->lock);
 }
 
 static void
@@ -1817,18 +1857,34 @@ AtShutdown(Ns_Time *toPtr, void *arg)
 {
     Pool       *poolPtr = arg;
     Ns_DString  ds;
+    int         status;
 
     if (toPtr == NULL) {
         Ns_MutexLock(&poolPtr->lock);
         poolPtr->stopping = 1;
-        Ns_CondBroadcast(&poolPtr->getCond);
+        Ns_CondBroadcast(&poolPtr->cond);
         Ns_MutexUnlock(&poolPtr->lock);
     } else {
+
         Ns_DStringInit(&ds);
         Ns_Log(Notice, "dbi[%s:%s]: %s", poolPtr->drivername, poolPtr->module,
                Dbi_Stats(&ds, (Dbi_Pool *) poolPtr));
         Ns_DStringFree(&ds);
-        CheckPool(poolPtr, 1);
+
+        Ns_MutexLock (&poolPtr->lock);
+        do {
+            status = NS_OK;
+            while (status == NS_OK
+                   && poolPtr->nhandles > 0
+                   && poolPtr->firstPtr == NULL) {
+                status = Ns_CondTimedWait(&poolPtr->cond, &poolPtr->lock, toPtr);
+            }
+            if (poolPtr->firstPtr != NULL) {
+                CheckPool(poolPtr, 1);
+            }
+        } while (poolPtr->nhandles > 0 && status == NS_OK);
+
+        Ns_MutexUnlock(&poolPtr->lock);
     }
 }
 
@@ -1911,6 +1967,42 @@ Connected(Handle *handlePtr)
 /*
  *----------------------------------------------------------------------
  *
+ * FreeThreadHandles --
+ *
+ *      Free cached handles on thread exit.
+ *
+ * Results:
+ *      None.
+ *
+ * Side effects:
+ *      None.
+ *
+ *----------------------------------------------------------------------
+ */
+
+static void
+FreeThreadHandles(void *arg)
+{
+    Handle *nextPtr, *handlePtr = arg;
+    Pool   *poolPtr;
+
+    if (handlePtr != NULL) {
+        poolPtr = handlePtr->poolPtr;
+        Ns_MutexLock(&poolPtr->lock);
+        while (handlePtr != NULL) {
+            nextPtr = handlePtr->nextPtr;
+            ReturnHandle(handlePtr);
+            handlePtr = nextPtr;
+        }
+        Ns_CondBroadcast(&poolPtr->cond);
+        Ns_MutexUnlock(&poolPtr->lock);
+    }
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
  * FreeStatement --
  *
  *      Cache eviction callback to free a prepared statement.
@@ -1944,55 +2036,6 @@ FreeStatement(void *arg)
     }
     Tcl_DeleteHashTable(&stmtPtr->bindTable);
     ns_free(stmtPtr);
-}
-
-
-/*
- *----------------------------------------------------------------------
- *
- * CloseStatements --
- *
- *      Call the driver proc for each prepared statement in the cache,
- *      but don't flush the cache entries.
- *
- *      This is called just before a handle is closed to free resources
- *      held by prepared statements, which are tied to a specific handle.
- *
- * Results:
- *      None.
- *
- * Side effects:
- *      NB: Pool must be locked or handles otherwise protected.
- *
- *----------------------------------------------------------------------
- */
-
-static void
-CloseStatements(Ns_Cache *cache)
-{
-    Ns_CacheSearch  search;
-    Ns_Entry       *entry;
-    Statement      *stmtPtr;
-    Handle         *handlePtr;
-    Pool           *poolPtr;
-
-    entry = Ns_CacheFirstEntry(cache, &search);
-    while (entry != NULL) {
-        stmtPtr = Ns_CacheGetValue(entry);
-
-        if (stmtPtr->driverData != NULL) {
-
-            handlePtr = stmtPtr->handlePtr;
-            poolPtr = handlePtr->poolPtr;
-
-            Log(handlePtr, Debug,
-                "Dbi_PrepareCloseProc(CloseStatements): nqueries: %u",
-                stmtPtr->nqueries);
-
-            (*poolPtr->prepareCloseProc)((Dbi_Handle *) handlePtr, (Dbi_Statement *) stmtPtr);
-        }
-        entry = Ns_CacheNextEntry(&search);
-    }
 }
 
 

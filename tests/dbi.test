@@ -178,6 +178,82 @@ test pool-global {query from non-default global pool} -body {
 } -result v
 
 
+
+
+test thread-handle-1.1 {maxhandles 0} -body {
+    dbi_rows -pool global2 {ROWS 1 1 v}
+} -result v
+
+test thread-handle-1.2 {maxhandles 0, thread exit w/handle cleanup} -body {
+    ns_thread wait [ns_thread begin {
+        dbi_rows -pool global2 {ROWS 1 1 v}
+    }]
+} -result v
+
+test thread-handle-1.3 {maxhandles 0, thread handle reuse} -body {
+    ns_thread wait [ns_thread begin {
+        dbi_rows -pool global2 {ROWS 1 1 v}
+        dbi_rows -pool global2 {ROWS 1 1 v}
+    }]
+} -result v
+
+test thread-handle-1.4 {maxhandles 0/1/0} -body {
+
+    dbi_ctl maxhandles global2 0
+
+    ns_thread wait [ns_thread begin {
+        dbi_rows -pool global2 {ROWS 1 1 v}
+        dbi_ctl maxhandles global2 1
+    }]
+
+    ns_thread wait [ns_thread begin {
+        dbi_rows -pool global2 -timeout 3 {ROWS 2 2 v}
+    }]
+
+} -cleanup {
+    dbi_ctl maxhandles global2 0
+} -match glob -result {wait for database handle timed out*}
+
+test thread-handle-1.5 {maxhandles 0/2/0} -body {
+
+    dbi_ctl maxhandles global2 0
+
+    ns_thread wait [ns_thread begin {
+        dbi_rows -pool global2 {ROWS 1 1 v}
+        dbi_ctl maxhandles global2 2
+    }]
+
+    ns_thread wait [ns_thread begin {
+        dbi_rows -pool global2 -timeout 2 {ROWS 1 2 v}
+    }]
+
+} -cleanup {
+    dbi_ctl maxhandles global2 0
+} -result {v v}
+
+test thread-handle-1.6 {maxhandles 0/2/0/0} -body {
+
+    dbi_ctl maxhandles global2 0
+
+    ns_thread wait [ns_thread begin {
+        dbi_rows -pool global2 {ROWS 1 1 v}
+        dbi_ctl maxhandles global2 2
+    }]
+
+    ns_thread wait [ns_thread begin {
+        dbi_rows -pool global2 -timeout 1 {ROWS 1 2 v}
+        dbi_rows -pool global2 -timeout 1 {ROWS 1 3 v}
+        dbi_ctl maxhandles global2 0
+        dbi_rows -pool global2 -timeout 1 {ROWS 1 4 v}
+    }]
+
+} -cleanup {
+    dbi_ctl maxhandles global2 0
+} -result {v v v v}
+
+
+
+
 test poolhandle-1 {cache pool pointer in pool name obj} -body {
     set poolname pool1
     dbi_rows -pool $poolname {ROWS 1 1}

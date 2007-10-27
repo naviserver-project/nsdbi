@@ -9,7 +9,7 @@ set bindir    [file dirname [ns_info nsd]]
 
 
 #
-# Global AOLserver parameters.
+# Global server parameters.
 #
 
 ns_section "ns/parameters"
@@ -55,14 +55,14 @@ ns_section "ns/module/global1"
 ns_param   maxhandles      2
 
 ns_section "ns/module/global2"
-ns_param   maxhandles      2
+ns_param   maxhandles      0
 
 ns_section "ns/server/server1/module/pool1"
 ns_param   default         true
 ns_param   maxhandles      5
 ns_param   maxidle         20          ;# Handle closed after maxidle seconds if unused.
 ns_param   maxopen         40          ;# Handle closed after maxopen seconds, regardles of use.
-ns_param   maxqueries      10000       ;# Handle closed after maxqueries sql queries.
+ns_param   maxqueries      10000000       ;# Handle closed after maxqueries sql queries.
 ns_param   checkinterval   30          ;# Check for stale handles every 15 seconds.
 
 ns_section "ns/server/server1/module/pool2"
