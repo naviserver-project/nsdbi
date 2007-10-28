@@ -63,32 +63,26 @@ NS_TEST_ALL		= tests/all.tcl $(TCLTESTARGS)
 LD_LIBRARY_PATH	= LD_LIBRARY_PATH="./:$$LD_LIBRARY_PATH"
 
 test: all
-	$(LD_LIBRARY_PATH) $(NSD) $(NS_TEST_CFG) $(NS_TEST_ALL)
-	#LD_LIBRARY_PATH="./:$$LD_LIBRARY_PATH" $(NSD) -c -d -t tests/config.tcl tests/all.tcl $(TESTFLAGS) $(TCLTESTARGS)
+	export $(LD_LIBRARY_PATH); $(NSD) $(NS_TEST_CFG) $(NS_TEST_ALL)
 
 runtest: all
-	$(LD_LIBRARY_PATH) $(NSD) $(NS_TEST_CFG)
-	#LD_LIBRARY_PATH="./:$$LD_LIBRARY_PATH" $(NSD) -c -d -t tests/config.tcl
+	export $(LD_LIBRARY_PATH); $(NSD) $(NS_TEST_CFG)
 
 gdbtest: all
 	@echo set args $(NS_TEST_CFG) $(NS_TEST_ALL) > gdb.run
 	export $(LD_LIBRARY_PATH); gdb -x gdb.run $(NSD)
-	#rm gdb.run	@echo "set args -c -d -t tests/config.tcl tests/all.tcl $(TESTFLAGS) $(TCLTESTARGS)" > gdb.run
-	#LD_LIBRARY_PATH="./:$$LD_LIBRARY_PATH" gdb -x gdb.run $(NSD)
 	rm gdb.run
 
 gdbruntest: all
 	@echo set args $(NS_TEST_CFG) > gdb.run
 	export $(LD_LIBRARY_PATH); gdb -x gdb.run $(NSD)
-	#@echo "set args -c -d -t tests/config.tcl" > gdb.run
-	#LD_LIBRARY_PATH="./:$${LD_LIBRARY_PATH}" gdb -x gdb.run $(NSD)
 	rm gdb.run
 
 memcheck: all
-	$(LD_LIBRARY_PATH) valgrind --tool=memcheck $(NSD) $(NS_TEST_CFG) $(NS_TEST_ALL)
+	export $(LD_LIBRARY_PATH); valgrind --tool=memcheck $(NSD) $(NS_TEST_CFG) $(NS_TEST_ALL)
 
 runmemcheck: all
-	$(LD_LIBRARY_PATH) valgrind --tool=memcheck $(NSD) $(NS_TEST_CFG)
+	export $(LD_LIBRARY_PATH); valgrind --tool=memcheck $(NSD) $(NS_TEST_CFG)
 
 
 
