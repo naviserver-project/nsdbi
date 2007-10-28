@@ -46,6 +46,8 @@ ns_param   library         $homedir/tests/testserver/modules
 ns_section "ns/server/server1/modules"
 ns_param   pool1           $homedir/nsdbitest.so
 ns_param   pool2           $homedir/nsdbitest.so
+ns_param   OPENERR         $homedir/nsdbitest.so ;# nsdbitest will error on open
+ns_param   OPENERR0        $homedir/nsdbitest.so
 
 #
 # Database configuration.
@@ -67,3 +69,9 @@ ns_param   checkinterval   30          ;# Check for stale handles every 15 secon
 
 ns_section "ns/server/server1/module/pool2"
 ns_param   maxhandles      1 ;# Set low for timeout test.
+
+ns_section "ns/server/server1/module/OPENERR"
+ns_param   maxhandles      1
+
+ns_section "ns/server/server1/module/OPENERR0"
+ns_param   maxhandles      0

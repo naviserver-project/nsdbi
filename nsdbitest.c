@@ -140,7 +140,7 @@ Ns_ModuleInit(CONST char *server, CONST char *module)
  *      Open a connection to the configured database.
  *
  * Results:
- *      NS_OK.
+ *      NS_OK or NS_ERROR.
  *
  * Side effects:
  *      None.
@@ -154,17 +154,24 @@ Open(ClientData configData, Dbi_Handle *handle)
     Connection *conn;
 
     assert(handle);
-    assert(handle->driverData == NULL);
 
-    assert(STREQ((char *) configData, "driver config data"));
+    if (STREQ(Dbi_PoolName(handle->pool), "OPENERR")
+            || STREQ(Dbi_PoolName(handle->pool), "OPENERR0")) {
+        Dbi_SetException(handle, "00000", "simulate failed open");
+        return NS_ERROR;
+    }
 
+    if (handle->driverData == NULL) {
+        conn = ns_calloc(1, sizeof(Connection));
+        Ns_DStringInit(&conn->ds);
+        conn->connected = NS_TRUE;
+        conn->configData = configData;
 
-    conn = ns_calloc(1, sizeof(Connection));
-    Ns_DStringInit(&conn->ds);
-    conn->connected = NS_TRUE;
-    conn->configData = configData;
-
-    handle->driverData = conn;
+        handle->driverData = conn;
+    } else {
+        conn = handle->driverData;
+        conn->connected = NS_TRUE;
+    }
 
     Dbi_SetException(handle, "TEST", "extra driver connection info");
 

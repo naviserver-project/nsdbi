@@ -584,7 +584,7 @@ Dbi_GetHandle(Dbi_Pool *pool, Ns_Time *timeoutPtr, Dbi_Handle **handlePtrPtr)
     Handle     *handlePtr, *threadHandlePtr;
     char        buf[100];
     Ns_Time     time;
-    int         status;
+    int         maxhandles, status;
 
     /*
      * Check the thread-local handle cache for a non-pooled handle.
@@ -601,6 +601,7 @@ Dbi_GetHandle(Dbi_Pool *pool, Ns_Time *timeoutPtr, Dbi_Handle **handlePtrPtr)
         threadHandlePtr = threadHandlePtr->nextPtr;
     }
 
+    maxhandles = -1;
     status = NS_OK;
 
     if (handlePtr == NULL) {
@@ -662,31 +663,37 @@ Dbi_GetHandle(Dbi_Pool *pool, Ns_Time *timeoutPtr, Dbi_Handle **handlePtrPtr)
             handlePtr->n = poolPtr->maxhandles - poolPtr->idlehandles;
         }
 
-        if (handlePtr != NULL && poolPtr->maxhandles == 0) {
-            handlePtr->nextPtr = Ns_TlsGet(&tls);
-            Ns_TlsSet(&tls, handlePtr);
-            handlePtr->n = -1;
-        }
+        maxhandles = poolPtr->maxhandles;
 
         Ns_MutexUnlock(&poolPtr->lock);
     }
 
     /*
-     * If we got a handle, make sure its connected, otherwise return it.
+     * If we got a handle, make sure its connected, otherwise
+     * return it. Save a per-thread connected handle.
      */
 
-    if (handlePtr != NULL && !Connected(handlePtr)) {
-        if (Connect(handlePtr) != NS_OK) {
+    if (handlePtr != NULL) {
+
+        if (!Connected(handlePtr)
+                && Connect(handlePtr) != NS_OK) {
+
             Ns_MutexLock(&poolPtr->lock);
             ReturnHandle(handlePtr);
             Ns_CondSignal(&poolPtr->cond);
             Ns_MutexUnlock(&poolPtr->lock);
-            status = NS_ERROR;
-        }
-    }
 
-    if (handlePtr != NULL) {
-        *handlePtrPtr = (Dbi_Handle *) handlePtr;
+            status = NS_ERROR;
+
+        } else {
+            *handlePtrPtr = (Dbi_Handle *) handlePtr;
+
+            if (maxhandles == 0) {
+                handlePtr->nextPtr = Ns_TlsGet(&tls);
+                Ns_TlsSet(&tls, handlePtr);
+                handlePtr->n = -1;
+            }
+        }
     }
 
     return status;
@@ -1621,9 +1628,17 @@ Dbi_ExceptionPending(Dbi_Handle *handle)
 void
 Dbi_LogException(Dbi_Handle *handle, Ns_LogSeverity severity)
 {
-    Log(handle, severity, "%s: %s",
-        Dbi_ExceptionCode(handle),
-        Dbi_ExceptionMsg(handle));
+    char *code, *msg;
+
+    code = Dbi_ExceptionCode(handle);
+    if (code[0] == '\0') {
+        code = "(no code)";
+    }
+    msg = Dbi_ExceptionMsg(handle);
+    if (msg == NULL) {
+        msg = "(no message)";
+    }
+    Log(handle, severity, "%s: %s", code, msg);
     Dbi_ResetException(handle);
 }
 

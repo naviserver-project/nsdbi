@@ -13,7 +13,7 @@ eval ::tcltest::configure $argv
 
 test pools {list all pools} -body {
     lsort [dbi_ctl pools]
-} -result {global1 global2 pool1 pool2}
+} -result {OPENERR OPENERR0 global1 global2 pool1 pool2}
 
 
 test default {default pool} -body {
@@ -64,6 +64,12 @@ test stats.1 {pool stats} -body {
 } -cleanup {
     unset -nocomplain a
 } -result {agedcloses bounces handlefailures handlegets handlemisses handleopens idlecloses oppscloses queries}
+
+
+
+test open-1.1 {simulate driver open callback failure} -body {
+    dbi_rows -pool OPENERR {ROWS 1 1}
+} -returnCodes error -result {handle allocation failed}
 
 
 
@@ -250,6 +256,10 @@ test thread-handle-1.6 {maxhandles 0/2/0/0} -body {
 } -cleanup {
     dbi_ctl maxhandles global2 0
 } -result {v v v v}
+
+test thread-handle-1.7 {open error} -body {
+    dbi_rows -pool OPENERR0 {ROWS 1 1}
+} -returnCodes error -result {handle allocation failed}
 
 
 
