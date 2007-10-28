@@ -1045,7 +1045,7 @@ Dbi_NextValue(Dbi_Handle *handle, Dbi_Value *value, int *endPtr)
     Handle        *handlePtr = (Handle *) handle;
     Pool          *poolPtr   = handlePtr->poolPtr;
     Dbi_Statement *stmt      = (Dbi_Statement *) handlePtr->stmtPtr;
-    int            status;
+    int            end, status;
 
     assert(stmt);
     assert(value);
@@ -1063,14 +1063,16 @@ Dbi_NextValue(Dbi_Handle *handle, Dbi_Value *value, int *endPtr)
     Log(handle, Debug, "Dbi_NextValueProc: id: %u, column: %u, row: %u",
         stmt->id, handlePtr->colIdx, handlePtr->rowIdx);
 
-    status = (*poolPtr->nextValueProc)(handle, stmt, value, endPtr);
+    end = 0;
+    status = (*poolPtr->nextValueProc)(handle, stmt, value, &end);
 
-    if (status != NS_OK || *endPtr) {
+    if (status != NS_OK || end) {
         handlePtr->fetchingRows = NS_FALSE;
     } else if (++handlePtr->colIdx >= handlePtr->stmtPtr->numCols) {
         handlePtr->colIdx = 0;
         handlePtr->rowIdx++;
     }
+    *endPtr = end;
 
     return status;
 }

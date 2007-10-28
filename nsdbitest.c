@@ -591,7 +591,6 @@ NextValue(Dbi_Handle *handle, Dbi_Statement *stmt, Dbi_Value *value, int *endPtr
             value->binary = 0;
         }
     }
-    *endPtr = 0;
 
     return NS_OK;
 }
