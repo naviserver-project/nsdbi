@@ -345,8 +345,16 @@ Prepare(Dbi_Handle *handle, Dbi_Statement *stmt,
         stmt->driverData = (void *) NS_TRUE;
     }
 
+    /*
+     * Only need to report the number of bind variables we found
+     * when first prepareing a statement.
+     */
+
+    if (stmt->nqueries == 0) {
+        *numVarsPtr = Dbi_NumVariables(handle);
+    }
+
     *numColsPtr = conn->numCols;
-    *numVarsPtr = Dbi_NumVariables(handle);
 
     return NS_OK;
 }

@@ -800,6 +800,7 @@ Dbi_Prepare(Dbi_Handle *handle, CONST char *sql, int length)
     Log(handle, Debug, "Dbi_PrepareProc: id: %u, nqueries: %u, sql: %s",
         stmtPtr->id, stmtPtr->nqueries, stmtPtr->sql);
 
+    numVars = stmtPtr->numVars;
     if ((*poolPtr->prepareProc)(handle, (Dbi_Statement *) stmtPtr,
                                 &numVars, &stmtPtr->numCols) != NS_OK) {
         goto error;
