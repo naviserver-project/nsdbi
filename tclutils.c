@@ -44,6 +44,58 @@ NS_RCSID("@(#) $Header$");
 /*
  *----------------------------------------------------------------------
  *
+ * Dbi_TclGetPool --
+ *
+ *      Return a pool handle using one of 3 methods:
+ *
+ *      - Look up the pool using the given pool name
+ *      - Use the pool of the most recently cached handle
+ *      - Use the server default pool
+ *
+ * Results:
+ *      Pointer to Dbi_Pool or NULL if no default pool.
+ *
+ * Side effects:
+ *      The Tcl object may be converted to dbi:pool type, and en error
+ *      may be left in the interp if conversion fails.
+ *
+ *----------------------------------------------------------------------
+ */
+
+Dbi_Pool *
+Dbi_TclGetPool(Tcl_Interp *interp, CONST char *server, Tcl_Obj *poolObj)
+{
+    Dbi_Pool          *pool;
+    static const char *poolType = "dbi:pool";
+
+    if (poolObj != NULL) {
+        if (Ns_TclGetOpaqueFromObj(poolObj, poolType, (void **) &pool)
+                != TCL_OK) {
+            pool = Dbi_GetPool(server, Tcl_GetString(poolObj));
+            if (pool != NULL) {
+                Ns_TclSetOpaqueObj(poolObj, poolType, pool);
+            } else {
+                Tcl_SetResult(interp,
+                    "invalid pool name or pool not available to virtual server",
+                    TCL_STATIC);
+            }
+        }
+    } else {
+        pool = Dbi_DefaultPool(server);
+        if (pool == NULL) {
+            Tcl_SetResult(interp,
+                "no pool specified and no default configured",
+                 TCL_STATIC);
+        }
+    }
+
+    return pool;
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
  * Dbi_TclErrorResult --
  *
  *      Set the Tcl error from the handle code and message.

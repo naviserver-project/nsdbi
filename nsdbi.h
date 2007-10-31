@@ -259,6 +259,9 @@ Dbi_LogException(Dbi_Handle *, Ns_LogSeverity severity)
  * Functions for Tcl commands.
  */
 
+NS_EXTERN Dbi_Pool *
+Dbi_TclGetPool(Tcl_Interp *interp, CONST char *server, Tcl_Obj *poolObj);
+
 NS_EXTERN void
 Dbi_TclErrorResult(Tcl_Interp *interp, Dbi_Handle *handle);
 
