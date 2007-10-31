@@ -553,6 +553,7 @@ static int
 CtlObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
 {
     InterpData *idataPtr = arg;
+    CONST char *server = idataPtr->server;
     Dbi_Pool   *pool;
     Ns_DString  ds;
     int         cmd, oldValue, newValue;
@@ -583,14 +584,14 @@ CtlObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
     switch (cmd) {
     case CPoolsCmd:
         Ns_DStringInit(&ds);
-        if (Dbi_ListPools(&ds, idataPtr->server) != NS_OK) {
+        if (Dbi_ListPools(&ds, server) != NS_OK) {
             return TCL_ERROR;
         }
         Tcl_DStringResult(interp, &ds);
         return TCL_OK;
 
     case CDefaultCmd:
-        pool = Dbi_DefaultPool(idataPtr->server);
+        pool = Dbi_DefaultPool(server);
         if (pool != NULL) {
             Tcl_SetResult(interp, (char *) Dbi_PoolName(pool), TCL_VOLATILE);
         }
@@ -608,7 +609,7 @@ CtlObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
         Tcl_WrongNumArgs(interp, 2, objv, "pool ?args?");
         return TCL_ERROR;
     }
-    if ((pool = GetPool(idataPtr, objv[2])) == NULL) {
+    if ((pool = Dbi_TclGetPool(interp, server, objv[2])) == NULL) {
         return TCL_ERROR;
     }
 
