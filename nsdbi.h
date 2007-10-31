@@ -255,5 +255,12 @@ NS_EXTERN void
 Dbi_LogException(Dbi_Handle *, Ns_LogSeverity severity)
     NS_GNUC_NONNULL(1);
 
+/*
+ * Functions for Tcl commands.
+ */
+
+NS_EXTERN void
+Dbi_TclErrorResult(Tcl_Interp *interp, Dbi_Handle *handle);
+
 
 #endif /* NSDBI_H */

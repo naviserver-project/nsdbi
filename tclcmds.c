@@ -85,8 +85,6 @@ static Dbi_Pool *GetPool(InterpData *, Tcl_Obj *poolObj);
 static Dbi_Handle *GetHandle(InterpData *, Dbi_Pool *, Ns_Time *);
 static void CleanupHandle(InterpData *idataPtr, Dbi_Handle *handle);
 
-static void SqlError(Tcl_Interp*, Dbi_Handle *);
-
 static int NextValue(Tcl_Interp *interp, Dbi_Handle *handle, Tcl_Obj **valueObjPtr, unsigned int *colIdxPtr);
 
 
@@ -397,7 +395,7 @@ RowCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[],
             goto cleanup;
         }
         if (Dbi_ColumnName(handle, colIdx, &column) != NS_OK) {
-            SqlError(interp, handle);
+            Dbi_TclErrorResult(interp, handle);
             goto cleanup;
         }
         if (Tcl_SetVar2Ex(interp, column, NULL, valueObj,
@@ -414,7 +412,7 @@ RowCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[],
      */
 
     if (Dbi_NextValue(handle, &value, &end) != NS_OK) {
-        SqlError(interp, handle);
+        Dbi_TclErrorResult(interp, handle);
         goto cleanup;
     }
     if (!end) {
@@ -499,7 +497,7 @@ EvalObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
 
     if (isolation != -1
             && Dbi_Begin(handle, isolation) != NS_OK) {
-        SqlError(interp, handle);
+        Dbi_TclErrorResult(interp, handle);
         goto done;
     }
 
@@ -520,7 +518,7 @@ EvalObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
             status = TCL_ERROR;
             Tcl_AddErrorInfo(interp, "\n    dbi transaction status:\nrollback");
             if (Dbi_Rollback(handle) != NS_OK) {
-                SqlError(interp, handle);
+                Dbi_TclErrorResult(interp, handle);
             }
         } else if (Dbi_Commit(handle) != NS_OK) {
             status = TCL_ERROR;
@@ -723,7 +721,7 @@ Exec(InterpData *idataPtr, Tcl_Obj *poolObj, Ns_Time *timeoutPtr,
     query = Tcl_GetStringFromObj(queryObj, &qlength);
 
     if (Dbi_Prepare(handle, query, qlength) != NS_OK) {
-        SqlError(interp, handle);
+        Dbi_TclErrorResult(interp, handle);
         goto error;
     }
 
@@ -747,7 +745,7 @@ Exec(InterpData *idataPtr, Tcl_Obj *poolObj, Ns_Time *timeoutPtr,
         goto error;
     }
     if (Dbi_Exec(handle, values) != NS_OK) {
-        SqlError(interp, handle);
+        Dbi_TclErrorResult(interp, handle);
         goto error;
     }
 
@@ -800,7 +798,7 @@ BindVars(Tcl_Interp *interp, Dbi_Handle *handle, Dbi_Value *values,
     for (i = 0; i < numVars; i++) {
 
         if (Dbi_VariableName(handle, i, &key) != NS_OK) {
-            SqlError(interp, handle);
+            Dbi_TclErrorResult(interp, handle);
             return TCL_ERROR;
         }
 
@@ -999,30 +997,6 @@ CleanupHandle(InterpData *idataPtr, Dbi_Handle *handle)
 /*
  *----------------------------------------------------------------------
  *
- * SqlError --
- *
- *      Set the Tcl error from the handle code and message.
- *
- * Results:
- *      None.
- *
- * Side effects:
- *      None.
- *
- *----------------------------------------------------------------------
- */
-
-static void
-SqlError(Tcl_Interp *interp, Dbi_Handle *handle)
-{
-    Tcl_SetErrorCode(interp, Dbi_ExceptionCode(handle), NULL);
-    Tcl_AppendResult(interp, Dbi_ExceptionMsg(handle), NULL);
-}
-
-
-/*
- *----------------------------------------------------------------------
- *
  * NextValue --
  *
  *      Get the next value from a pending result set, unless all values
@@ -1046,7 +1020,7 @@ NextValue(Tcl_Interp *interp, Dbi_Handle *handle, Tcl_Obj **valueObjPtr,
     int       end;
 
     if (Dbi_NextValue(handle, &value, &end) != NS_OK) {
-        SqlError(interp, handle);
+        Dbi_TclErrorResult(interp, handle);
         return TCL_ERROR;
     }
     if (end) {
