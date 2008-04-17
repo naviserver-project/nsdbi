@@ -5,18 +5,20 @@
 [titledesc {Commands for querying an SQL database.}]
 
 [description]
-One or more paragraphs describing the command in detail.
+nsdbi provides an easy to use interface to databases.
 
 [vset standard_options "\
-[opt "[option -pool] [arg name]"] \
-[opt "[option -timeout] [arg t]"] \
-[opt "[option -bindarray] [arg name]"] \
-[opt "[option -bindset] [arg setid]"] \
+[opt [option "-pool [arg poolname]"]] \
+[opt [option "-timeout [arg t]"]] \
+[opt [option "-bindarray [arg arrayname]"]] \
+[opt [option "-bindset [arg setid]"]] \
 [opt [arg --]]"]
 
-[section {COMMANDS}]
 
+[section {COMMANDS}]
 [list_begin definitions]
+
+
 
 [call [cmd dbi_rows] [vset standard_options] [arg query]]
 
@@ -25,10 +27,12 @@ returned then the result is the empty string. Otherwise a single, flat list
 of values is returned. [emph Note]: Column names are not included.
 
 
+
 [call [cmd dbi_1row] [vset standard_options] [arg query]]
 
 Execute a query which is expected to return exactly one row. If no rows are
 returned then an error is thrown.
+
 
 
 [call [cmd dbi_0or1row] [vset standard_options] [arg query]]
@@ -37,11 +41,15 @@ Execute a query which is expected to return either zero rows or exactly one
 row. If no rows are returned the result is the empty string.
 
 
+
 [call [cmd dbi_dml] [vset standard_options] [arg query]]
 
 Execute a [term DML] or [term DDL] query, i.e. [term insert], [term update],
 [term delete] etc.  The result will be the number of rows affected by the
 query, for example the number of rows updated during an [term update] query.
+
+If the query is not DML or DDL, an error will be thrown.
+
 
 
 [call [cmd dbi_format] [vset standard_options] [arg query] [arg formatString]]
@@ -52,7 +60,7 @@ of each column.  The column values are available beginning at index position
 0.  The formatted rows are concatenated together and become the final result.
 If no rows are returned then the result is the empty string.
 
-[nl]
+[para]
 Although not as felxible as the [cmd dbi_rows] command, the final result is
 constructed row by row without first building a list containing the entire
 result-set. This may require less memory and run slightly faster.
@@ -60,67 +68,159 @@ result-set. This may require less memory and run slightly faster.
 
 
 [call [cmd dbi_eval] \
-[opt "[option -pool] [arg name]"]      \
-[opt "[option -timeout] [arg t]"]   \
-[opt [arg --]] \
-[arg script] ]
+    [opt [option "-pool [arg poolname]"]] \
+    [opt [option "-timeout [arg t]"]] \
+    [opt [option "-transaction [arg isolation-level]"]] \
+    [opt [arg --]] \
+    [arg script] ]
 
 Get a database handle and then evaluate [arg script], keeping the same handle
 open for the duration.  Any [emph dbi] commands within the script will
 use the same handle if the handle the command needs would have come from the
 same pool.
 
-[call [cmd dbi_transaction] \
-[opt "[option -pool] [arg name]"]      \
-[opt "[option -timeout] [arg t]"]   \
-[opt [arg --]] \
-[arg script] ]
+[para]
+If the [option -transaction] option is given then the commands are run in a
+transaction -- either all the commands succeed or they all fail. You may
+nest transactions.
 
-Evaluate the Tcl script.
+[para]
+The following transaction [term isolation-levels] are supported. See your
+specific database for details.
+
+[list_begin options]
+
+[opt_def readuncommited]
+May be abbreviated [option uncommitted].
+
+[opt_def readcommited]
+May be abbreviated [option committed].
+
+[opt_def repeatableread]
+May be abbreviated [option repeatable].
+
+[opt_def serializable]
+
+[list_end]
 
 
-[call [cmd "dbi_ctl pools"]]
-  Returns a list of pool names available to the current virtual server.
-[call [cmd "dbi_ctl default"] [opt [arg pool]]]
-  The name of the default pool, if any. If a pool name is specified it
-  becomes the new default pool, and the return value is the old default pool
-  name.
 
-[call [cmd "dbi_ctl driver"] [arg pool]]
-  Returns the name of the driver for the requested pool.
-[call [cmd "dbi_ctl database"] [arg pool]]
-  Returns the name of the database product for the specified pool,
-  e.g. postgresql or mysql.
-[call [cmd "dbi_ctl bounce"] [arg pool]]
-  Mark all handle in [arg pool] stale. At the next [term checkinterval], or
-  as active handles are returned to the pool, their connection with the
-  database will be closed.
-[call [cmd "dbi_ctl stats"] [arg pool]]
-  Return the accumulated statistics for [arg pool] in [term "array get"]
-  format.
+[call [cmd dbi_ctl] \
+    [arg command] \
+    [opt [arg ...]] ]
 
-[call [cmd "dbi_ctl maxhandles"] [arg pool] [opt [arg handles]]]
-  Get or set the [arg maxhandles] option for [arg pool]
-[call [cmd "dbi_ctl maxwait"] [arg pool] [opt [arg maxwait]]]
-  Get or set the [arg maxwait] option for [arg pool]
-[call [cmd "dbi_ctl maxidle"] [arg pool] [opt [arg maxidle]]]
-  Get or set the [arg maxidle] option for [arg pool]
-[call [cmd "dbi_ctl maxopen"] [arg pool] [opt [arg maxopen]]]
-  Get or set the [arg maxopen] option for [arg pool]
-[call [cmd "dbi_ctl maxqueries"] [arg pool] [opt [arg maxqueries]]]
-  Get or set the [arg maxqueries] option for [arg pool]
-[call [cmd "dbi_ctl checkinterval"] [arg pool] [opt [arg checkinterval]]]
-  Get or set the [arg checkinterval] option for [arg pool]
+Control various aspects of a pool.
+
+
+[list_begin options]
+
+[opt_def pools]
+Returns a list of pool names available to the current virtual server.
+
+[opt_def "default [opt [arg pool]]"]
+The name of the default pool, if any. The default pool is used when the
+[option -pool] option is not specified when calling a command.
+
+[para]
+If a pool name is specified it becomes the new default pool, and the
+return value is the old default pool name.
+
+[opt_def "driver [opt [arg pool]]"]
+Returns the name of the driver for the requested pool.
+
+[opt_def "database [opt [arg pool]]"]
+Returns the name of the database product for the specified pool,
+e.g. [term postgresql] or [term mysql].
+
+[opt_def "bounce [opt [arg pool]]"]
+Mark all handle in [arg pool] stale. At the next [term checkinterval], or
+as active handles are returned to the pool, their connection with the
+database will be closed.
+
+[opt_def "stats [opt [arg pool]]"]
+Return the accumulated statistics for [arg pool] in [term "array get"]
+format. The stats list contains the following keywords:
+
+[list_begin definitions]
+
+[def handlegets]
+The number of times a handle was successfully retrieved from the pool.
+
+[def handlemisses]
+The number of time a handle was requested but none was available, perhaps after
+a timeout.
+
+[def handleopens]
+The number of times a handle was connected/reconnected to the database.
+
+[def handlefailuers]
+The number of times a connection attempt to the database failed.
+
+[def queries]
+Total number of queries by all handles in the pool.
+
+[def agedcloses]
+Number of times a handles was closed due to the [option maxopen] time expiring.
+
+[def idlecloses]
+Number fo times a handle was closed due to the [option maxidle] time expiring.
+
+[def oppscloses]
+Number of times a handle was closed due to [option maxqueries] being reached.
+
+[def bounces]
+Number of times all handles in the pool were bounced with the
+[cmd "dbi_ctl bounce"] command.
 
 
 [list_end]
 
 
+[opt_def "maxhandles [arg pool] [opt [arg maxhandles]]"]
+Get or set the [arg maxhandles] option for [arg pool]. The default is 0 which
+means the pool will open an unlimeted number of handles, one for each thread,
+and the handles are cache per-thread and never returned to the pool. This is
+ideal for an embedded database or if you have a single pool which each thread
+almost always uses.
+
+[opt_def "maxwait [arg pool] [opt [arg maxwait]]"]
+Get or set the [arg maxwait] option for [arg pool]. This is the timeout in
+seconds that a thread will wait for a handle if none are available. You can
+override it for each command using the [option -timeout] option. The default is
+10 seconds.
+
+[opt_def "maxidle [arg pool] [opt [arg maxidle]]"]
+Get or set the [arg maxidle] option for [arg pool]. This is the number of
+seconds that an open handle will linger unused in it's pool, after which it is
+automatically closed. The default is 0, which means handles are never closed due
+to idleness.
+
+[opt_def "maxopen [arg pool] [opt [arg maxopen]]"]
+Get or set the [arg maxopen] option for [arg pool]. This is the maximum number
+of seconds a handle can remain open, regardless of whether it is used or not.
+After this timeout, when the handle is returned to it's pool, it will be
+automatically closed. The default is 0, which means handle are not closed due
+to age.
+
+[opt_def "maxqueries [arg pool] [opt [arg maxqueries]]"]
+Get or set the [arg maxqueries] option for [arg pool]. A handle will be closed
+after this number of queries when it is returned to the pool. The default is 0.
+
+[para]
+This option can be used to ensure that a cached plan for a prepared statement
+does not become stale after many inserts/updates. Set it to something high, like
+10,000.
+
+[list_end]
+
+[list_end]
+
+
+
 [section {OPTIONS}]
+[list_begin options]
 
-[list_begin opt]
-
-[opt_def -pool [arg pool]]
+[opt_def -pool [arg poolname]]
 The name of the pool to get a handle from. If none specified, the default
 pool is used. Pool names are defined each time a driver module is loaded --
 the module name is the pool name.
@@ -130,11 +230,11 @@ Time to wait for a database handle if none available immediately. [arg t] is
 in [cmd ns_time] format and is either an absolute time in the future if
 large, or an offset from the current time if small.
 
-[nl]
+[para]
 If [option -timeout] is not specified then the [arg maxwait] configuration
 value is used (which defaults to 10 seconds).
 
-[nl]
+[para]
 If a handle does not become available during the timeout period a Tcl error
 is thrown with the NS_TIMEOUT...
 
@@ -149,9 +249,10 @@ in this Ns_Set.
 [list_end]
 
 
-[section {ARGUMENTS}]
 
-[list_begin arg]
+[section {ARGUMENTS}]
+[list_begin arguments]
+
 
 [arg_def string query]
 A query containing database specific SQL and nsdbi [term {bind variable}]
@@ -162,10 +263,11 @@ A format specification as used by the Tcl [cmd format] command.
 
 [arg_def string script]
 A chunk of Tcl code to execute in the context of a single handle for the
-[cmd dbi_eval] command, or within a single transaction for the
-[cmd dbi_transaction] command.
+[cmd dbi_eval] command. It is expected to conatin calls to [cmd dbi_dml],
+[cmd dbi_rows] etc.
 
 [list_end]
+
 
 
 [section CONFIGURATION]
@@ -190,30 +292,38 @@ Standard configuration options which are available with every driver:
         
 [list_begin definitions]
 
-[lst_item "[cmd ns_param] [arg default] false"]
+[def "[cmd ns_param] [arg default] false"]
 When this option is true, the pool for which it is defined becomes the
 default pool for the virtual server.
 
-[lst_item "[cmd ns_param] [arg maxhandles] 2"]
+[def "[cmd ns_param] [arg cachesize] 1024*1024"]
+The number of bytes used to cache prepared statements. There is one cache
+per-handle.
+
+[def "[cmd ns_param] [arg maxhandles] 0"]
 The maximum number of open connections to the database.
 
-[lst_item "[cmd ns_param] [arg maxwait] 10"]
+[def "[cmd ns_param] [arg maxwait] 10"]
 Seconds to wait if handle is at first unavailable.
 
-[lst_item "[cmd ns_param] [arg maxidle] 0"]
+[def "[cmd ns_param] [arg maxidle] 0"]
 If a handle is unused for [term maxidle] seconds, it is closed.
 
-[lst_item "[cmd ns_param] [arg maxopen] 0"]
+[def "[cmd ns_param] [arg maxopen] 0"]
 Handles are closed after [term maxopen] seconds, regardless of whether it
 has been used or not.
 
-[lst_item "[cmd ns_param] [arg maxqueries] 0"]
+[def "[cmd ns_param] [arg maxqueries] 0"]
 Handles are closed after [term maxqueries] queries, if value is more than 0.
 
-[lst_item "[cmd ns_param] [arg checkinterval] 600"]
+[def "[cmd ns_param] [arg checkinterval] 600"]
 Check for idle handles every [term checkinterval] seconds.
 
 [list_end]
+
+Each driver also takes driver-specific parameters to specify the user,
+password etc. to connect to the database.
+
 
 
 [section EXAMPLES]
@@ -229,11 +339,11 @@ matches the bind variable will be returned:
 
 [example_begin]
 set a "someValue"
-[cmd dbi_rows] [option "-pool [arg x]"] {
+set rows [lb][cmd dbi_rows] [option "-pool [arg x]"] {
     select a, b
     from table
     where a = :a
-}
+}[rb]
 [example_end]
 
 Use the Tcl [term foreach] command to loop through each row of a result set
@@ -262,7 +372,7 @@ set html [lb][cmd dbi_format] {
 [example_end]
 
 
-[see_also nsdb format sprintf]
-[keywords NaviServer database sql]
+[see_also nsdb format]
+[keywords NaviServer database sql query]
 
 [manpage_end]
