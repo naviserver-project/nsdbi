@@ -16,6 +16,8 @@
  * Inc. Portions created by AOL are Copyright (C) 1999 America Online,
  * Inc. All Rights Reserved.
  *
+ * Copyright (C) 2004-2008 Stephen Deasey <sdeasey@gmail.com>
+ *
  * Alternatively, the contents of this file may be used under the terms
  * of the GNU General Public License (the "GPL"), in which case the
  * provisions of GPL are applicable instead of those above.  If you wish
@@ -70,7 +72,8 @@ static Tcl_ObjCmdProc
     EvalObjCmd,
     CtlObjCmd;
 
-static void FreeData(ClientData arg, Tcl_Interp *interp);
+static InterpData *GetInterpData(Tcl_Interp *interp);
+static Tcl_InterpDeleteProc FreeInterpData;
 
 static int RowCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[],
                   int *rowPtr);
@@ -83,7 +86,7 @@ static int BindVars(Tcl_Interp *interp, Dbi_Handle *, Dbi_Value *values,
 
 static Dbi_Pool *GetPool(InterpData *, Tcl_Obj *poolObj);
 static Dbi_Handle *GetHandle(InterpData *, Dbi_Pool *, Ns_Time *);
-static void CleanupHandle(InterpData *idataPtr, Dbi_Handle *handle);
+static void PutHandle(InterpData *idataPtr, Dbi_Handle *handle);
 
 static int NextValue(Tcl_Interp *interp, Dbi_Handle *handle, Tcl_Obj **valueObjPtr, unsigned int *colIdxPtr);
 
@@ -127,7 +130,6 @@ static Ns_ObjvTable levels[] = {
 int
 DbiInitInterp(Tcl_Interp *interp, void *arg)
 {
-    CONST char  *server = arg;
     InterpData  *idataPtr;
     int          i;
     static int   once = 0;
@@ -153,11 +155,7 @@ DbiInitInterp(Tcl_Interp *interp, void *arg)
         {"dbi_ctl",         CtlObjCmd}
     };
 
-    idataPtr = ns_calloc(1, sizeof(InterpData));
-    idataPtr->server = server;
-    idataPtr->interp = interp;
-    idataPtr->depth = -1;
-    Tcl_SetAssocData(interp, "dbi:data", FreeData, idataPtr);
+    idataPtr = GetInterpData(interp);
 
     for (i = 0; i < (sizeof(cmds) / sizeof(cmds[0])); i++) {
         Tcl_CreateObjCommand(interp, cmds[i].name, cmds[i].proc, idataPtr, NULL);
@@ -166,10 +164,239 @@ DbiInitInterp(Tcl_Interp *interp, void *arg)
     return TCL_OK;
 }
 
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * GetInterpData, FreeInterpData --
+ *
+ *      Get/free the interp data.
+ *
+ * Results:
+ *      Pointer to InterpData.
+ *
+ * Side effects:
+ *      Allocates and initialises on first use by DbiInitInterps.
+ *
+ *----------------------------------------------------------------------
+ */
+
+static InterpData *
+GetInterpData(Tcl_Interp *interp)
+{
+    InterpData        *idataPtr;
+    static const char *key = "dbi:data";
+
+    idataPtr = Tcl_GetAssocData(interp, key, NULL);
+    if (idataPtr == NULL) {
+        idataPtr = ns_calloc(1, sizeof(InterpData));
+        idataPtr->interp = interp;
+        idataPtr->server = Ns_TclInterpServer(interp);
+        idataPtr->depth = -1;
+        Tcl_SetAssocData(interp, key, FreeInterpData, idataPtr);
+    }
+    return idataPtr;
+}
+
 static void
-FreeData(ClientData arg, Tcl_Interp *interp)
+FreeInterpData(ClientData arg, Tcl_Interp *interp)
 {
     ns_free(arg);
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * Dbi_TclGetPool, GetPool --
+ *
+ *      Return a pool using one of 3 methods:
+ *
+ *      If no pool is specified:
+ *        1) Return the pool of the current handle from dbi_eval
+ *        2) Use the server default pool. If this fails, return NULL
+ *
+ *      Otheriwse:
+ *        3) Look up the pool using the given pool name. If no such
+ *           pool, return NULL.
+ *
+ * Results:
+ *      Pointer to Dbi_Pool or NULL on error.
+ *
+ * Side effects:
+ *      The Tcl object may be converted to dbi:pool type. An error
+ *      may be left in the interp if conversion fails.
+ *
+ *----------------------------------------------------------------------
+ */
+
+Dbi_Pool *
+Dbi_TclGetPool(Tcl_Interp *interp, Tcl_Obj *poolObj)
+{
+    return GetPool(GetInterpData(interp), poolObj);
+}
+
+Dbi_Pool *
+GetPool(InterpData *idataPtr, Tcl_Obj *poolObj)
+{
+    Tcl_Interp        *interp = idataPtr->interp;
+    Dbi_Pool          *pool;
+    static const char *poolType = "dbi:pool";
+
+    if (poolObj != NULL) {
+        if (Ns_TclGetOpaqueFromObj(poolObj, poolType, (void **) &pool)
+                != TCL_OK) {
+            pool = Dbi_GetPool(idataPtr->server, Tcl_GetString(poolObj));
+            if (pool != NULL) {
+                Ns_TclSetOpaqueObj(poolObj, poolType, pool);
+            } else {
+                Tcl_SetResult(interp,
+                    "invalid pool name or pool not available to virtual server",
+                    TCL_STATIC);
+            }
+        }
+    } else if (idataPtr->depth != -1
+               && idataPtr->handles[idataPtr->depth] != NULL) {
+        pool = idataPtr->handles[idataPtr->depth]->pool;
+    } else {
+        pool = Dbi_DefaultPool(idataPtr->server);
+        if (pool == NULL) {
+            Tcl_SetResult(interp,
+                "no pool specified and no default configured",
+                 TCL_STATIC);
+        }
+    }
+
+    return pool;
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * Dbi_TclGetHandle, GetHandle --
+ *
+ *      Get a handle from the given pool within the timeout. Use the
+ *      the current handle from dbi_eval if the pools match.
+ *
+ * Results:
+ *      Pointer to handle or NULL on error.
+ *
+ * Side effects:
+ *      Error message left in interp.
+ *
+ *----------------------------------------------------------------------
+ */
+
+Dbi_Handle *
+Dbi_TclGetHandle(Tcl_Interp *interp, Dbi_Pool *pool, Ns_Time *timeoutPtr)
+{
+    return GetHandle(GetInterpData(interp), pool, timeoutPtr);
+}
+
+static Dbi_Handle *
+GetHandle(InterpData *idataPtr, Dbi_Pool *pool, Ns_Time *timeoutPtr)
+{
+    Tcl_Interp *interp = idataPtr->interp;
+    Dbi_Handle *handle;
+    Ns_Time     time;
+    int         i;
+
+    /*
+     * First check the handle cache for a handle from the right pool.
+     */
+
+    for (i = idataPtr->depth; i > -1; i--) {
+        handle = idataPtr->handles[i];
+        if (handle != NULL && handle->pool == pool) {
+            return handle;
+        }
+    }
+
+    /*
+     * Make sure the timeout, if given, is an absolute time in
+     * the future and grab a handle from the pool.
+     */
+
+    if (timeoutPtr != NULL) {
+        timeoutPtr = Ns_AbsoluteTime(&time, timeoutPtr);
+    }
+
+    switch (Dbi_GetHandle(pool, timeoutPtr, &handle)) {
+    case NS_OK:
+        return handle;
+        break;
+    case NS_TIMEOUT:
+        Tcl_SetErrorCode(interp, "NS_TIMEOUT", NULL);
+        Tcl_SetResult(interp, "wait for database handle timed out", TCL_STATIC);
+        break;
+    default:
+        Tcl_SetResult(interp, "handle allocation failed", TCL_STATIC);
+        break;
+    }
+    return NULL;
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * Dbi_TclPutHandle, PutHandle --
+ *
+ *      Cleanup a handle. If it's nested within a call to dbi_eval
+ *      simply flush it. Otherwise, return it to it's pool.
+ *
+ * Results:
+ *      None.
+ *
+ * Side effects:
+ *      None.
+ *
+ *----------------------------------------------------------------------
+ */
+
+void
+Dbi_TclPutHandle(Tcl_Interp *interp, Dbi_Handle *handle)
+{
+    PutHandle(GetInterpData(interp), handle);
+}
+
+static void
+PutHandle(InterpData *idataPtr, Dbi_Handle *handle)
+{
+    int i;
+
+    for (i = idataPtr->depth; i > -1; i--) {
+        if (idataPtr->handles[i] == handle) {
+            Dbi_Flush(handle);
+            return;
+        }
+    }
+    Dbi_PutHandle(handle);
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * Dbi_TclErrorResult --
+ *
+ *      Set the Tcl error from the handle code and message.
+ *
+ * Results:
+ *      None.
+ *
+ * Side effects:
+ *      None.
+ *
+ *----------------------------------------------------------------------
+ */
+
+void
+Dbi_TclErrorResult(Tcl_Interp *interp, Dbi_Handle *handle)
+{
+    Tcl_SetErrorCode(interp, Dbi_ExceptionCode(handle), NULL);
+    Tcl_AppendResult(interp, Dbi_ExceptionMsg(handle), NULL);
 }
 
 
@@ -239,7 +466,7 @@ RowsObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
         }
     }
 
-    CleanupHandle(idataPtr, handle);
+    PutHandle(idataPtr, handle);
 
     return status;
 }
@@ -297,7 +524,7 @@ DmlObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
 
     /* FIXME: a clean way of returning the number of rows affected. */
 
-    CleanupHandle(idataPtr, handle);
+    PutHandle(idataPtr, handle);
 
     return TCL_OK;
 }
@@ -425,7 +652,7 @@ RowCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[],
  cleanup:
 
     *foundRowPtr = found ? 1 : 0;
-    CleanupHandle(idataPtr, handle);
+    PutHandle(idataPtr, handle);
 
     return status;
 }
@@ -527,7 +754,7 @@ EvalObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
 
  done:
     idataPtr->depth--;
-    CleanupHandle(idataPtr, handle);
+    PutHandle(idataPtr, handle);
 
     return status;
 }
@@ -609,7 +836,7 @@ CtlObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
         Tcl_WrongNumArgs(interp, 2, objv, "pool ?args?");
         return TCL_ERROR;
     }
-    if ((pool = Dbi_TclGetPool(interp, server, objv[2])) == NULL) {
+    if ((pool = GetPool(idataPtr, objv[2])) == NULL) {
         return TCL_ERROR;
     }
 
@@ -753,7 +980,7 @@ Exec(InterpData *idataPtr, Tcl_Obj *poolObj, Ns_Time *timeoutPtr,
     return TCL_OK;
 
  error:
-    CleanupHandle(idataPtr, handle);
+    PutHandle(idataPtr, handle);
 
     return TCL_ERROR;
 }
@@ -835,163 +1062,6 @@ BindVars(Tcl_Interp *interp, Dbi_Handle *handle, Dbi_Value *values,
     }
 
     return TCL_OK;
-}
-
-
-/*
- *----------------------------------------------------------------------
- *
- * GetPool --
- *
- *      Return a pool using one of 3 methods:
- *
- *        - Look up the pool using the given pool name
- *        - Use the pool of the most recently cached handle
- *        - Use the server default pool
- *
- * Results:
- *      Pointer to pool or NULL if no default pool.
- *
- * Side effects:
- *      The Tcl object may be converted to dbi:pool type, and en error
- *      may be left in the interp if conversion fails.
- *
- *----------------------------------------------------------------------
- */
-
-static Dbi_Pool *
-GetPool(InterpData *idataPtr, Tcl_Obj *poolObj)
-{
-    Dbi_Pool    *pool;
-    const char  *poolType = "dbi:pool";
-
-    if (poolObj == NULL) {
-        if (idataPtr->depth != -1
-                && idataPtr->handles[idataPtr->depth] != NULL) {
-            pool = idataPtr->handles[idataPtr->depth]->pool;
-        } else {
-            pool = Dbi_DefaultPool(idataPtr->server);
-            if (pool == NULL) {
-                Tcl_SetResult(idataPtr->interp,
-                              "no pool specified and no default configured", TCL_STATIC);
-                return NULL;
-            }
-        }
-    } else if (Ns_TclGetOpaqueFromObj(poolObj, poolType, (void **) &pool) != TCL_OK) {
-        pool = Dbi_GetPool(idataPtr->server, Tcl_GetString(poolObj));
-        if (pool == NULL) {
-            Tcl_SetResult(idataPtr->interp,
-                "invalid pool name or pool not available to virtual server", TCL_STATIC);
-            return NULL;
-        }
-        Ns_TclSetOpaqueObj(poolObj, poolType, pool);
-    }
-
-    return pool;
-}
-
-
-/*
- *----------------------------------------------------------------------
- *
- * GetHandle --
- *
- *      Get a handle from the given pool within timeout. Use the handle
- *      cache in InterpData if the pools match.
- *
- * Results:
- *      Pointer to handle or NULL on error.
- *
- * Side effects:
- *      Error message left in interp.
- *
- *----------------------------------------------------------------------
- */
-
-static Dbi_Handle *
-GetHandle(InterpData *idataPtr, Dbi_Pool *pool, Ns_Time *timeoutPtr)
-{
-    Tcl_Interp *interp = idataPtr->interp;
-    Dbi_Handle *handle;
-    Ns_Time     time;
-    int         i;
-
-    /*
-     * First check the handle cache for a handle from the right pool.
-     */
-
-    for (i = idataPtr->depth; i > -1; i--) {
-        handle = idataPtr->handles[i];
-        if (handle != NULL && handle->pool == pool) {
-            return handle;
-        }
-    }
-
-    /*
-     * Make sure the timeout, if given, is an absolute time in
-     * the future and grab a handle from the pool.
-     */
-
-    if (timeoutPtr != NULL) {
-        timeoutPtr = Ns_AbsoluteTime(&time, timeoutPtr);
-    }
-
-    switch (Dbi_GetHandle(pool, timeoutPtr, &handle)) {
-    case NS_OK:
-        return handle;
-        break;
-    case NS_TIMEOUT:
-        Tcl_SetErrorCode(interp, "NS_TIMEOUT", NULL);
-        Tcl_SetResult(interp, "wait for database handle timed out", TCL_STATIC);
-        break;
-    default:
-        Tcl_SetResult(interp, "handle allocation failed", TCL_STATIC);
-        break;
-    }
-    return NULL;
-}
-
-
-/*
- *----------------------------------------------------------------------
- *
- * CleanupHandle --
- *
- *      Flush or return a handle to it's pool, as appropriate.
- *
- * Results:
- *      None.
- *
- * Side effects:
- *      None.
- *
- *----------------------------------------------------------------------
- */
-
-static void
-CleanupHandle(InterpData *idataPtr, Dbi_Handle *handle)
-{
-    int i;
-
-    if (handle != NULL) {
-
-        /*
-         * Search for the handle in the cache and flush.
-         */
-
-        for (i = idataPtr->depth; i > -1; i--) {
-            if (idataPtr->handles[i] == handle) {
-                Dbi_Flush(handle);
-                return;
-            }
-        }
-
-        /*
-         * Return the handle to the system.
-         */
-
-        Dbi_PutHandle(handle);
-    }
 }
 
 

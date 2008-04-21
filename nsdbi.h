@@ -260,7 +260,16 @@ Dbi_LogException(Dbi_Handle *, Ns_LogSeverity severity)
  */
 
 NS_EXTERN Dbi_Pool *
-Dbi_TclGetPool(Tcl_Interp *interp, CONST char *server, Tcl_Obj *poolObj);
+Dbi_TclGetPool(Tcl_Interp *interp, Tcl_Obj *poolObj)
+    NS_GNUC_NONNULL(1);
+
+NS_EXTERN Dbi_Handle *
+Dbi_TclGetHandle(Tcl_Interp *interp, Dbi_Pool *pool, Ns_Time *timeoutPtr)
+    NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
+
+NS_EXTERN void
+Dbi_TclPutHandle(Tcl_Interp *interp, Dbi_Handle *handle)
+    NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
 
 NS_EXTERN void
 Dbi_TclErrorResult(Tcl_Interp *interp, Dbi_Handle *handle);

@@ -16,6 +16,8 @@
 # Inc. Portions created by AOL are Copyright (C) 1999 America Online,
 # Inc. All Rights Reserved.
 #
+# Copyright (C) 2004-2008 Stephen Deasey <sdeasey@gmail.com>
+#
 # Alternatively, the contents of this file may be used under the terms
 # of the GNU General Public License (the "GPL"), in which case the
 # provisions of GPL are applicable instead of those above.  If you wish
@@ -27,7 +29,6 @@
 # version of this file under either the License or the GPL.
 # 
 #
-# $Header$
 
 NAVISERVER  = /usr/local/ns
 NSD         = $(NAVISERVER)/bin/nsd
@@ -35,7 +36,7 @@ NSD         = $(NAVISERVER)/bin/nsd
 MODNAME     = nsdbi
 
 LIB         = nsdbi
-LIBOBJS     = init.o tclcmds.o tclutils.o
+LIBOBJS     = init.o tclcmds.o
 LIBHDRS     = nsdbi.h nsdbidrv.h
 
 MOD         = nsdbitest.so
