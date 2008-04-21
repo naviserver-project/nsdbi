@@ -79,10 +79,8 @@ static int RowCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST o
                   int *rowPtr);
 
 static int Exec(InterpData *idataPtr, Tcl_Obj *poolObj, Ns_Time *timeoutPtr,
-                CONST char *array, CONST char *setid, Tcl_Obj *queryObj, int dml,
+                Tcl_Obj *queryObj, Tcl_Obj *valuesObj, int dml,
                 Dbi_Handle **handlePtrPtr);
-static int BindVars(Tcl_Interp *interp, Dbi_Handle *, Dbi_Value *values,
-                    CONST char *array, CONST char *setid);
 
 static Dbi_Pool *GetPool(InterpData *, Tcl_Obj *poolObj);
 static Dbi_Handle *GetHandle(InterpData *, Dbi_Pool *, Ns_Time *);
@@ -379,6 +377,107 @@ PutHandle(InterpData *idataPtr, Dbi_Handle *handle)
 /*
  *----------------------------------------------------------------------
  *
+ * Dbi_TclBindVariables --
+ *
+ *      Bind values to the variables of a statement, looking at the keys
+ *      of the array or set if given, or local variables otherwise.
+ *
+ * Results:
+ *      TCL_OK or TCL_ERROR.
+ *
+ * Side effects:
+ *      Error message may be left in interp.
+ *
+ *----------------------------------------------------------------------
+ */
+
+int
+Dbi_TclBindVariables(Tcl_Interp *interp, Dbi_Handle *handle,
+                     Dbi_Value *dbValues, Tcl_Obj *tclValues)
+{
+    Ns_Set         *set;
+    Tcl_Obj        *valueObj;
+    CONST char     *key, *data;
+    char           *name;
+    unsigned int    numVars;
+    int             i, length, binary;
+
+    numVars = Dbi_NumVariables(handle);
+    if (numVars == 0) {
+        return TCL_OK;
+    }
+
+    /*
+     * FIXME: This is ugly. Need to eficiently distinguish types.
+     *        Also, handle Tcl 8.5 dicts.
+     */
+
+    name = NULL;
+    set = NULL;
+
+    if (tclValues != NULL) {
+        name = Tcl_GetString(tclValues);
+
+        if (name[0] != '\0'
+            && (name[0] == 'd' || name[0] == 't')
+            && name[1] != '\0'
+            && isdigit(UCHAR(name[1]))
+            && Ns_TclGetSet2(interp, name, &set) != TCL_OK) {
+
+            return TCL_ERROR;
+        }
+    }
+
+    for (i = 0; i < numVars; i++) {
+
+        if (Dbi_VariableName(handle, i, &key) != NS_OK) {
+            Dbi_TclErrorResult(interp, handle);
+            return TCL_ERROR;
+        }
+
+        data = NULL;
+        binary = 0;
+
+        if (set != NULL) {
+            if ((data = Ns_SetGet(set, key)) != NULL) {
+                length = strlen(data);
+            }
+        } else {
+
+            /*
+             * NB: handle both array and variable lookup here.
+             */
+
+            valueObj = Tcl_GetVar2Ex(interp, name ? name : key,
+                                     name ? key : NULL, TCL_LEAVE_ERR_MSG);
+            if (valueObj != NULL) {
+                if (valueObj->typePtr == bytearrayTypePtr) {
+                    data = (char *) Tcl_GetByteArrayFromObj(valueObj, &length);
+                    binary = 1;
+                } else {
+                    data = Tcl_GetStringFromObj(valueObj, &length);
+                }
+            }
+        }
+        if (data == NULL) {
+            Tcl_AddObjErrorInfo(interp, "\ndbi: bind variable not found: ", -1);
+            Tcl_AddObjErrorInfo(interp, key, -1);
+            return TCL_ERROR;
+        }
+
+        dbValues[i].data = length ? data : NULL; /* Coerce the empty string to null. */
+        dbValues[i].length = length;
+        dbValues[i].binary = binary;
+        dbValues[i].colIdx = i;
+    }
+
+    return TCL_OK;
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
  * Dbi_TclErrorResult --
  *
  *      Set the Tcl error from the handle code and message.
@@ -421,16 +520,15 @@ RowsObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
 {
     InterpData   *idataPtr = arg;
     Dbi_Handle   *handle;
-    Tcl_Obj      *resObj, *valueObj, *queryObj, *poolObj = NULL;
+    Tcl_Obj      *resObj, *valueObj, *queryObj;
+    Tcl_Obj      *poolObj = NULL, *valuesObj = NULL;
     Ns_Time      *timeoutPtr = NULL;
-    CONST char   *array = NULL, *setid = NULL;
     int           status;
 
     Ns_ObjvSpec opts[] = {
         {"-pool",      Ns_ObjvObj,    &poolObj,    NULL},
         {"-timeout",   Ns_ObjvTime,   &timeoutPtr, NULL},
-        {"-bindarray", Ns_ObjvString, &array,      NULL},
-        {"-bindset",   Ns_ObjvString, &setid,      NULL},
+        {"-bind",      Ns_ObjvObj,    &valuesObj,  NULL},
         {"--",         Ns_ObjvBreak,  NULL,        NULL},
         {NULL, NULL, NULL, NULL}
     };
@@ -446,7 +544,7 @@ RowsObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
      * Get a handle, prepare, bind, and run the qeuery.
      */
 
-    if (Exec(idataPtr, poolObj, timeoutPtr, array, setid, queryObj, 0,
+    if (Exec(idataPtr, poolObj, timeoutPtr, queryObj, valuesObj, 0,
              &handle) != TCL_OK) {
         return TCL_ERROR;
     }
@@ -493,15 +591,13 @@ DmlObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
 {
     InterpData   *idataPtr = arg;
     Dbi_Handle   *handle;
-    Tcl_Obj      *queryObj, *poolObj = NULL;
+    Tcl_Obj      *queryObj, *poolObj = NULL, *valuesObj = NULL;
     Ns_Time      *timeoutPtr = NULL;
-    CONST char   *array = NULL, *setid = NULL;
 
     Ns_ObjvSpec opts[] = {
         {"-pool",      Ns_ObjvObj,    &poolObj,    NULL},
         {"-timeout",   Ns_ObjvTime,   &timeoutPtr, NULL},
-        {"-bindarray", Ns_ObjvString, &array,      NULL},
-        {"-bindset",   Ns_ObjvString, &setid,      NULL},
+        {"-bind",      Ns_ObjvObj,    &valuesObj,  NULL},
         {"--",         Ns_ObjvBreak,  NULL,        NULL},
         {NULL, NULL, NULL, NULL}
     };
@@ -517,7 +613,7 @@ DmlObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
      * Get a handle, prepare, bind, and run the qeuery.
      */
 
-    if (Exec(idataPtr, poolObj, timeoutPtr, array, setid, queryObj, 1,
+    if (Exec(idataPtr, poolObj, timeoutPtr, queryObj, valuesObj, 1,
              &handle) != TCL_OK) {
         return TCL_ERROR;
     }
@@ -578,16 +674,16 @@ RowCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[],
     Dbi_Handle   *handle;
     Dbi_Value     value;
     unsigned int  colIdx, colMax;
-    Tcl_Obj      *valueObj, *queryObj, *poolObj = NULL;
+    Tcl_Obj      *valueObj, *queryObj;
+    Tcl_Obj      *poolObj = NULL, *valuesObj = NULL;
     Ns_Time      *timeoutPtr = NULL;
-    CONST char   *column, *array = NULL, *setid = NULL;
+    CONST char   *column;
     int           found, end, status;
 
     Ns_ObjvSpec opts[] = {
         {"-pool",      Ns_ObjvObj,    &poolObj,    NULL},
         {"-timeout",   Ns_ObjvTime,   &timeoutPtr, NULL},
-        {"-bindarray", Ns_ObjvString, &array,      NULL},
-        {"-bindset",   Ns_ObjvString, &setid,      NULL},
+        {"-bind",      Ns_ObjvObj,    &valuesObj,  NULL},
         {"--",         Ns_ObjvBreak,  NULL,        NULL},
         {NULL, NULL, NULL, NULL}
     };
@@ -603,7 +699,7 @@ RowCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[],
      * Get handle, then prepare, bind, and run the qeuery.
      */
 
-    if (Exec(idataPtr, poolObj, timeoutPtr, array, setid, queryObj, 0,
+    if (Exec(idataPtr, poolObj, timeoutPtr, queryObj, valuesObj, 0,
              &handle) != TCL_OK) {
         return TCL_ERROR;
     }
@@ -920,13 +1016,13 @@ CtlObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
 
 static int
 Exec(InterpData *idataPtr, Tcl_Obj *poolObj, Ns_Time *timeoutPtr,
-     CONST char *array, CONST char *setid, Tcl_Obj *queryObj, int dml,
+     Tcl_Obj *queryObj, Tcl_Obj *valuesObj, int dml,
      Dbi_Handle **handlePtrPtr)
 {
     Tcl_Interp       *interp = idataPtr->interp;
     Dbi_Pool         *pool;
     Dbi_Handle       *handle;
-    Dbi_Value         values[DBI_MAX_BIND];
+    Dbi_Value         dbValues[DBI_MAX_BIND];
     unsigned int      numCols;
     char             *query;
     int               qlength;
@@ -969,10 +1065,10 @@ Exec(InterpData *idataPtr, Tcl_Obj *poolObj, Ns_Time *timeoutPtr,
      * Bind values to variable as required and execute the statement.
      */
 
-    if (BindVars(interp, handle, values, array, setid) != TCL_OK) {
+    if (Dbi_TclBindVariables(interp, handle, dbValues, valuesObj) != TCL_OK) {
         goto error;
     }
-    if (Dbi_Exec(handle, values) != NS_OK) {
+    if (Dbi_Exec(handle, dbValues) != NS_OK) {
         Dbi_TclErrorResult(interp, handle);
         goto error;
     }
@@ -983,85 +1079,6 @@ Exec(InterpData *idataPtr, Tcl_Obj *poolObj, Ns_Time *timeoutPtr,
     PutHandle(idataPtr, handle);
 
     return TCL_ERROR;
-}
-
-
-/*
- *----------------------------------------------------------------------
- *
- * BindVars --
- *
- *      Bind values to the variables of a statement, looking at the keys
- *      of the array or set if given, or local variables otherwise.
- *
- * Results:
- *      TCL_OK or TCL_ERROR.
- *
- * Side effects:
- *      Error message may be left in interp.
- *
- *----------------------------------------------------------------------
- */
-
-static int
-BindVars(Tcl_Interp *interp, Dbi_Handle *handle, Dbi_Value *values,
-         CONST char *array, CONST char *setid)
-{
-    Ns_Set         *set = NULL;
-    Tcl_Obj        *valueObj;
-    CONST char     *key, *data;
-    unsigned int    numVars;
-    int             i, length, binary;
-
-    if (!(numVars = Dbi_NumVariables(handle))) {
-        return TCL_OK;
-    }
-
-    if (setid != NULL) {
-        if (Ns_TclGetSet2(interp, (char *) setid, &set) != TCL_OK) {
-            return TCL_ERROR;
-        }
-    }
-
-    for (i = 0; i < numVars; i++) {
-
-        if (Dbi_VariableName(handle, i, &key) != NS_OK) {
-            Dbi_TclErrorResult(interp, handle);
-            return TCL_ERROR;
-        }
-
-        data = NULL;
-        binary = 0;
-
-        if (set != NULL) {
-            if ((data = Ns_SetGet(set, key)) != NULL) {
-                length = strlen(data);
-            }
-        } else {
-            valueObj = Tcl_GetVar2Ex(interp, array ? array : key,
-                                     array ? key : NULL, TCL_LEAVE_ERR_MSG);
-            if (valueObj != NULL) {
-                if (valueObj->typePtr == bytearrayTypePtr) {
-                    data = (char *) Tcl_GetByteArrayFromObj(valueObj, &length);
-                    binary = 1;
-                } else {
-                    data = Tcl_GetStringFromObj(valueObj, &length);
-                }
-            }
-        }
-        if (data == NULL) {
-            Tcl_AddObjErrorInfo(interp, "\ndbi: bind variable not found: ", -1);
-            Tcl_AddObjErrorInfo(interp, key, -1);
-            return TCL_ERROR;
-        }
-
-        values[i].data = length ? data : NULL; /* Coerce the empty string to null. */
-        values[i].length = length;
-        values[i].binary = binary;
-        values[i].colIdx = i;
-    }
-
-    return TCL_OK;
 }
 
 

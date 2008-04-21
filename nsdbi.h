@@ -271,6 +271,11 @@ NS_EXTERN void
 Dbi_TclPutHandle(Tcl_Interp *interp, Dbi_Handle *handle)
     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
 
+NS_EXTERN int
+Dbi_TclBindVariables(Tcl_Interp *interp, Dbi_Handle *handle,
+                     Dbi_Value *dbValues, Tcl_Obj *tclValues)
+    NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2) NS_GNUC_NONNULL(3);
+
 NS_EXTERN void
 Dbi_TclErrorResult(Tcl_Interp *interp, Dbi_Handle *handle);
 

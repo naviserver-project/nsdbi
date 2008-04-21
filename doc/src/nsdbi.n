@@ -10,8 +10,7 @@ nsdbi provides an easy to use interface to databases.
 [vset standard_options "\
 [opt [option "-pool [arg poolname]"]] \
 [opt [option "-timeout [arg t]"]] \
-[opt [option "-bindarray [arg arrayname]"]] \
-[opt [option "-bindset [arg setid]"]] \
+[opt [option "-bind [arg array|set]"]] \
 [opt [arg --]]"]
 
 
@@ -44,11 +43,12 @@ row. If no rows are returned the result is the empty string.
 
 [call [cmd dbi_dml] [vset standard_options] [arg query]]
 
-Execute a [term DML] or [term DDL] query, i.e. [term insert], [term update],
-[term delete] etc.  The result will be the number of rows affected by the
-query, for example the number of rows updated during an [term update] query.
+Execute a [term DML] query: [term insert], [term update],
+[term delete]; or [term DDL] query: [term "create table"] etc.  The result
+will be the number of rows affected by the query, for example the number
+of rows updated during an [term update] query.
 
-If the query is not DML or DDL, an error will be thrown.
+If the query is not DML or DDL, an error will be thrown (the query is not run).
 
 
 
@@ -239,12 +239,16 @@ If a handle does not become available during the timeout period a Tcl error
 is thrown with the NS_TIMEOUT...
 
 
-[opt_def -bindarray [arg arrayname]]
-Query bind variables will be searched for in this array.
+[opt_def -bind [arg array|set]]
+Specifies an array or ns_set which will be used to bind values to any
+variables in a query. The names of the query variables must match the keys
+in the array or set. The array or set must contain a key for each of the
+variables in the query.
 
-[opt_def -bindset [arg setid]]
-Values for bind variables specified in the [arg query] will be searched for
-in this Ns_Set.
+[para]
+If [option -bind] is not specified and the query contains variables, the
+command will look for Tcl variables of the same name in the current stack
+level. There must be one Tcl variable for each query variable.
 
 [list_end]
 
@@ -255,8 +259,26 @@ in this Ns_Set.
 
 
 [arg_def string query]
-A query containing database specific SQL and nsdbi [term {bind variable}]
-notation.
+A query containing database specific SQL. The query may include
+[term "bind variables"] of the form :variable - a name preceded by a single
+colon. Do not quote bind variables. Always use bind variables in preference to
+substituting Tcl variables into the query string.
+
+[example_begin]
+set x 1
+[cmd dbi_1row] {select column from table where key = :x}
+[example_end]
+
+Bind variables automatically handle binary values. Simply pass a Tcl
+[term "byte array"] type object and the raw bytes will be passed
+directly to the database. All other types must be in a string representation
+understood by the underlying database.
+
+[para]
+If a bind variable is the empty string "" then a [term NULL] is passed
+to the database. Simillarly, NULLs in result sets become the empty
+string.
+
 
 [arg_def string formatString]
 A format specification as used by the Tcl [cmd format] command.
@@ -370,6 +392,19 @@ set html [lb][cmd dbi_format] {
     <dd>%s</dd>
 }[rb]
 [example_end]
+
+
+
+The following example shows how to bind a Tcl variable in a query and also
+how to change the name of the result variable, which in this case is an array.
+
+[example_begin]
+set a 1
+[cmd dbi_1row] {select foo as 'array(foo)' from table where a = :a}
+ns_log notice "foo: $array(foo)"
+[example_end]
+
+
 
 
 [see_also nsdb format]

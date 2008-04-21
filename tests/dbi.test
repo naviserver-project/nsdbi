@@ -357,18 +357,18 @@ test binary-1 {binary variables and result values} -body {
 test bindarray-1 {bind array vars} -body {
     set a(x) X
     set a(y) Y
-    dbi_rows -bindarray a -- {ROWS 2 1 :x :y}
+    dbi_rows -bind a -- {ROWS 2 1 :x :y}
 } -cleanup {
     unset -nocomplain a
 } -result {{X Y {0:x 1:y}} v}
 
-test bindarray-2 {bind missing array} -body {
-    dbi_rows -bindarray a -- {ROWS 2 1 :x}
+test bindarray-2 {bind missing value} -body {
+    dbi_rows -bind a -- {ROWS 2 1 :x}
 } -returnCodes error -result {can't read "a(x)": no such variable}
 
 test bindarray-3 {bind non-array} -body {
     set a b
-    dbi_rows -bindarray a -- {ROWS 2 1 :x}
+    dbi_rows -bind a -- {ROWS 2 1 :x}
 } -returnCodes error -result {can't read "a(x)": variable isn't array}
 
 
@@ -377,14 +377,10 @@ test bindset-1 {bind ns_set} -body {
     set s [ns_set create]
     ns_set put $s x X
     ns_set put $s y Y
-    dbi_rows -bindset $s -- {ROWS 2 1 :x :y}
+    dbi_rows -bind $s -- {ROWS 2 1 :x :y}
 } -cleanup {
     ns_set free $s
 } -result {{X Y {0:x 1:y}} v}
-
-test bindset-2 {bind missing set} -body {
-    dbi_rows -bindset s -- {ROWS 2 1 :x}
-} -returnCodes error -result {no such set: s}
 
 
 
