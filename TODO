@@ -1,65 +1,16 @@
 
-*) Make sure results are utf8 encoded. Contract is: drivers always return data
-   as utf-8 strings, no matter what the db uses internaly.
-
-   Other rules:
-     date format (ISO?)
-     timezone (UTC?)
-     autocommit on/off?
+* TODO
 
 
-*) How to send/recieve binary data between database? Could check bound
-   variables type: if bytearray, use Tcl_GetByteArray* instead of
-   Tcl_GetString*. But what about data coming back? Maybe an extra switch:
-
-     # The 2nd and 3rd columns are binary.
-     dbi_rows -binary {1 2} {select a, b, c from x}
-
-   Will need driver support.
-
-
-*) A standard scheme for common database errors such as 'duplicate row' when
+** A standard scheme for common database errors such as 'duplicate row' when
    inserting a new row with a primary key which is already taken. Turn these
    into exceptions so that Tcl code can catch them.
 
-
-*) How to pass NULLs to the database?
-
-     set x [dbi null]
-     dbi_dml {update ... :x}
+   Maybe just bubble up 6 char SQL error code and hope all dbs do something
+   sane.  Need to checlk.
 
 
-*) Handle caching is mostly transparent, but requires some ugliness to auto
-   release handles before conn IO. A cleaner, although less transparent way to
-   handle this might be:
-
-     dbi_withhandle -pool x {
-         dbi 1row {query...}
-         dbi 1row {query...}
-     }
-
-
-*) Do we also need to handle transactions in Tcl code?
-
-     dbi_transaction -pool x {
-         dbi ...
-         dbi ...
-     }
-
-   If it's not absolutely necessary it would be nice to skip this. Is it better
-   to compose reuseable chunks of SQL in Tcl, or to use the db, views etc.?
-
-
-*) Result assertions don't roll back transactions. e.g.:
-
-     dbi_rows {update ...}
-
-   We were expecting rows, but got a DML result because of a bad query. A Tcl
-   error will be thrown, but the DML is not rolled back. This would require
-   opening and closing a transaction for every query. Is this slow?
-
-
-*) Result caching: Caching the results from a db query is easy, but flushing
+** Result caching: Caching the results from a db query is easy, but flushing
    is complicated. You often want to flush a whole class of cached results
    because they depend upon the values in some other table which was just
    updated. Perhaps results can be cached with multiple keys:
@@ -73,8 +24,12 @@
      # Flush every 'it'.
      dbi_flush -cachekey it
 
+   Suspect the right thing to do here is add multi-key support to standard
+   cache commands as it has wide applicability. Probably also better to
+   
 
-*) Limits for pools?  Set max handles, default pool etc. per urlspecific
+
+** Limits for pools?  Set max handles, default pool etc. per urlspecific
    data. So: dbi commands run from pages under /foo/bar would by default get a
    handle from pool x if none specified.  If there are 6 concurrent pages
    running under /foo/bar and there are 10 handles in pool x but the limit
@@ -85,12 +40,21 @@
    user data into two databases: user names a-m -> pool1, user names n-z pool2
    etc.
 
+   Like ns_limits.
 
-*) Add Url2Pool callbacks (See url2file) to determine which handle to use
+
+** Add Url2Pool callbacks (See url2file) to determine which handle to use
    when?  e.g. round-robin requests between 3 databases?
 
 
-*) Add higher level Tcl commands 'update', 'insert' etc.
+** Column meta-data?
+
+     set rows [dbi_rows -columns columns {select a, b, c from ...}]
+     puts $columns
+     {a b c}
+
+
+** Add higher level Tcl commands 'update', 'insert' etc.
 
      set a(x) 1; set a(y) 2; set a(z) 3
 
@@ -121,7 +85,7 @@
      dbi_insertorupdate tablex $a
 
 
-*) Predefined schema queries for drivers. i.e. you want to know which tables
+** Predefined schema queries for drivers. i.e. you want to know which tables
    are defined, or how many columns a table has.  Drivers supply a string of
    SQL which returns the correct answer. Can overide in config file for weird
    db setups.
@@ -130,36 +94,17 @@
          dbi_columns $table
      }
 
-
-*) Dynamically change pool config.
-
-     dbi_pool maxconnections
-     5                           ;# current handles
-     dbi_pool maxconnections 10
-     5                           ;# old handles
-     dbi_pool maxconnection
-     10                          ;# current handles
+   Probably not going to do this. Just query the SQL standard
+   information_schema, or simulate it with views.
 
 
-*) Transparent support for various keyed data structures: sets, arrays,
-   TclX keyed lists, Tcl8.5 dicts:
-
-     # Figure out what $x is and do the right thing.
-     dbi_rows -bind $x {query ...}
-
-
-*) Array opperations (Oracle array DML etc.) with native driver support?
+** Array opperations (Oracle array DML etc.) with native driver support?
 
      # 3 inserts in single transation, efficiently:
      dbi_dml {insert into tablex (x) values (:x)} a b c
 
 
-*) Does it make sense to extend the C API with new features when there are
-   already so many databse C APIs out there? Perhaps we should just use one of
-   them?
-
-
-*) Asynchronous API. Send a query to the db, initiate an HTTP request to some
+** Asynchronous API. Send a query to the db, initiate an HTTP request to some
    outside service, submit an ns_job: *concurrently*.  Wait for all the
    results to come back.
 
@@ -170,11 +115,18 @@
 
    The hard part is coming up with an API which is actually workable.
 
+   Problems: postgres supports asynchronous queries but mysql and sqlite do
+   not. Could write own implementation of mysql protocol. Could simulate
+   with threads. Could have optional support for asynch dbs.
+
+
 ----
 
-Performance:
 
-2007-08-17
+* Performance Notes
+
+
+** 2007-08-17
 
 % time {dbi_format {ROWS 8 8} {%s %s %s %s %s %s %s %s}} 100000
 65.38317 microseconds per iteration
