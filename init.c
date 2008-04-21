@@ -271,7 +271,9 @@ Dbi_LibInit(void)
         Nsd_LibInit();
         Tcl_InitHashTable(&serversTable, TCL_STRING_KEYS);
         Ns_TlsAlloc(&tls, FreeThreadHandles);
+
         Ns_RegisterProcInfo(ScheduledPoolCheck, "dbi:idlecheck", PoolCheckArgProc);
+        Ns_RegisterProcInfo(DbiInitInterp, "dbi:initinterp", NULL);
 
         set = Ns_ConfigGetSection("ns/servers");
         for (i = 0; i < Ns_SetSize(set); i++) {
