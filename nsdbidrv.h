@@ -77,11 +77,12 @@ typedef enum {
     Dbi_OpenProcId = 1,
     Dbi_CloseProcId,
     Dbi_ConnectedProcId,
-    Dbi_BindVarProcId,
     Dbi_PrepareProcId,
     Dbi_PrepareCloseProcId,
+    Dbi_BindVarProcId,
     Dbi_ExecProcId,
-    Dbi_NextValueProcId,
+    Dbi_NextRowProcId,
+    Dbi_ColumnValueProcId,
     Dbi_ColumnNameProcId,
     Dbi_TransactionProcId,
     Dbi_FlushProcId,
@@ -135,14 +136,18 @@ Dbi_ExecProc(Dbi_Handle *, Dbi_Statement *,
     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
 
 typedef int
-Dbi_NextValueProc(Dbi_Handle *, Dbi_Statement *,
-                  Dbi_Value *value, int *endPtr)
-    NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2)
-    NS_GNUC_NONNULL(3) NS_GNUC_NONNULL(4);
+Dbi_NextRowProc(Dbi_Handle *, Dbi_Statement *,
+                int *endPtr)
+    NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2) NS_GNUC_NONNULL(3);
 
 typedef int
-Dbi_ColumnNameProc(Dbi_Handle *, Dbi_Statement *,
-                   unsigned int index, CONST char **columnPtr)
+Dbi_ColumnValueProc(Dbi_Handle *, Dbi_Statement *, unsigned int index,
+                    Dbi_Value *value)
+    NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2) NS_GNUC_NONNULL(4);
+
+typedef int
+Dbi_ColumnNameProc(Dbi_Handle *, Dbi_Statement *, unsigned int index,
+                   CONST char **columnPtr)
     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2) NS_GNUC_NONNULL(4);
 
 typedef int

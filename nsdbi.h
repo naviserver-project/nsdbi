@@ -87,6 +87,7 @@ typedef struct _Dbi_Pool *Dbi_Pool;
 
 typedef struct Dbi_Handle {
     Dbi_Pool           *pool;       /* The pool this handle belongs to. */
+    unsigned int        rowIdx;     /* The current row of the result set. */
     ClientData          driverData; /* Driver private handle context. */
 } Dbi_Handle;
 
@@ -98,8 +99,6 @@ typedef struct Dbi_Value {
     CONST char   *data;     /* NULL for null SQL values. */
     size_t        length;   /* Length of data in bytes. */
     int           binary;   /* 1 if data is binary, utf8 otherwise. */
-    unsigned int  colIdx;   /* The column this value belongs to. */
-    unsigned int  rowIdx;   /* The row this value belongs to. */
 } Dbi_Value;
 
 
@@ -176,8 +175,13 @@ Dbi_ExecDirect(Dbi_Handle *, CONST char *query)
     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
 
 NS_EXTERN int
-Dbi_NextValue(Dbi_Handle *, Dbi_Value *value, int *donePtr)
-    NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2) NS_GNUC_NONNULL(3);
+Dbi_NextRow(Dbi_Handle *, int *endPtr)
+    NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
+
+NS_EXTERN int
+Dbi_ColumnValue(Dbi_Handle *, unsigned int index,
+                Dbi_Value *value)
+    NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(3);
 
 NS_EXTERN void
 Dbi_Flush(Dbi_Handle *)

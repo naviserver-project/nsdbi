@@ -86,7 +86,9 @@ static Dbi_Pool *GetPool(InterpData *, Tcl_Obj *poolObj);
 static Dbi_Handle *GetHandle(InterpData *, Dbi_Pool *, Ns_Time *);
 static void PutHandle(InterpData *idataPtr, Dbi_Handle *handle);
 
-static int NextValue(Tcl_Interp *interp, Dbi_Handle *handle, Tcl_Obj **valueObjPtr, unsigned int *colIdxPtr);
+static int NextRow(Tcl_Interp *interp, Dbi_Handle *handle, int *endPtr);
+static int ColumnValue(Tcl_Interp *interp, Dbi_Handle *handle, unsigned int index,
+                       Tcl_Obj **valueObjPtr);
 
 
 /*
@@ -399,8 +401,8 @@ Dbi_TclBindVariables(Tcl_Interp *interp, Dbi_Handle *handle,
     Tcl_Obj        *valueObj;
     CONST char     *key, *data;
     char           *name;
-    unsigned int    numVars;
-    int             i, length, binary;
+    unsigned int    numVars, i;
+    int             length, binary;
 
     numVars = Dbi_NumVariables(handle);
     if (numVars == 0) {
@@ -468,7 +470,6 @@ Dbi_TclBindVariables(Tcl_Interp *interp, Dbi_Handle *handle,
         dbValues[i].data = length ? data : NULL; /* Coerce the empty string to null. */
         dbValues[i].length = length;
         dbValues[i].binary = binary;
-        dbValues[i].colIdx = i;
     }
 
     return TCL_OK;
@@ -520,10 +521,11 @@ RowsObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
 {
     InterpData   *idataPtr = arg;
     Dbi_Handle   *handle;
+    unsigned int  colIdx, numCols;
     Tcl_Obj      *resObj, *valueObj, *queryObj;
     Tcl_Obj      *poolObj = NULL, *valuesObj = NULL;
     Ns_Time      *timeoutPtr = NULL;
-    int           status;
+    int           end, status;
 
     Ns_ObjvSpec opts[] = {
         {"-pool",      Ns_ObjvObj,    &poolObj,    NULL},
@@ -554,16 +556,24 @@ RowsObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
      */
 
     resObj = Tcl_GetObjResult(interp);
+    numCols = Dbi_NumColumns(handle);
 
-    while ((status = NextValue(interp, handle, &valueObj, NULL)) == TCL_OK
-               && valueObj != NULL) {
-        if (Tcl_ListObjAppendElement(interp, resObj, valueObj) != TCL_OK) {
-            Tcl_DecrRefCount(valueObj);
-            status = TCL_ERROR;
-            break;
+    while (NextRow(interp, handle, &end) == TCL_OK && !end) {
+
+        for (colIdx = 0; colIdx < numCols; colIdx ++) {
+            if ((status = ColumnValue(interp, handle, colIdx, &valueObj))
+                    != TCL_OK) {
+                goto done;
+            }
+            if ((status = Tcl_ListObjAppendElement(interp, resObj, valueObj))
+                    != TCL_OK) {
+                Tcl_DecrRefCount(valueObj);
+                goto done;
+            }
         }
     }
 
+ done:
     PutHandle(idataPtr, handle);
 
     return status;
@@ -672,8 +682,7 @@ RowCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[],
 {
     InterpData   *idataPtr = arg;
     Dbi_Handle   *handle;
-    Dbi_Value     value;
-    unsigned int  colIdx, colMax;
+    unsigned int  colIdx, numCols;
     Tcl_Obj      *valueObj, *queryObj;
     Tcl_Obj      *poolObj = NULL, *valuesObj = NULL;
     Ns_Time      *timeoutPtr = NULL;
@@ -709,12 +718,21 @@ RowCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[],
      * and set the values of that row as variables in the callers frame..
      */
 
-    colMax = Dbi_NumColumns(handle) -1;
-    found  = 0;
+    status = TCL_ERROR;
+    found = 0;
 
-    do {
-        if ((status = NextValue(interp, handle, &valueObj, &colIdx)) != TCL_OK
-                || valueObj == NULL) {
+    if (NextRow(interp, handle, &end) != TCL_OK) {
+        goto cleanup;
+    }
+    if (end) {
+        goto done;
+    }
+
+    found = 1;
+    numCols = Dbi_NumColumns(handle);
+
+    for (colIdx = 0; colIdx < numCols; colIdx++) {
+        if (ColumnValue(interp, handle, colIdx, &valueObj) != TCL_OK) {
             goto cleanup;
         }
         if (Dbi_ColumnName(handle, colIdx, &column) != NS_OK) {
@@ -726,16 +744,13 @@ RowCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[],
             Tcl_DecrRefCount(valueObj);
             goto cleanup;
         }
-        found++;
-
-    } while (colIdx < colMax);
+    }
 
     /*
-     * Expect end=1 when we attempt to fetch from the next row.
+     * Expect end == 1 when we attempt to fetch from row 2.
      */
 
-    if (Dbi_NextValue(handle, &value, &end) != NS_OK) {
-        Dbi_TclErrorResult(interp, handle);
+    if (NextRow(interp, handle, &end) != TCL_OK) {
         goto cleanup;
     }
     if (!end) {
@@ -743,11 +758,12 @@ RowCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[],
         goto cleanup;
     }
 
+ done:
     status = TCL_OK;
 
  cleanup:
 
-    *foundRowPtr = found ? 1 : 0;
+    *foundRowPtr = found;
     PutHandle(idataPtr, handle);
 
     return status;
@@ -1081,47 +1097,68 @@ Exec(InterpData *idataPtr, Tcl_Obj *poolObj, Ns_Time *timeoutPtr,
     return TCL_ERROR;
 }
 
+
 
 /*
  *----------------------------------------------------------------------
  *
- * NextValue --
+ * NextRow --
  *
- *      Get the next value from a pending result set, unless all values
- *      have already been retrieved in which case NULL is returned as
- *      the value.
+ *      Fetch the next row of the result set.
  *
  * Results:
- *      NS_OK/NS_ERROR.
+ *      TCL_OK/TCL_ERROR. *endPtr set to 0/1.
  *
  * Side effects:
- *      See Dbi_NextValue.
+ *      None.
  *
  *----------------------------------------------------------------------
  */
 
 static int
-NextValue(Tcl_Interp *interp, Dbi_Handle *handle, Tcl_Obj **valueObjPtr,
-          unsigned int *colIdxPtr)
+NextRow(Tcl_Interp *interp, Dbi_Handle *handle, int *endPtr)
 {
-    Dbi_Value value;
-    int       end;
-
-    if (Dbi_NextValue(handle, &value, &end) != NS_OK) {
+    if (Dbi_NextRow(handle, endPtr) != NS_OK) {
         Dbi_TclErrorResult(interp, handle);
         return TCL_ERROR;
     }
-    if (end) {
-        *valueObjPtr = NULL;
-    } else if (value.binary) {
-        *valueObjPtr = Tcl_NewByteArrayObj((unsigned char *) value.data,
-                                           value.length);
+    return TCL_OK;
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * ColumnValue --
+ *
+ *      Get the value at the given column index as a new Tcl object.
+ *
+ * Results:
+ *      TCL_OK/TCL_ERROR.
+ *
+ * Side effects:
+ *      None.
+ *
+ *----------------------------------------------------------------------
+ */
+
+static int
+ColumnValue(Tcl_Interp *interp, Dbi_Handle *handle, unsigned int index,
+            Tcl_Obj **valueObjPtr)
+{
+    Dbi_Value  value;
+    Tcl_Obj   *objPtr;
+
+    if (Dbi_ColumnValue(handle, index, &value) != NS_OK) {
+        Dbi_TclErrorResult(interp, handle);
+        return TCL_ERROR;
+    }
+    if (value.binary) {
+        objPtr = Tcl_NewByteArrayObj((unsigned char *) value.data, value.length);
     } else {
-        *valueObjPtr = Tcl_NewStringObj(value.data, value.length);
+        objPtr = Tcl_NewStringObj(value.data, value.length);
     }
-    if (colIdxPtr != NULL) {
-        *colIdxPtr = value.colIdx;
-    }
-    
+    *valueObjPtr = objPtr;
+
     return TCL_OK;
 }

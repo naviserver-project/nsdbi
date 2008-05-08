@@ -43,8 +43,8 @@ NS_EXPORT int Ns_ModuleVersion = 1;
 
 
 /*
- * The following struct manages a per-handle connection to our
- * imaginary dtabase and a single result.
+ * The following structure manages a per-handle connection to our
+ * imaginary dtabase, and a single result.
  */
 
 typedef struct Connection {
@@ -54,6 +54,9 @@ typedef struct Connection {
 
     unsigned int  numCols;        /* Total number of columns in statement/result. */
     unsigned int  numRows;        /* Total number of rows to return in result. */
+
+    int           exec;           /* Exec was called. */
+    int           nextrow;        /* NextRow was called. */
 
     char          cmd[64];        /* Buffer for test commands. */
     char          columnBuf[32];  /* Scratch buffer for column names. */
@@ -70,11 +73,12 @@ typedef struct Connection {
 static Dbi_OpenProc         Open;
 static Dbi_CloseProc        Close;
 static Dbi_ConnectedProc    Connected;
-static Dbi_BindVarProc      Bind;
 static Dbi_PrepareProc      Prepare;
 static Dbi_PrepareCloseProc PrepareClose;
+static Dbi_BindVarProc      Bind;
 static Dbi_ExecProc         Exec;
-static Dbi_NextValueProc    NextValue;
+static Dbi_NextRowProc      NextRow;
+static Dbi_ColumnValueProc  ColumnValue;
 static Dbi_ColumnNameProc   ColumnName;
 static Dbi_TransactionProc  Transaction;
 static Dbi_FlushProc        Flush;
@@ -93,7 +97,8 @@ static CONST Dbi_DriverProc procs[] = {
     {Dbi_PrepareProcId,      Prepare},
     {Dbi_PrepareCloseProcId, PrepareClose},
     {Dbi_ExecProcId,         Exec},
-    {Dbi_NextValueProcId,    NextValue},
+    {Dbi_NextRowProcId,      NextRow},
+    {Dbi_ColumnValueProcId,  ColumnValue},
     {Dbi_ColumnNameProcId,   ColumnName},
     {Dbi_TransactionProcId,  Transaction},
     {Dbi_FlushProcId,        Flush},
@@ -339,7 +344,7 @@ Prepare(Dbi_Handle *handle, Dbi_Statement *stmt,
     conn->numCols = numCols;
     conn->numRows = numRows;
 
-    if (rest) {
+    if (rest && rest < stmt->length) {
         conn->rest = ns_strdup(stmt->sql + rest);
     }
 
@@ -354,7 +359,7 @@ Prepare(Dbi_Handle *handle, Dbi_Statement *stmt,
 
     /*
      * Only need to report the number of bind variables we found
-     * when first prepareing a statement.
+     * when first preparing a statement.
      */
 
     if (stmt->nqueries == 0) {
@@ -394,8 +399,8 @@ PrepareClose(Dbi_Handle *handle, Dbi_Statement *stmt)
     assert(conn);
     assert(STREQ(conn->configData, "driver config data"));
 
-    assert(stmt->driverData == (void *) NS_TRUE);
-
+    assert((stmt->nqueries <= 1 && !stmt->driverData)
+           || (stmt->nqueries > 1 && stmt->driverData));
 
     stmt->driverData = NULL;
 }
@@ -429,8 +434,8 @@ Exec(Dbi_Handle *handle, Dbi_Statement *stmt,
     assert(numValues <= DBI_MAX_BIND);
     assert(numValues == 0 || (numValues > 0 && values != NULL));
 
-     assert((stmt->nqueries == 0 && !stmt->driverData)
-           || stmt->nqueries > 0);
+    assert((stmt->nqueries <= 1 && !stmt->driverData)
+           || (stmt->nqueries > 1 && stmt->driverData));
 
     assert(conn);
     assert(STREQ(conn->configData, "driver config data"));
@@ -463,6 +468,8 @@ Exec(Dbi_Handle *handle, Dbi_Statement *stmt,
                 Tcl_DStringAppendElement(&conn->ds, values[i].data);
             }
         }
+        conn->exec = 1;
+
         return NS_OK;
 
     } else if (STREQ(conn->cmd, "BINARY")) {
@@ -482,6 +489,8 @@ Exec(Dbi_Handle *handle, Dbi_Statement *stmt,
                 }
             }
         }
+        conn->exec = 1;
+
         return NS_OK;
 
     } else if (STREQ(conn->cmd, "SLEEP")) {
@@ -489,6 +498,7 @@ Exec(Dbi_Handle *handle, Dbi_Statement *stmt,
         /* For testing handle timeouts. */
 
         sleep(conn->numCols);
+        conn->exec = 1;
         return NS_OK;
     
     } else if (STREQ(conn->cmd, "EXECERR")) {
@@ -507,8 +517,9 @@ Exec(Dbi_Handle *handle, Dbi_Statement *stmt,
 
     } else if (STREQ(conn->cmd, "NEXTERR")) {
 
-        /* Pass through to NextValue . */
+        /* Pass through to NextRow . */
 
+        conn->exec = 1;
         return NS_OK;
 
     }
@@ -524,9 +535,64 @@ Exec(Dbi_Handle *handle, Dbi_Statement *stmt,
 /*
  *----------------------------------------------------------------------
  *
- * NextValue --
+ * NextRow --
  *
- *      Fetch the next value from the pending result set of the handle.
+ *      Fetch the next row from the pending result set of the handle.
+ *
+ * Results:
+ *      NS_OK or NS_ERROR.
+ *
+ * Side effects:
+ *      None.
+ *
+ *----------------------------------------------------------------------
+ */
+
+static int
+NextRow(Dbi_Handle *handle, Dbi_Statement *stmt, int *endPtr)
+{
+    Connection *conn = handle->driverData;
+
+    assert(stmt);
+    assert(endPtr);
+
+    assert(conn);
+    assert(STREQ(conn->configData, "driver config data"));
+    assert(conn->connected == NS_TRUE);
+
+    assert(conn->exec == 1);
+
+    /*
+     * Simulate a NextRow and connection failure.
+     */
+
+    if (STREQ(conn->cmd, "NEXTERR")) {
+        conn->connected = NS_FALSE;
+        return NS_ERROR;
+    }
+
+    conn->nextrow = 1;
+
+    /*
+     * Check to see if we've already returned the last row.
+     */
+
+    assert(handle->rowIdx <= conn->numRows);
+
+    if (handle->rowIdx == conn->numRows) {
+        *endPtr = 1;
+    }
+
+    return NS_OK;
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * ColumnValue --
+ *
+ *      Fetch the indicated value from the current row.
  *
  *      For testing, all values are "v", except the first which is
  *      the original SQL statement with driver specific bind
@@ -542,37 +608,23 @@ Exec(Dbi_Handle *handle, Dbi_Statement *stmt,
  */
 
 static int
-NextValue(Dbi_Handle *handle, Dbi_Statement *stmt, Dbi_Value *value, int *endPtr)
+ColumnValue(Dbi_Handle *handle, Dbi_Statement *stmt, unsigned int index,
+            Dbi_Value *value)
 {
     Connection        *conn = handle->driverData;
     static CONST char  binary[8];
 
     assert(stmt);
     assert(value);
-    assert(endPtr);
 
     assert(conn);
     assert(STREQ(conn->configData, "driver config data"));
     assert(conn->connected == NS_TRUE);
 
+    assert(conn->exec == 1);
+    assert(conn->nextrow == 1);
 
-    /*
-     * Simulate a NextValue and connection failure.
-     */
-
-    if (STREQ(conn->cmd, "NEXTERR")) {
-        conn->connected = NS_FALSE;
-        return NS_ERROR;
-    }
-
-    /*
-     * Check to see if we've already returned the last value.
-     */
-
-    if (value->rowIdx >= conn->numRows) {
-        *endPtr = 1;
-        return NS_OK;
-    }
+    assert(index < conn->numCols);
 
     /*
      * Return the original SQL statement as the first value.
@@ -580,23 +632,26 @@ NextValue(Dbi_Handle *handle, Dbi_Statement *stmt, Dbi_Value *value, int *endPtr
      * correctly.
      */
 
-    if (value->colIdx == 0 && value->rowIdx == 0) {
-        if (conn->rest) {
-            Tcl_DStringAppendElement(&conn->ds, conn->rest);
-        }
+    if (handle->rowIdx == 0 && index == 0
+        && conn->rest) {
+
+        Tcl_DStringAppendElement(&conn->ds, conn->rest);
         value->data   = Ns_DStringValue(&conn->ds);
         value->length = Ns_DStringLength(&conn->ds);
         value->binary = 0;
+
+    } else if (STREQ(conn->cmd, "BINARY")) {
+        value->data   = binary;
+        value->length = sizeof(binary);
+        value->binary = 1;
+
     } else {
-        if (STREQ(conn->cmd, "BINARY")) {
-            value->data   = binary;
-            value->length = sizeof(binary);
-            value->binary = 1;
-        } else {
-            value->data   = "v";
-            value->length = 1;
-            value->binary = 0;
-        }
+        Ns_DStringTrunc(&conn->ds, 0);
+        Ns_DStringPrintf(&conn->ds, "%u.%u",
+                         handle->rowIdx, index);
+        value->data   = Ns_DStringValue(&conn->ds);
+        value->length = Ns_DStringLength(&conn->ds);
+        value->binary = 0;
     }
 
     return NS_OK;
@@ -634,7 +689,6 @@ ColumnName(Dbi_Handle *handle, Dbi_Statement *stmt,
     assert(STREQ(conn->configData, "driver config data"));
     assert(conn->connected == NS_TRUE);
     /* assert(Ns_DStringLength(&conn->ds) > 0); */
-
 
     sprintf(conn->columnBuf, "%u", index);
     *columnPtr = conn->columnBuf;
@@ -696,7 +750,9 @@ Flush(Dbi_Handle *handle, Dbi_Statement *stmt)
 
 
     Ns_DStringTrunc(&conn->ds, 0);
+    conn->exec = 0;
     conn->numCols = conn->numRows = 0;
+    conn->exec = conn->nextrow = 0;
 
     return NS_OK;
 }
