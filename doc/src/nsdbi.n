@@ -19,11 +19,36 @@ nsdbi provides an easy to use interface to databases.
 
 
 
-[call [cmd dbi_rows] [vset standard_options] [arg query]]
+[call [cmd dbi_rows] \
+      [vset standard_options] \
+      [arg query] \
+      [opt [arg template]] ]
 
-Execute a query which is expected to return zero or more rows. If no rows are
-returned then the result is the empty string. Otherwise a single, flat list
-of values is returned. [emph Note]: Column names are not included.
+Execute a [arg query] which is expected to return zero or more rows. If no
+rows are returned then the result is the empty string. Otherwise a
+single, flat list of values is returned.
+
+[example_begin]
+foreach {first last} [lb][cmd dbi_rows] {select first, last from peeps}[rb] {
+    append result "<li>$first $last</li>\n"
+}
+<li>Dirty Harry</li>
+<li>Jolly Roger</li>
+[example_end]
+
+If [arg template] is given then for each row returned by the query, template
+variables are substituted for the values of the corresponding columns. The
+templated rows are concatenated and returned as a string.
+
+[example_begin]
+[cmd dbi_rows] {select first, last from peeps} {<li>$first $last</li>\n}
+<li>Dirty Harry</li>
+<li>Jolly Roger</li>
+[example_end]
+
+If a template variable name does not correspond to a column name in the result
+then a Tcl variable by the same name is substituted. If no such variable exists,
+an error is raised.
 
 
 
@@ -49,21 +74,6 @@ will be the number of rows affected by the query, for example the number
 of rows updated during an [term update] query.
 
 If the query is not DML or DDL, an error will be thrown (the query is not run).
-
-
-
-[call [cmd dbi_format] [vset standard_options] [arg query] [arg formatString]]
-
-Execute a query which is expected to return zero or more rows. For each row
-that is returned, the Tcl [arg formatString] is substituted using the value
-of each column.  The column values are available beginning at index position
-0.  The formatted rows are concatenated together and become the final result.
-If no rows are returned then the result is the empty string.
-
-[para]
-Although not as felxible as the [cmd dbi_rows] command, the final result is
-constructed row by row without first building a list containing the entire
-result-set. This may require less memory and run slightly faster.
 
 
 
@@ -350,13 +360,8 @@ password etc. to connect to the database.
 
 [section EXAMPLES]
 
-Select all rows from a table using the default pool:
 
-[example_begin]
-[cmd dbi_rows] {select a, b from table}
-[example_end]
-
-Select rows from a table using pool x. Only rows in which column [term a]
+Select rows from a table using pool [arg x]. Only rows in which column [arg a]
 matches the bind variable will be returned:
 
 [example_begin]
@@ -365,31 +370,6 @@ set rows [lb][cmd dbi_rows] [option "-pool [arg x]"] {
     select a, b
     from table
     where a = :a
-}[rb]
-[example_end]
-
-Use the Tcl [term foreach] command to loop through each row of a result set
-and build up a chunk of HTML:
-
-[example_begin]
-foreach {a b} [lb][cmd dbi_rows] {
-    select a, b
-    from table
-}[rb] {
-    append html "<dt>$a</dt>"
-    append html "<dd>$b</dd>"
-}
-[example_end]
-
-Use the [cmd dbi_format] command to build up a chunk of HTML:
-
-[example_begin]
-set html [lb][cmd dbi_format] {
-    select a, b
-    from table
-} {
-    <dt>%s</dt>
-    <dd>%s</dd>
 }[rb]
 [example_end]
 
@@ -407,7 +387,7 @@ ns_log notice "foo: $array(foo)"
 
 
 
-[see_also nsdb format]
+[see_also nsdb subst]
 [keywords NaviServer database sql query]
 
 [manpage_end]

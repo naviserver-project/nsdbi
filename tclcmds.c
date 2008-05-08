@@ -44,6 +44,10 @@ NS_RCSID("@(#) $Header$");
 #define MAX_NESTING_DEPTH 32
 
 
+extern int
+DbiTclSubstTemplate(Tcl_Interp *, Dbi_Handle *, Tcl_Obj *templateObj);
+
+
 /*
  * The following struct maintains state for the currently
  * executing command.
@@ -523,7 +527,7 @@ RowsObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
     Dbi_Handle   *handle;
     unsigned int  colIdx, numCols;
     Tcl_Obj      *resObj, *valueObj, *queryObj;
-    Tcl_Obj      *poolObj = NULL, *valuesObj = NULL;
+    Tcl_Obj      *poolObj = NULL, *valuesObj = NULL, *templateObj = NULL;
     Ns_Time      *timeoutPtr = NULL;
     int           end, status;
 
@@ -535,7 +539,8 @@ RowsObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
         {NULL, NULL, NULL, NULL}
     };
     Ns_ObjvSpec args[] = {
-        {"query",      Ns_ObjvObj, &queryObj, NULL},
+        {"query",      Ns_ObjvObj, &queryObj,    NULL},
+        {"?template",  Ns_ObjvObj, &templateObj, NULL},
         {NULL, NULL, NULL, NULL}
     };
     if (Ns_ParseObjv(opts, args, interp, 1, objc, objv) != NS_OK) {
@@ -555,20 +560,25 @@ RowsObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
      * Successful result is a flat list of all values (or an empty list)
      */
 
-    resObj = Tcl_GetObjResult(interp);
-    numCols = Dbi_NumColumns(handle);
+    if (templateObj != NULL) {
+        status = DbiTclSubstTemplate(interp, handle, templateObj);
+    } else {
 
-    while (NextRow(interp, handle, &end) == TCL_OK && !end) {
+        resObj = Tcl_GetObjResult(interp);
+        numCols = Dbi_NumColumns(handle);
 
-        for (colIdx = 0; colIdx < numCols; colIdx ++) {
-            if ((status = ColumnValue(interp, handle, colIdx, &valueObj))
-                    != TCL_OK) {
-                goto done;
-            }
-            if ((status = Tcl_ListObjAppendElement(interp, resObj, valueObj))
-                    != TCL_OK) {
-                Tcl_DecrRefCount(valueObj);
-                goto done;
+        while ((status = NextRow(interp, handle, &end)) == TCL_OK && !end) {
+
+            for (colIdx = 0; colIdx < numCols; colIdx ++) {
+                if ((status = ColumnValue(interp, handle, colIdx, &valueObj))
+                        != TCL_OK) {
+                    goto done;
+                }
+                if ((status = Tcl_ListObjAppendElement(interp, resObj, valueObj))
+                        != TCL_OK) {
+                    Tcl_DecrRefCount(valueObj);
+                    goto done;
+                }
             }
         }
     }
