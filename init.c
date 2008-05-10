@@ -74,12 +74,13 @@ typedef struct Pool {
     int                   nhandles;        /* Current number of handles created. */
     int                   idlehandles;     /* Number of unused handles in pool. */
 
+    int                   cachesize;       /* Size of prepared statement cache. */
+
     int                   maxRows;         /* Default max rows a query may return. */
-    int                   maxwait;         /* Default seconds to wait for handle. */
     time_t                maxidle;         /* Seconds before unused handle is closed.  */
     time_t                maxopen;         /* Seconds before active handle is closed. */
     int                   maxqueries;      /* Close active handle after maxqueries. */
-    int                   cachesize;       /* Size of prepared statement cache. */
+    int                   timeout;         /* Default seconds to wait for handle. */
 
     int                   epoch;           /* Epoch for bouncing handles. */
     int                   stopping;        /* Server is shutting down. */
@@ -411,13 +412,13 @@ Dbi_RegisterDriver(CONST char *server, CONST char *module,
     Ns_CondInit(&poolPtr->cond);
 
     poolPtr->module     = ns_strdup(module);
+    poolPtr->cachesize  = Ns_ConfigIntRange(path, "cachesize",  1024*1024,  0, INT_MAX);
     poolPtr->maxhandles = Ns_ConfigIntRange(path, "maxhandles", 0,          0, INT_MAX);
     poolPtr->maxRows    = Ns_ConfigIntRange(path, "maxrows",    1000,    1000, INT_MAX);
-    poolPtr->maxwait    = Ns_ConfigIntRange(path, "maxwait",    10,         0, INT_MAX);
     poolPtr->maxidle    = Ns_ConfigIntRange(path, "maxidle",    0,          0, INT_MAX);
     poolPtr->maxopen    = Ns_ConfigIntRange(path, "maxopen",    0,          0, INT_MAX);
     poolPtr->maxqueries = Ns_ConfigIntRange(path, "maxqueries", 0,          0, INT_MAX);
-    poolPtr->cachesize  = Ns_ConfigIntRange(path, "cachesize",  1024*1024,  0, INT_MAX);
+    poolPtr->timeout    = Ns_ConfigIntRange(path, "timeout",    10,         0, INT_MAX);
 
     if (poolPtr->maxidle || poolPtr->maxopen) {
         Ns_ScheduleProc(ScheduledPoolCheck, poolPtr, 0,
@@ -621,7 +622,7 @@ Dbi_GetHandle(Dbi_Pool *pool, Ns_Time *timeoutPtr, Dbi_Handle **handlePtrPtr)
 
         if (timeoutPtr == NULL) {
             Ns_GetTime(&time);
-            Ns_IncrTime(&time, poolPtr->maxwait, 0);
+            Ns_IncrTime(&time, poolPtr->timeout, 0);
             timeoutPtr = &time;
         }
 
@@ -1544,12 +1545,6 @@ Dbi_Config(Dbi_Pool *pool, DBI_CONFIG_OPTION opt, int newValue)
             poolPtr->maxRows = newValue;
         }
         break;
-    case DBI_CONFIG_MAXWAIT:
-        oldValue = poolPtr->maxwait;
-        if (newValue >= 0) {
-            poolPtr->maxwait = newValue;
-        }
-        break;
     case DBI_CONFIG_MAXIDLE:
         oldValue = poolPtr->maxidle;
         if (newValue >= 0) {
@@ -1566,6 +1561,12 @@ Dbi_Config(Dbi_Pool *pool, DBI_CONFIG_OPTION opt, int newValue)
         oldValue = poolPtr->maxqueries;
         if (newValue >= 0) {
             poolPtr->maxqueries = newValue;
+        }
+        break;
+    case DBI_CONFIG_TIMEOUT:
+        oldValue = poolPtr->timeout;
+        if (newValue >= 0) {
+            poolPtr->timeout = newValue;
         }
         break;
     }

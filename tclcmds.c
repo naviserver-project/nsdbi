@@ -910,13 +910,13 @@ CtlObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
 
     static CONST char *cmds[] = {
         "bounce", "database", "default", "driver",
-        "maxhandles", "maxrows", "maxidle", "maxopen", "maxqueries", "maxwait",
-        "pools", "stats", NULL
+        "maxhandles", "maxrows", "maxidle", "maxopen", "maxqueries",
+        "pools", "stats", "timeout", NULL
     };
     enum CmdIdx {
         CBounceCmd, CDatabaseCmd, CDefaultCmd, CDriverCmd,
-        CMaxHandlesCmd, CMaxRowsCmd, CMaxIdleCmd, CMaxOpenCmd, CMaxQueriesCmd, CMaxWaitCmd,
-        CPoolsCmd, CStatsCmd
+        CMaxHandlesCmd, CMaxRowsCmd, CMaxIdleCmd, CMaxOpenCmd, CMaxQueriesCmd,
+        CPoolsCmd, CStatsCmd, CTimeoutCmd,
     };
     if (objc < 2) {
         Tcl_WrongNumArgs(interp, 1, objv, "command ?args?");
@@ -1005,10 +1005,6 @@ CtlObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
         oldValue = Dbi_Config(pool, DBI_CONFIG_MAXROWS, newValue);
         break;
 
-    case CMaxWaitCmd:
-        oldValue = Dbi_Config(pool, DBI_CONFIG_MAXWAIT, newValue);
-        break;
-
     case CMaxIdleCmd:
         oldValue = Dbi_Config(pool, DBI_CONFIG_MAXIDLE, newValue);
         break;
@@ -1019,6 +1015,10 @@ CtlObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
 
     case CMaxQueriesCmd:
         oldValue = Dbi_Config(pool, DBI_CONFIG_MAXQUERIES, newValue);
+        break;
+
+    case CTimeoutCmd:
+        oldValue = Dbi_Config(pool, DBI_CONFIG_TIMEOUT, newValue);
         break;
     }
     Tcl_SetIntObj(Tcl_GetObjResult(interp), oldValue);

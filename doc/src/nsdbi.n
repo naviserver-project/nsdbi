@@ -235,18 +235,18 @@ and the handles are cache per-thread and never returned to the pool. This is
 ideal for an embedded database or if you have a single pool which each thread
 almost always uses.
 
+[opt_def "timeout [arg pool] [opt [arg timeout]]"]
+Get or set the [arg timeout] option for [arg pool]. This is the timeout in
+seconds that a thread will wait for a handle if none are available. You can
+override it for each command using the [option -timeout] option. The default is
+10 seconds.
+
 [opt_def "maxrows [arg pool] [opt [arg maxrows]]"]
 Get or set the default maximum number of rows a query may return. The default
 is [emph 1000] which is high enough that any query returning more rows is
 probably a mistake. You can override this setting on a per-query basis by
 passing the [option -max] option to [cmd dbi_rows], or you can raise the
 default if you routinely run into this limit.
-
-[opt_def "maxwait [arg pool] [opt [arg maxwait]]"]
-Get or set the [arg maxwait] option for [arg pool]. This is the timeout in
-seconds that a thread will wait for a handle if none are available. You can
-override it for each command using the [option -timeout] option. The default is
-10 seconds.
 
 [opt_def "maxidle [arg pool] [opt [arg maxidle]]"]
 Get or set the [arg maxidle] option for [arg pool]. This is the number of
@@ -290,7 +290,7 @@ in [cmd ns_time] format and is either an absolute time in the future if
 large, or an offset from the current time if small.
 
 [para]
-If [option -timeout] is not specified then the [arg maxwait] configuration
+If [option -timeout] is not specified then the [arg timeout] configuration
 value is used (which defaults to 10 seconds).
 
 [para]
@@ -376,7 +376,7 @@ per-handle.
 [def "[cmd ns_param] [arg maxhandles] 0"]
 The maximum number of open connections to the database.
 
-[def "[cmd ns_param] [arg maxwait] 10"]
+[def "[cmd ns_param] [arg timeout] 10"]
 Seconds to wait if handle is at first unavailable.
 
 [def "[cmd ns_param] [arg maxidle] 0"]

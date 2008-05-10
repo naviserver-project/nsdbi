@@ -37,7 +37,8 @@ ns_param   pool4          $bindir/nsdbipg.so
 ns_section "ns/server/server1/module/pool4"
 ns_param   default        true ;# This is the default pool for server1.
 ns_param   maxhandles     2    ;# Max open handles to db.
-ns_param   maxwait        10   ;# Seconds to wait if handle unavailable.
+ns_param   timeout        10   ;# Seconds to wait if handle unavailable.
+ns_param   maxrows        1000 ;# Default max rows a query may return.
 ns_param   maxidle        0    ;# Handle closed after maxidle seconds if unused.
 ns_param   maxopen        0    ;# Handle closed after maxopen seconds, regardles of use.
 ns_param   maxqueries     0    ;# Handle closed after maxqueries sql queries.
