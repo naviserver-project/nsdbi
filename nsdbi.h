@@ -68,6 +68,7 @@ typedef enum {
 
 typedef enum {
     DBI_CONFIG_MAXHANDLES = 0,
+    DBI_CONFIG_MAXROWS,
     DBI_CONFIG_MAXWAIT,
     DBI_CONFIG_MAXIDLE,
     DBI_CONFIG_MAXOPEN,
@@ -167,7 +168,7 @@ Dbi_ColumnName(Dbi_Handle *, unsigned int index, CONST char **namePtr)
  */
 
 NS_EXTERN int
-Dbi_Exec(Dbi_Handle *, Dbi_Value *values)
+Dbi_Exec(Dbi_Handle *, Dbi_Value *values, int maxRows)
     NS_GNUC_NONNULL(1);
 
 NS_EXTERN int

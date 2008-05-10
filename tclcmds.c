@@ -84,7 +84,7 @@ static int RowCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST o
                   int *rowPtr);
 
 static int Exec(InterpData *idataPtr, Tcl_Obj *poolObj, Ns_Time *timeoutPtr,
-                Tcl_Obj *queryObj, Tcl_Obj *valuesObj, int dml,
+                Tcl_Obj *queryObj, Tcl_Obj *valuesObj, int maxRows, int dml,
                 Dbi_Handle **handlePtrPtr);
 
 static Dbi_Pool *GetPool(InterpData *, Tcl_Obj *poolObj);
@@ -501,7 +501,7 @@ void
 Dbi_TclErrorResult(Tcl_Interp *interp, Dbi_Handle *handle)
 {
     Tcl_SetErrorCode(interp, Dbi_ExceptionCode(handle), NULL);
-    Tcl_AppendResult(interp, Dbi_ExceptionMsg(handle), NULL);
+    Tcl_SetResult(interp, Dbi_ExceptionMsg(handle), TCL_VOLATILE);
 }
 
 
@@ -531,12 +531,13 @@ RowsObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
     Tcl_Obj      *poolObj = NULL, *valuesObj = NULL;
     Tcl_Obj      *templateObj = NULL, *defaultObj = NULL;
     Ns_Time      *timeoutPtr = NULL;
-    int           end, status;
+    int           end, status, maxRows = -1;
 
     Ns_ObjvSpec opts[] = {
         {"-pool",      Ns_ObjvObj,    &poolObj,    NULL},
         {"-timeout",   Ns_ObjvTime,   &timeoutPtr, NULL},
         {"-bind",      Ns_ObjvObj,    &valuesObj,  NULL},
+        {"-max",       Ns_ObjvInt,    &maxRows,    NULL},
         {"--",         Ns_ObjvBreak,  NULL,        NULL},
         {NULL, NULL, NULL, NULL}
     };
@@ -554,7 +555,7 @@ RowsObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
      * Get a handle, prepare, bind, and run the qeuery.
      */
 
-    if (Exec(idataPtr, poolObj, timeoutPtr, queryObj, valuesObj, 0,
+    if (Exec(idataPtr, poolObj, timeoutPtr, queryObj, valuesObj, maxRows, 0,
              &handle) != TCL_OK) {
         return TCL_ERROR;
     }
@@ -564,7 +565,8 @@ RowsObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
      */
 
     if (templateObj != NULL) {
-        status = DbiTclSubstTemplate(interp, handle, templateObj, defaultObj);
+        status = DbiTclSubstTemplate(interp, handle,
+                                     templateObj, defaultObj);
     } else {
 
         resObj = Tcl_GetObjResult(interp);
@@ -636,7 +638,7 @@ DmlObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
      * Get a handle, prepare, bind, and run the qeuery.
      */
 
-    if (Exec(idataPtr, poolObj, timeoutPtr, queryObj, valuesObj, 1,
+    if (Exec(idataPtr, poolObj, timeoutPtr, queryObj, valuesObj, -1, 1,
              &handle) != TCL_OK) {
         return TCL_ERROR;
     }
@@ -721,7 +723,7 @@ RowCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[],
      * Get handle, then prepare, bind, and run the qeuery.
      */
 
-    if (Exec(idataPtr, poolObj, timeoutPtr, queryObj, valuesObj, 0,
+    if (Exec(idataPtr, poolObj, timeoutPtr, queryObj, valuesObj, 1, 0,
              &handle) != TCL_OK) {
         return TCL_ERROR;
     }
@@ -760,14 +762,10 @@ RowCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[],
     }
 
     /*
-     * Expect end == 1 when we attempt to fetch from row 2.
+     * Try to fetch again to check for more than 1 row.
      */
 
     if (NextRow(interp, handle, &end) != TCL_OK) {
-        goto cleanup;
-    }
-    if (!end) {
-        Tcl_SetResult(interp, "query returned more than one row", TCL_STATIC);
         goto cleanup;
     }
 
@@ -912,12 +910,12 @@ CtlObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
 
     static CONST char *cmds[] = {
         "bounce", "database", "default", "driver",
-        "maxhandles", "maxidle", "maxopen", "maxqueries", "maxwait",
+        "maxhandles", "maxrows", "maxidle", "maxopen", "maxqueries", "maxwait",
         "pools", "stats", NULL
     };
     enum CmdIdx {
         CBounceCmd, CDatabaseCmd, CDefaultCmd, CDriverCmd,
-        CMaxHandlesCmd, CMaxIdleCmd, CMaxOpenCmd, CMaxQueriesCmd, CMaxWaitCmd,
+        CMaxHandlesCmd, CMaxRowsCmd, CMaxIdleCmd, CMaxOpenCmd, CMaxQueriesCmd, CMaxWaitCmd,
         CPoolsCmd, CStatsCmd
     };
     if (objc < 2) {
@@ -1003,6 +1001,10 @@ CtlObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
         oldValue = Dbi_Config(pool, DBI_CONFIG_MAXHANDLES, newValue);
         break;
 
+    case CMaxRowsCmd:
+        oldValue = Dbi_Config(pool, DBI_CONFIG_MAXROWS, newValue);
+        break;
+
     case CMaxWaitCmd:
         oldValue = Dbi_Config(pool, DBI_CONFIG_MAXWAIT, newValue);
         break;
@@ -1045,7 +1047,7 @@ CtlObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
 
 static int
 Exec(InterpData *idataPtr, Tcl_Obj *poolObj, Ns_Time *timeoutPtr,
-     Tcl_Obj *queryObj, Tcl_Obj *valuesObj, int dml,
+     Tcl_Obj *queryObj, Tcl_Obj *valuesObj, int maxRows, int dml,
      Dbi_Handle **handlePtrPtr)
 {
     Tcl_Interp       *interp = idataPtr->interp;
@@ -1097,7 +1099,7 @@ Exec(InterpData *idataPtr, Tcl_Obj *poolObj, Ns_Time *timeoutPtr,
     if (Dbi_TclBindVariables(interp, handle, dbValues, valuesObj) != TCL_OK) {
         goto error;
     }
-    if (Dbi_Exec(handle, dbValues) != NS_OK) {
+    if (Dbi_Exec(handle, dbValues, maxRows) != NS_OK) {
         Dbi_TclErrorResult(interp, handle);
         goto error;
     }

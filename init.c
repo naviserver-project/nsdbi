@@ -74,13 +74,14 @@ typedef struct Pool {
     int                   nhandles;        /* Current number of handles created. */
     int                   idlehandles;     /* Number of unused handles in pool. */
 
+    int                   maxRows;         /* Default max rows a query may return. */
     int                   maxwait;         /* Default seconds to wait for handle. */
     time_t                maxidle;         /* Seconds before unused handle is closed.  */
     time_t                maxopen;         /* Seconds before active handle is closed. */
     int                   maxqueries;      /* Close active handle after maxqueries. */
     int                   cachesize;       /* Size of prepared statement cache. */
 
-    int                   epoch;  /* Epoch for bouncing handles. */
+    int                   epoch;           /* Epoch for bouncing handles. */
     int                   stopping;        /* Server is shutting down. */
 
     struct {
@@ -158,6 +159,7 @@ typedef struct Handle {
 
     int                fetchingRows; /* Is there a pending result set? */
     unsigned int       nextRow;      /* Counts the calls to NextRow. */
+    int                maxRows;      /* Max rows returned by query, default from pool.. */
 
     Ns_Cache          *cache;        /* Cache of statements and driver data. */
     unsigned int       stmtid;       /* Unique ID counter for cached statements. */
@@ -410,6 +412,7 @@ Dbi_RegisterDriver(CONST char *server, CONST char *module,
 
     poolPtr->module     = ns_strdup(module);
     poolPtr->maxhandles = Ns_ConfigIntRange(path, "maxhandles", 0,          0, INT_MAX);
+    poolPtr->maxRows    = Ns_ConfigIntRange(path, "maxrows",    1000,    1000, INT_MAX);
     poolPtr->maxwait    = Ns_ConfigIntRange(path, "maxwait",    10,         0, INT_MAX);
     poolPtr->maxidle    = Ns_ConfigIntRange(path, "maxidle",    0,          0, INT_MAX);
     poolPtr->maxopen    = Ns_ConfigIntRange(path, "maxopen",    0,          0, INT_MAX);
@@ -982,7 +985,7 @@ Dbi_ColumnName(Dbi_Handle *handle, unsigned int index, CONST char **namePtr)
  */
 
 int
-Dbi_Exec(Dbi_Handle *handle, Dbi_Value *values)
+Dbi_Exec(Dbi_Handle *handle, Dbi_Value *values, int maxRows)
 {
     Handle     *handlePtr = (Handle *) handle;
     Statement  *stmtPtr   = handlePtr->stmtPtr;
@@ -997,6 +1000,8 @@ Dbi_Exec(Dbi_Handle *handle, Dbi_Value *values)
 
     handlePtr->stats.queries++;
     stmtPtr->nqueries++;
+
+    handlePtr->maxRows = maxRows > -1 ? maxRows : poolPtr->maxRows;
 
     if ((*poolPtr->execProc)(handle, (Dbi_Statement *) stmtPtr,
                              values, stmtPtr->numVars) != NS_OK) {
@@ -1035,7 +1040,7 @@ Dbi_ExecDirect(Dbi_Handle *handle, CONST char *sql)
             "bug: Dbi_ExecDirect: statement requires bind variables");
         return NS_ERROR;
     }
-    return Dbi_Exec(handle, NULL);
+    return Dbi_Exec(handle, NULL, -1);
 }
 
 
@@ -1064,7 +1069,7 @@ Dbi_NextRow(Dbi_Handle *handle, int *endPtr)
     Handle        *handlePtr = (Handle *) handle;
     Pool          *poolPtr   = handlePtr->poolPtr;
     Dbi_Statement *stmt      = (Dbi_Statement *) handlePtr->stmtPtr;
-    int            end, status;
+    int            end, maxRows, status;
 
     assert(stmt);
     assert(endPtr);
@@ -1083,11 +1088,19 @@ Dbi_NextRow(Dbi_Handle *handle, int *endPtr)
 
     end = 0;
     status = (*poolPtr->nextRowProc)(handle, stmt, &end);
+    *endPtr = end;
 
     if (status != NS_OK || end) {
         handlePtr->fetchingRows = NS_FALSE;
     }
-    *endPtr = end;
+
+    maxRows = handlePtr->maxRows;
+    if (!end && handlePtr->rowIdx + 1 > maxRows) {
+        Dbi_SetException(handle, "HY000",
+            "query returned more than %d row%s",
+            maxRows, maxRows > 1 ? "s" : "");
+        return NS_ERROR;
+    }
 
     return status;
 }
@@ -1523,6 +1536,12 @@ Dbi_Config(Dbi_Pool *pool, DBI_CONFIG_OPTION opt, int newValue)
         oldValue = poolPtr->maxhandles;
         if (newValue >= 0) {
             poolPtr->maxhandles = newValue;
+        }
+        break;
+    case DBI_CONFIG_MAXROWS:
+        oldValue = poolPtr->maxRows;
+        if (newValue >= 0) {
+            poolPtr->maxRows = newValue;
         }
         break;
     case DBI_CONFIG_MAXWAIT:

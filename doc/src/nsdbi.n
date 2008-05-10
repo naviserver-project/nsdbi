@@ -10,8 +10,7 @@ nsdbi provides an easy to use interface to databases.
 [vset standard_options "\
 [opt [option "-pool [arg poolname]"]] \
 [opt [option "-timeout [arg t]"]] \
-[opt [option "-bind [arg array|set]"]] \
-[opt [arg --]]"]
+[opt [option "-bind [arg array|set]"]] "]
 
 
 [section {COMMANDS}]
@@ -21,6 +20,8 @@ nsdbi provides an easy to use interface to databases.
 
 [call [cmd dbi_rows] \
       [vset standard_options] \
+      [opt [option "-max [arg nrows]"]] \
+      [opt [arg --]] \
       [arg query] \
       [opt [arg template]] \
       [opt [arg default]] ]
@@ -71,23 +72,43 @@ Yo, Dirty Harry!
 Yo, Jolly Roger!
 [example_end]
 
+If the [option -max] option is given then it is an assertion that the query
+will return no more than this number of rows. An error will be raised if
+it does. If [option -max] is not given then the default [arg maxrows] for
+the pool is used (see [cmd dbi_ctl] below).
+
+[para]
+Useful values for [option -max] include [term >1000] when you're absolutely
+sure that a paricular query needs to return that much data (which would be
+unsusual on the web) and [term 1], in which case [cmd dbi_rows] acts like
+[cmd dbi_0or1row], except returning the result instead of setting variables.
 
 
-[call [cmd dbi_1row] [vset standard_options] [arg query]]
+
+[call [cmd dbi_1row] \
+      [vset standard_options] \
+      [opt [arg --]] \
+      [arg query]]
 
 Execute a query which is expected to return exactly one row. If no rows are
 returned then an error is thrown.
 
 
 
-[call [cmd dbi_0or1row] [vset standard_options] [arg query]]
+[call [cmd dbi_0or1row] \
+      [vset standard_options] \
+      [opt [arg --]] \
+      [arg query]]
 
 Execute a query which is expected to return either zero rows or exactly one
 row. If no rows are returned the result is the empty string.
 
 
 
-[call [cmd dbi_dml] [vset standard_options] [arg query]]
+[call [cmd dbi_dml] \
+      [vset standard_options] \
+      [opt [arg --]] \
+      [arg query]]
 
 Execute a [term DML] query: [term insert], [term update],
 [term delete]; or [term DDL] query: [term "create table"] etc.  The result
@@ -214,6 +235,13 @@ and the handles are cache per-thread and never returned to the pool. This is
 ideal for an embedded database or if you have a single pool which each thread
 almost always uses.
 
+[opt_def "maxrows [arg pool] [opt [arg maxrows]]"]
+Get or set the default maximum number of rows a query may return. The default
+is [emph 1000] which is high enough that any query returning more rows is
+probably a mistake. You can override this setting on a per-query basis by
+passing the [option -max] option to [cmd dbi_rows], or you can raise the
+default if you routinely run into this limit.
+
 [opt_def "maxwait [arg pool] [opt [arg maxwait]]"]
 Get or set the [arg maxwait] option for [arg pool]. This is the timeout in
 seconds that a thread will wait for a handle if none are available. You can
@@ -310,14 +338,6 @@ If a bind variable is the empty string "" then a [term NULL] is passed
 to the database. Simillarly, NULLs in result sets become the empty
 string.
 
-
-[arg_def string formatString]
-A format specification as used by the Tcl [cmd format] command.
-
-[arg_def string script]
-A chunk of Tcl code to execute in the context of a single handle for the
-[cmd dbi_eval] command. It is expected to conatin calls to [cmd dbi_dml],
-[cmd dbi_rows] etc.
 
 [list_end]
 

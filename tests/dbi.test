@@ -111,6 +111,12 @@ test 0or1row-3 {not found} -body {
     unset -nocomplain 0
 } -result x
 
+test 0or1row-4 {more than 1 row} -body {
+    dbi_0or1row {ROWS 1 2}
+} -cleanup {
+    unset -nocomplain 0
+} -returnCodes error -result {query returned more than 1 row}
+
 test 0or1row-5 {query error} -body {
     dbi_0or1row {EXECERR 1 1}
 } -returnCodes error -result {driver error}
@@ -143,7 +149,13 @@ test 1row-4 {1row not found} -body {
     dbi_1row {ROWS 1 0}
 } -returnCodes error -result {query was not a statement returning rows}
 
-test 1row-5 {query error} -body {
+test 1row-5 {more than 1 row} -body {
+    dbi_1row {ROWS 1 2}
+} -cleanup {
+    unset -nocomplain 0
+} -returnCodes error -result {query returned more than 1 row}
+
+test 1row-6 {query error} -body {
     dbi_1row {EXECERR 1 1}
 } -returnCodes error -result {driver error}
 
@@ -176,6 +188,26 @@ test rows-6 {found 2 rows, 3 columns} -body {
 test rows-7 {query error} -body {
     dbi_rows {EXECERR 1 1}
 } -returnCodes error -result {driver error}
+
+test rows-8 {maxrows, 1 less} -body {
+    dbi_rows -max 2 {ROWS 2 1}
+} -result {0.0 0.1}
+
+test rows-9 {maxrows, exact} -body {
+    dbi_rows -max 1 {ROWS 2 1}
+} -result {0.0 0.1}
+
+test rows-10 {too many rows} -body {
+    dbi_rows -max 1 {ROWS 2 2}
+} -returnCodes error -result {query returned more than 1 row}
+
+test rows-11 {0 rows} -body {
+    dbi_rows -max 1 {ROWS 2 0}
+} -result {}
+
+test rows-12 {10 rows} -body {
+    dbi_rows -max 10 {ROWS 1 10}
+} -result {0.0 1.0 2.0 3.0 4.0 5.0 6.0 7.0 8.0 9.0}
 
 
 
