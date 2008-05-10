@@ -45,7 +45,8 @@ NS_RCSID("@(#) $Header$");
 
 
 extern int
-DbiTclSubstTemplate(Tcl_Interp *, Dbi_Handle *, Tcl_Obj *templateObj);
+DbiTclSubstTemplate(Tcl_Interp *, Dbi_Handle *,
+                    Tcl_Obj *templateObj, Tcl_Obj *defaultObj);
 
 
 /*
@@ -527,7 +528,8 @@ RowsObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
     Dbi_Handle   *handle;
     unsigned int  colIdx, numCols;
     Tcl_Obj      *resObj, *valueObj, *queryObj;
-    Tcl_Obj      *poolObj = NULL, *valuesObj = NULL, *templateObj = NULL;
+    Tcl_Obj      *poolObj = NULL, *valuesObj = NULL;
+    Tcl_Obj      *templateObj = NULL, *defaultObj = NULL;
     Ns_Time      *timeoutPtr = NULL;
     int           end, status;
 
@@ -541,6 +543,7 @@ RowsObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
     Ns_ObjvSpec args[] = {
         {"query",      Ns_ObjvObj, &queryObj,    NULL},
         {"?template",  Ns_ObjvObj, &templateObj, NULL},
+        {"?default",   Ns_ObjvObj, &defaultObj,  NULL},
         {NULL, NULL, NULL, NULL}
     };
     if (Ns_ParseObjv(opts, args, interp, 1, objc, objv) != NS_OK) {
@@ -561,7 +564,7 @@ RowsObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
      */
 
     if (templateObj != NULL) {
-        status = DbiTclSubstTemplate(interp, handle, templateObj);
+        status = DbiTclSubstTemplate(interp, handle, templateObj, defaultObj);
     } else {
 
         resObj = Tcl_GetObjResult(interp);

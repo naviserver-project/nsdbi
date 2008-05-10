@@ -181,65 +181,54 @@ test rows-7 {query error} -body {
 
 test template-1 {1 col, 1 row} -body {
     dbi_rows {ROWS 1 1} {$0}
-} -cleanup {
-    unset -nocomplain 0
 } -result {0.0}
 
 test template-2 {2 col, 1 row} -body {
     dbi_rows {ROWS 2 1} {$0 $1}
-} -cleanup {
-    unset -nocomplain 0 1
 } -result {0.0 0.1}
 
 test template-3 {2 col, out of order} -body {
     dbi_rows {ROWS 2 1} {$1 $0}
-} -cleanup {
-    unset -nocomplain 0 1
 } -result {0.1 0.0}
 
 test template-4 {2 col, repeat} -body {
     dbi_rows {ROWS 2 1} {$0 $0 $1}
-} -cleanup {
-    unset -nocomplain 0 1
 } -result {0.0 0.0 0.1}
 
 test template-5 {2 col, repeat} -body {
     dbi_rows {ROWS 2 1} {$0 $1 $1}
-} -cleanup {
-    unset -nocomplain 0 1
 } -result {0.0 0.1 0.1}
 
 test template-6 {2 col, repeat, out of order} -body {
     dbi_rows {ROWS 2 1} {$1 $0 $0 $1}
-} -cleanup {
-    unset -nocomplain 0 1
 } -result {0.1 0.0 0.0 0.1}
 
 test template-7 {2 cols, 2 rows} -body {
     dbi_rows {ROWS 2 2} {$0 $1 }
-} -cleanup {
-    unset -nocomplain 0 1
 } -result {0.0 0.1 1.0 1.1 }
 
 test template-8 {2 cols, 3 rows, out of order} -body {
     dbi_rows {ROWS 2 3} {$1 $0 }
-} -cleanup {
-    unset -nocomplain 0 1
 } -result {0.1 0.0 1.1 1.0 2.1 2.0 }
 
 test template-9 {tcl variable} -body {
     set foo bar
     dbi_rows {ROWS 2 1} {$0 $foo $1}
 } -cleanup {
-    unset -nocomplain 0 1 foo
+    unset -nocomplain foo
 } -result {0.0 bar 0.1}
 
 test template-10 {missing tcl variable} -body {
     dbi_rows {ROWS 2 1} {$0 $missing $1}
-} -cleanup {
-    unset -nocomplain 0 1
 } -returnCodes error -result {can't read "missing": no such column or variable}
 
+test template-11 {no rows with default} -body {
+    dbi_rows {ROWS 2 0} {$0 $1} {no rows}
+} -result {no rows}
+
+test template-12 {now rows, no default} -body {
+    dbi_rows {ROWS 2 0} {$0 $1}
+} -returnCodes error -result {query was not a statement returning rows}
 
 
 

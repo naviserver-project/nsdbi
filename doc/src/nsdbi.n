@@ -22,7 +22,8 @@ nsdbi provides an easy to use interface to databases.
 [call [cmd dbi_rows] \
       [vset standard_options] \
       [arg query] \
-      [opt [arg template]] ]
+      [opt [arg template]] \
+      [opt [arg default]] ]
 
 Execute a [arg query] which is expected to return zero or more rows. If no
 rows are returned then the result is the empty string. Otherwise a
@@ -32,6 +33,7 @@ single, flat list of values is returned.
 foreach {first last} [lb][cmd dbi_rows] {select first, last from peeps}[rb] {
     append result "<li>$first $last</li>\n"
 }
+set result
 <li>Dirty Harry</li>
 <li>Jolly Roger</li>
 [example_end]
@@ -46,9 +48,28 @@ templated rows are concatenated and returned as a string.
 <li>Jolly Roger</li>
 [example_end]
 
+If no rows are returned then an error is raised, unless the [arg default]
+argument is given in which case it becomes the complete result.
+
+[example_begin]
+[cmd dbi_rows] {select leader from government} {${leader}! \n} {nobody here but us chickens}
+nobody here but us chickens
+[example_end]
+
 If a template variable name does not correspond to a column name in the result
 then a Tcl variable by the same name is substituted. If no such variable exists,
 an error is raised.
+
+[example_begin]
+proc greet_the_people {{greeting "Hello"}} {
+    [cmd dbi_rows] {select first, last from peeps} {
+        $greeting, $first $last!
+    }
+}
+greet_the_people "Yo"
+Yo, Dirty Harry!
+Yo, Jolly Roger!
+[example_end]
 
 
 

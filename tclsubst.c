@@ -44,7 +44,8 @@ typedef struct Template {
 } Template;
 
 
-int DbiTclSubstTemplate(Tcl_Interp *, Dbi_Handle *, Tcl_Obj *templateObj);
+int DbiTclSubstTemplate(Tcl_Interp *, Dbi_Handle *,
+                        Tcl_Obj *templateObj, Tcl_Obj *defaultObj);
 
 
 /*
@@ -98,14 +99,15 @@ static Tcl_ObjType templateType = {
  */
 
 int
-DbiTclSubstTemplate(Tcl_Interp *interp, Dbi_Handle *handle, Tcl_Obj *templateObj)
+DbiTclSubstTemplate(Tcl_Interp *interp, Dbi_Handle *handle,
+                    Tcl_Obj *templateObj, Tcl_Obj *defaultObj)
 {
     Template      *templatePtr;
     Tcl_Parse     *parsePtr;
     Tcl_Token     *tokenPtr;
     Tcl_Obj       *resObj;
     int           *varColMap, end;
-    unsigned int   tokIdx, varIdx, colIdx, numCols;
+    unsigned int   tokIdx, varIdx, colIdx, numCols, numRows;
 
     /*
      * Convert the template into a stream of text + variable tokens.
@@ -126,8 +128,12 @@ DbiTclSubstTemplate(Tcl_Interp *interp, Dbi_Handle *handle, Tcl_Obj *templateObj
 
     resObj = Tcl_GetObjResult(interp);
     numCols = Dbi_NumColumns(handle);
+    numRows = 0;
 
-    while (NextRow(interp, handle, &end) == TCL_OK && !end) {
+    while (NextRow(interp, handle, &end) == TCL_OK
+           && !end) {
+
+        numRows++;
 
         for (tokIdx = 0, varIdx = 0;
              tokIdx < parsePtr->numTokens;
@@ -161,6 +167,16 @@ DbiTclSubstTemplate(Tcl_Interp *interp, Dbi_Handle *handle, Tcl_Obj *templateObj
                          tokenPtr->type);
                 break;
             }
+        }
+    }
+
+    if (numRows == 0) {
+        if (defaultObj != NULL) {
+            Tcl_SetObjResult(interp, defaultObj);
+        } else {
+            Tcl_SetResult(interp, "query was not a statement returning rows",
+                          TCL_STATIC);
+            return TCL_ERROR;
         }
     }
 
