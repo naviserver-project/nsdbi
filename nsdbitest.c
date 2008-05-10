@@ -78,6 +78,7 @@ static Dbi_PrepareCloseProc PrepareClose;
 static Dbi_BindVarProc      Bind;
 static Dbi_ExecProc         Exec;
 static Dbi_NextRowProc      NextRow;
+static Dbi_ColumnLengthProc ColumnLength;
 static Dbi_ColumnValueProc  ColumnValue;
 static Dbi_ColumnNameProc   ColumnName;
 static Dbi_TransactionProc  Transaction;
@@ -98,6 +99,7 @@ static CONST Dbi_DriverProc procs[] = {
     {Dbi_PrepareCloseProcId, PrepareClose},
     {Dbi_ExecProcId,         Exec},
     {Dbi_NextRowProcId,      NextRow},
+    {Dbi_ColumnLengthProcId, ColumnLength},
     {Dbi_ColumnValueProcId,  ColumnValue},
     {Dbi_ColumnNameProcId,   ColumnName},
     {Dbi_TransactionProcId,  Transaction},
@@ -468,6 +470,10 @@ Exec(Dbi_Handle *handle, Dbi_Statement *stmt,
                 Tcl_DStringAppendElement(&conn->ds, values[i].data);
             }
         }
+        if (conn->rest) {
+            Tcl_DStringAppendElement(&conn->ds, conn->rest);
+        }
+
         conn->exec = 1;
 
         return NS_OK;
@@ -590,16 +596,75 @@ NextRow(Dbi_Handle *handle, Dbi_Statement *stmt, int *endPtr)
 /*
  *----------------------------------------------------------------------
  *
+ * ColumnLength --
+ *
+ *      Return the length of the column value in bytes, and whether or
+ *      not it is binary or text.
+ *
+ * Results:
+ *      NS_OK.
+ *
+ * Side effects:
+ *      None.
+ *
+ *----------------------------------------------------------------------
+ */
+
+static int
+ColumnLength(Dbi_Handle *handle, Dbi_Statement *stmt, unsigned int index,
+             size_t *lengthPtr, int *binaryPtr)
+{
+    Connection *conn = handle->driverData;
+
+    assert(stmt);
+    assert(lengthPtr);
+    assert(binaryPtr);
+
+    assert(conn);
+    assert(STREQ(conn->configData, "driver config data"));
+    assert(conn->connected == NS_TRUE);
+
+    assert(conn->exec == 1);
+    assert(conn->nextrow == 1);
+
+    assert(index < conn->numCols);
+
+    if (handle->rowIdx == 0 && index == 0
+            && conn->rest) {
+
+        *lengthPtr = Ns_DStringLength(&conn->ds);
+        *binaryPtr = 0;
+
+    } else if (STREQ(conn->cmd, "BINARY")) {
+
+        *lengthPtr = 8;
+        *binaryPtr = 1;
+
+    } else {
+        Ns_DStringTrunc(&conn->ds, 0);
+        Ns_DStringPrintf(&conn->ds, "%u.%u",
+                         handle->rowIdx, index);
+        *lengthPtr = Ns_DStringLength(&conn->ds);
+        *binaryPtr = 0;
+    }
+
+    return NS_OK;
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
  * ColumnValue --
  *
  *      Fetch the indicated value from the current row.
  *
- *      For testing, all values are "v", except the first which is
- *      the original SQL statement with driver specific bind
- *      variable notation substituted.
+ *      For testing, values are the column and row index, except the
+ *      first which is the original SQL statement with driver specific
+ *      bind variable notation substituted.
  *
  * Results:
- *      NS_OK or NS_ERROR.
+ *      NS_OK.
  *
  * Side effects:
  *      None.
@@ -609,10 +674,10 @@ NextRow(Dbi_Handle *handle, Dbi_Statement *stmt, int *endPtr)
 
 static int
 ColumnValue(Dbi_Handle *handle, Dbi_Statement *stmt, unsigned int index,
-            Dbi_Value *value)
+            char *value, size_t length)
 {
     Connection        *conn = handle->driverData;
-    static CONST char  binary[8];
+    static CONST char  binaryValue[8];
 
     assert(stmt);
     assert(value);
@@ -633,25 +698,23 @@ ColumnValue(Dbi_Handle *handle, Dbi_Statement *stmt, unsigned int index,
      */
 
     if (handle->rowIdx == 0 && index == 0
-        && conn->rest) {
+            && conn->rest) {
 
-        Tcl_DStringAppendElement(&conn->ds, conn->rest);
-        value->data   = Ns_DStringValue(&conn->ds);
-        value->length = Ns_DStringLength(&conn->ds);
-        value->binary = 0;
+        assert(length <= Ns_DStringLength(&conn->ds));
+        memcpy(value, Ns_DStringValue(&conn->ds), length);
 
     } else if (STREQ(conn->cmd, "BINARY")) {
-        value->data   = binary;
-        value->length = sizeof(binary);
-        value->binary = 1;
+
+        assert(length <= sizeof(binaryValue));
+        memcpy(value, binaryValue, length);
 
     } else {
         Ns_DStringTrunc(&conn->ds, 0);
         Ns_DStringPrintf(&conn->ds, "%u.%u",
                          handle->rowIdx, index);
-        value->data   = Ns_DStringValue(&conn->ds);
-        value->length = Ns_DStringLength(&conn->ds);
-        value->binary = 0;
+
+        assert(length <= Ns_DStringLength(&conn->ds));
+        memcpy(value, Ns_DStringValue(&conn->ds), length);
     }
 
     return NS_OK;

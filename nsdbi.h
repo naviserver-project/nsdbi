@@ -96,7 +96,7 @@ typedef struct Dbi_Handle {
  */
 
 typedef struct Dbi_Value {
-    CONST char   *data;     /* NULL for null SQL values. */
+    CONST char   *data;  /* NULL for null SQL values. */
     size_t        length;   /* Length of data in bytes. */
     int           binary;   /* 1 if data is binary, utf8 otherwise. */
 } Dbi_Value;
@@ -179,8 +179,13 @@ Dbi_NextRow(Dbi_Handle *, int *endPtr)
     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
 
 NS_EXTERN int
+Dbi_ColumnLength(Dbi_Handle *, unsigned int index,
+                 size_t *lengthPtr, int *binaryPtr)
+    NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(3) NS_GNUC_NONNULL(4);
+
+NS_EXTERN int
 Dbi_ColumnValue(Dbi_Handle *, unsigned int index,
-                Dbi_Value *value)
+                char *value, size_t size)
     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(3);
 
 NS_EXTERN void

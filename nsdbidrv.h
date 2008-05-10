@@ -82,6 +82,7 @@ typedef enum {
     Dbi_BindVarProcId,
     Dbi_ExecProcId,
     Dbi_NextRowProcId,
+    Dbi_ColumnLengthProcId,
     Dbi_ColumnValueProcId,
     Dbi_ColumnNameProcId,
     Dbi_TransactionProcId,
@@ -141,8 +142,14 @@ Dbi_NextRowProc(Dbi_Handle *, Dbi_Statement *,
     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2) NS_GNUC_NONNULL(3);
 
 typedef int
+Dbi_ColumnLengthProc(Dbi_Handle *, Dbi_Statement *, unsigned int index,
+                     size_t *lengthPtr, int *binaryPtr)
+    NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2)
+    NS_GNUC_NONNULL(4) NS_GNUC_NONNULL(5);
+
+typedef int
 Dbi_ColumnValueProc(Dbi_Handle *, Dbi_Statement *, unsigned int index,
-                    Dbi_Value *value)
+                    char *value, size_t length)
     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2) NS_GNUC_NONNULL(4);
 
 typedef int

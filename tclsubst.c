@@ -53,7 +53,10 @@ int DbiTclSubstTemplate(Tcl_Interp *, Dbi_Handle *, Tcl_Obj *templateObj);
 
 static int GetTemplateFromObj(Tcl_Interp *interp, Dbi_Handle *,
                               Tcl_Obj *templateObj, Template **templatePtrPtr);
-static int AppendTokenVariable(Tcl_Interp *interp, Tcl_Token *tokenPtr, Tcl_Obj *resObj);
+static int AppendValue(Tcl_Interp *interp, Dbi_Handle *handle, unsigned int index,
+                       Tcl_Obj *resObj);
+static int AppendTokenVariable(Tcl_Interp *interp, Tcl_Token *tokenPtr,
+                               Tcl_Obj *resObj);
 static void MapVariablesToColumns(Dbi_Handle *handle, Template *templatePtr);
 static void NewTextToken(Tcl_Parse *parsePtr, char *string, int length);
 static int NextRow(Tcl_Interp *interp, Dbi_Handle *handle, int *endPtr);
@@ -97,7 +100,6 @@ static Tcl_ObjType templateType = {
 int
 DbiTclSubstTemplate(Tcl_Interp *interp, Dbi_Handle *handle, Tcl_Obj *templateObj)
 {
-    Dbi_Value      value;
     Template      *templatePtr;
     Tcl_Parse     *parsePtr;
     Tcl_Token     *tokenPtr;
@@ -148,16 +150,9 @@ DbiTclSubstTemplate(Tcl_Interp *interp, Dbi_Handle *handle, Tcl_Obj *templateObj
                         return TCL_ERROR;
                     }
                 } else {
-                    if (Dbi_ColumnValue(handle, colIdx, &value) != NS_OK) {
-                        Dbi_TclErrorResult(interp, handle);
+                    if (AppendValue(interp, handle, colIdx, resObj) != TCL_OK) {
                         return TCL_ERROR;
                     }
-                    if (value.binary) {
-                        Tcl_SetResult(interp, "can't substitute binary value in template",
-                                      TCL_STATIC);
-                        return TCL_ERROR;
-                    }
-                    Tcl_AppendToObj(resObj, value.data, value.length);
                 }
                 break;
 
@@ -167,6 +162,55 @@ DbiTclSubstTemplate(Tcl_Interp *interp, Dbi_Handle *handle, Tcl_Obj *templateObj
                 break;
             }
         }
+    }
+
+    return TCL_OK;
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * AppendValue --
+ *
+ *      Append the string value of the given result row index to the
+ *      Tcl result.
+ *
+ * Results:
+ *      TCL_ERROR if the database complains, TCL_OK otherwise.
+ *
+ * Side effects:
+ *      None.
+ *
+ *----------------------------------------------------------------------
+ */
+
+static int
+AppendValue(Tcl_Interp *interp, Dbi_Handle *handle, unsigned int index,
+            Tcl_Obj *resObj)
+{
+    size_t  valueLength;
+    int     resultLength, binary;
+    char   *bytes;
+
+    if (Dbi_ColumnLength(handle, index, &valueLength, &binary) != NS_OK) {
+        Dbi_TclErrorResult(interp, handle);
+        return TCL_ERROR;
+    }
+    if (binary) {
+        Tcl_SetResult(interp, "can't substitute binary value in template",
+                      TCL_STATIC);
+        return TCL_ERROR;
+    }
+
+    bytes = Tcl_GetStringFromObj(resObj, &resultLength);
+    Tcl_SetObjLength(resObj, resultLength + valueLength);
+
+    bytes = resObj->bytes + resultLength;
+
+    if (Dbi_ColumnValue(handle, index, bytes, valueLength) != NS_OK) {
+        Dbi_TclErrorResult(interp, handle);
+        return TCL_ERROR;
     }
 
     return TCL_OK;

@@ -112,6 +112,7 @@ typedef struct Pool {
     Dbi_PrepareCloseProc *prepareCloseProc;
     Dbi_ExecProc         *execProc;
     Dbi_NextRowProc      *nextRowProc;
+    Dbi_ColumnLengthProc *columnLengthProc;
     Dbi_ColumnValueProc  *columnValueProc;
     Dbi_ColumnNameProc   *columnNameProc;
     Dbi_TransactionProc  *transProc;
@@ -356,6 +357,9 @@ Dbi_RegisterDriver(CONST char *server, CONST char *module,
             break;
         case Dbi_NextRowProcId:
             poolPtr->nextRowProc = procPtr->proc;
+            break;
+        case Dbi_ColumnLengthProcId:
+            poolPtr->columnLengthProc = procPtr->proc;
             break;
         case Dbi_ColumnValueProcId:
             poolPtr->columnValueProc = procPtr->proc;
@@ -1092,9 +1096,55 @@ Dbi_NextRow(Dbi_Handle *handle, int *endPtr)
 /*
  *----------------------------------------------------------------------
  *
+ * Dbi_ColumnLength --
+ *
+ *      Fetch the indicated column value length for the current row.
+ *
+ * Results:
+ *      NS_OK or NS_ERROR.
+ *
+ * Side effects:
+ *      None.
+ *
+ *----------------------------------------------------------------------
+ */
+
+int
+Dbi_ColumnLength(Dbi_Handle *handle, unsigned int index,
+                 size_t *lengthPtr, int *binaryPtr)
+{
+    Handle        *handlePtr = (Handle *) handle;
+    Pool          *poolPtr   = handlePtr->poolPtr;
+    Dbi_Statement *stmt      = (Dbi_Statement *) handlePtr->stmtPtr;
+
+    if (!handlePtr->fetchingRows) {
+        Dbi_SetException(handle, "HY000",
+            "bug: Dbi_ColumnLength: no pending rows");
+        return NS_ERROR;
+    }
+
+    if (index > handlePtr->stmtPtr->numCols) {
+        Dbi_SetException(handle, "HY000",
+            "bug: Dbi_ColumnLength: column index out of range: %u", index);
+        return NS_ERROR;
+    }
+
+    Log(handle, Debug, "Dbi_ColumnLengthProc: id: %u, column: %u, row: %u",
+        stmt->id, index, handlePtr->rowIdx);
+
+    return (*poolPtr->columnLengthProc)(handle, stmt, index,
+                                        lengthPtr, binaryPtr);
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
  * Dbi_ColumnValue --
  *
- *      Fetch a column value from the result into the Dbi_Value structure.
+ *      Fetch length bytes from the indicated column value for the
+ *      current row. The bytes are written into value, which must be
+ *      the correct length.
  *
  * Results:
  *      NS_OK or NS_ERROR.
@@ -1107,14 +1157,11 @@ Dbi_NextRow(Dbi_Handle *handle, int *endPtr)
 
 int
 Dbi_ColumnValue(Dbi_Handle *handle, unsigned int index,
-                Dbi_Value *value)
+                char *value, size_t length)
 {
     Handle        *handlePtr = (Handle *) handle;
     Pool          *poolPtr   = handlePtr->poolPtr;
     Dbi_Statement *stmt      = (Dbi_Statement *) handlePtr->stmtPtr;
-
-    assert(stmt);
-    assert(value);
 
     if (!handlePtr->fetchingRows) {
         Dbi_SetException(handle, "HY000",
@@ -1128,10 +1175,10 @@ Dbi_ColumnValue(Dbi_Handle *handle, unsigned int index,
         return NS_ERROR;
     }
 
-    Log(handle, Debug, "Dbi_ColumnValueProc: id: %u, column: %u, row: %u",
-        stmt->id, index, handlePtr->rowIdx);
+    Log(handle, Debug, "Dbi_ColumnValueProc: id: %u, column: %u, row: %u, length: %u",
+        stmt->id, index, handlePtr->rowIdx, (unsigned int) length);
 
-    return (*poolPtr->columnValueProc)(handle, stmt, index, value);
+    return (*poolPtr->columnValueProc)(handle, stmt, index, value, length);
 }
 
 

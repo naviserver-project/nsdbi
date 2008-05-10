@@ -1156,17 +1156,28 @@ static int
 ColumnValue(Tcl_Interp *interp, Dbi_Handle *handle, unsigned int index,
             Tcl_Obj **valueObjPtr)
 {
-    Dbi_Value  value;
     Tcl_Obj   *objPtr;
+    char      *bytes;
+    size_t     length;
+    int        binary;
 
-    if (Dbi_ColumnValue(handle, index, &value) != NS_OK) {
+    if (Dbi_ColumnLength(handle, index, &length, &binary) != NS_OK) {
         Dbi_TclErrorResult(interp, handle);
         return TCL_ERROR;
     }
-    if (value.binary) {
-        objPtr = Tcl_NewByteArrayObj((unsigned char *) value.data, value.length);
+
+    objPtr = Tcl_NewObj();
+
+    if (binary) {
+        bytes = (char *) Tcl_SetByteArrayLength(objPtr, (int) length);
     } else {
-        objPtr = Tcl_NewStringObj(value.data, value.length);
+        Tcl_SetObjLength(objPtr, (int) length);
+        bytes = objPtr->bytes;
+    }
+    if (Dbi_ColumnValue(handle, index, bytes, length) != NS_OK) {
+        Dbi_TclErrorResult(interp, handle);
+        Tcl_DecrRefCount(objPtr);
+        return TCL_ERROR;
     }
     *valueObjPtr = objPtr;
 
