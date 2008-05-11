@@ -8,7 +8,7 @@
 nsdbi provides an easy to use interface to databases.
 
 [vset standard_options "\
-[opt [option "-pool [arg poolname]"]] \
+[opt [option "-db [arg name]"]] \
 [opt [option "-timeout [arg t]"]] \
 [opt [option "-bind [arg array|set]"]] "]
 
@@ -75,7 +75,7 @@ Yo, Jolly Roger!
 If the [option -max] option is given then it is an assertion that the query
 will return no more than this number of rows. An error will be raised if
 it does. If [option -max] is not given then the default [arg maxrows] for
-the pool is used (see [cmd dbi_ctl] below).
+the [term db] is used (see [cmd dbi_ctl] below).
 
 [para]
 Useful values for [option -max] include [term >1000] when you're absolutely
@@ -120,7 +120,7 @@ If the query is not DML or DDL, an error will be thrown (the query is not run).
 
 
 [call [cmd dbi_eval] \
-    [opt [option "-pool [arg poolname]"]] \
+    [opt [option "-db [arg name]"]] \
     [opt [option "-timeout [arg t]"]] \
     [opt [option "-transaction [arg isolation-level]"]] \
     [opt [arg --]] \
@@ -129,7 +129,7 @@ If the query is not DML or DDL, an error will be thrown (the query is not run).
 Get a database handle and then evaluate [arg script], keeping the same handle
 open for the duration.  Any [emph dbi] commands within the script will
 use the same handle if the handle the command needs would have come from the
-same pool.
+same [term db].
 
 [para]
 If the [option -transaction] option is given then the commands are run in a
@@ -161,114 +161,151 @@ May be abbreviated [option repeatable].
     [arg command] \
     [opt [arg ...]] ]
 
-Control various aspects of a pool.
+Control various aspects of a configured database.
 
 
 [list_begin options]
 
-[opt_def pools]
-Returns a list of pool names available to the current virtual server.
+[opt_def dblist]
+Returns a list of [emph db] names available to the current virtual server. This
+includes all globally configured databases plus, those loaded for this server.
 
-[opt_def "default [opt [arg pool]]"]
-The name of the default pool, if any. The default pool is used when the
-[option -pool] option is not specified when calling a command.
+[opt_def "default [opt [arg db]]"]
+The name of the default [arg db] for the current server, if any. The default
+db is used when the [option -db] option is not specified.
 
 [para]
-If a pool name is specified it becomes the new default pool, and the
-return value is the old default pool name.
+If a [arg db] name is specified it becomes the new default db, and the
+return value is the old default db name.
 
-[opt_def "driver [opt [arg pool]]"]
-Returns the name of the driver for the requested pool.
+[opt_def "driver [opt [arg db]]"]
+Returns the name of the driver for the specified [arg db].
 
-[opt_def "database [opt [arg pool]]"]
-Returns the name of the database product for the specified pool,
+[opt_def "database [opt [arg db]]"]
+Returns the name of the database product for the specified [arg db],
 e.g. [term postgresql] or [term mysql].
 
-[opt_def "bounce [opt [arg pool]]"]
-Mark all handle in [arg pool] stale. At the next [term checkinterval], or
-as active handles are returned to the pool, their connection with the
-database will be closed.
+[opt_def "bounce [opt [arg db]]"]
+Mark all handle in [arg db] stale. At the next [term checkinterval], or
+as active handles are returned to the [arg db] pool, their connection
+with the database will be closed.
 
-[opt_def "stats [opt [arg pool]]"]
-Return the accumulated statistics for [arg pool] in [term "array get"]
-format. The stats list contains the following keywords:
+[opt_def "maxhandles [arg db] [opt [arg maxhandles]]"]
+This setting controls how many handles, i.e. how many open connections, are
+made to the underlying database. This number determines how many threads
+may perform queries in parallel.
+
+[para]
+The default is 0 which means that each thread will open and cache a handle
+when first needed. The handle will be released when the the thread exits.
+This is ideal for an embedded database such as [term sqlite] or the embedded
+[term mysql] option, and is also appropriate if each thread which
+accesses the db, such as the conn threads, always query the database
+and your server can accommodate one database backend per thread.
+
+[para]
+If you have more threads accessing the database than you can afford
+backends then you will need to pick a number for [arg maxhandles].
+Choose too high and your database will suffer excessive locking and make
+poor progress when your server is busy; memory consumption may be excessive.
+Choose too low and threads will serialize waiting for handles. Make a
+guess and then keep an eye on the [emph handlegets] and [emph handlemisses]
+stats. If both numbers are high and [emph handlemisses] is high
+relative to [emph handlegets] then you have a busy server which
+is starved of database handles, and you should increase [arg maxhandles].
+
+[opt_def "timeout [arg db] [opt [arg timeout]]"]
+This is the timeout in seconds that a thread will wait for a handle
+if none are available. You can override it for each command using
+the [option -timeout] option. The default is 10 seconds.
+
+[para]
+Errors due to timeouts are tracked in the statistics.
+
+[opt_def "maxrows [arg db] [opt [arg maxrows]]"]
+This defines the default maximum number of rows a query may return. The default
+is [emph 1000] which is high enough that any query returning more rows is
+probably in error. You can override this setting on a per-query basis by
+passing the [option -max] option to [cmd dbi_rows], or you can raise the
+default if you routinely run into this limit. [emph -1] means no limit.
+
+[opt_def "maxidle [arg db] [opt [arg maxidle]]"]
+This is the number of seconds that an open handle will linger
+unused, after which it is automatically closed (handles are checked every
+[emph checkinterval] seconds). The default is
+0, which means handles are never closed due to idleness.
+
+[opt_def "maxopen [arg db] [opt [arg maxopen]]"]
+This is the maximum number of seconds a handle can remain open, regardless
+of whether it is used or not. After this timeout, when the handle is
+returned it will be automatically closed. The default is 0, which means
+handle are not closed due to age.
+
+[opt_def "maxqueries [arg db] [opt [arg maxqueries]]"]
+If [arg maxqueries] is set then a handle will be closed after this
+number of queries have been executed. The default is 0, which dissables
+this feature.
+
+[para]
+This option can be used to ensure that a cached plan for a prepared statement
+does not become stale after many inserts/updates. Set it to something high, like
+10,000 or 100,000, as setting it too low it may negate the benefit of prepared
+statement caching.
+
+[opt_def "stats [opt [arg db]]"]
+Return the accumulated statistics for [arg db] in [term "array get"] format.
+
+[example_begin]
+array set stats [lb][cmd "dbi_ctl stats"] [emph db1][rb]
+puts "handle miss rate: [lb]expr {($stats(handlegets) * 100) / $stats(handlemisses)}[rb]%"
+[example_end]
+
+The stats list contains the following keywords:
 
 [list_begin definitions]
 
 [def handlegets]
-The number of times a handle was successfully retrieved from the pool.
+The number of times a handle was successfully retrieved from the pool. If
+[emph maxhandles] is 0 this will increase by 1 for each thread that uses
+the [arg db]. If [emph maxhandles] is more than 1, this number will increase
+by 1 each time a [term dbi] command is executed, except for commands
+within a [cmd dbi_eval] block where a single handle is reused with
+the enclosed commands.
 
 [def handlemisses]
-The number of time a handle was requested but none was available, perhaps after
-a timeout.
+The number of times a handle was requested but none was available, perhaps after
+a timeout. If this number is high try increasing [arg maxhandles] (but make
+sure that [emph handlefailures] is not significant).
 
 [def handleopens]
-The number of times a handle was connected/reconnected to the database.
+The number of times a handle was connected/reconnected to the database. If
+this number is high relative to [emph handlegets] then maybe one of
+[emph maxidle], [emph maxopen] or [emph maxqueries] is too aggressive. See
+also [emph bounces].
 
-[def handlefailuers]
-The number of times a connection attempt to the database failed.
+[def handlefailures]
+The number of times a connection attempt to the database failed. This should
+be 0, or very close.
 
 [def queries]
-Total number of queries by all handles in the pool.
+Total number of queries by all handles for this [arg db]. This number always
+increases.
 
 [def agedcloses]
 Number of times a handles was closed due to the [option maxopen] time expiring.
 
 [def idlecloses]
-Number fo times a handle was closed due to the [option maxidle] time expiring.
+Number of times a handle was closed due to the [option maxidle] time expiring.
 
 [def oppscloses]
 Number of times a handle was closed due to [option maxqueries] being reached.
 
 [def bounces]
-Number of times all handles in the pool were bounced with the
+Number of times all handles for the [arg db] were bounced with the
 [cmd "dbi_ctl bounce"] command.
-
 
 [list_end]
 
-
-[opt_def "maxhandles [arg pool] [opt [arg maxhandles]]"]
-Get or set the [arg maxhandles] option for [arg pool]. The default is 0 which
-means the pool will open an unlimeted number of handles, one for each thread,
-and the handles are cache per-thread and never returned to the pool. This is
-ideal for an embedded database or if you have a single pool which each thread
-almost always uses.
-
-[opt_def "timeout [arg pool] [opt [arg timeout]]"]
-Get or set the [arg timeout] option for [arg pool]. This is the timeout in
-seconds that a thread will wait for a handle if none are available. You can
-override it for each command using the [option -timeout] option. The default is
-10 seconds.
-
-[opt_def "maxrows [arg pool] [opt [arg maxrows]]"]
-Get or set the default maximum number of rows a query may return. The default
-is [emph 1000] which is high enough that any query returning more rows is
-probably a mistake. You can override this setting on a per-query basis by
-passing the [option -max] option to [cmd dbi_rows], or you can raise the
-default if you routinely run into this limit.
-
-[opt_def "maxidle [arg pool] [opt [arg maxidle]]"]
-Get or set the [arg maxidle] option for [arg pool]. This is the number of
-seconds that an open handle will linger unused in it's pool, after which it is
-automatically closed. The default is 0, which means handles are never closed due
-to idleness.
-
-[opt_def "maxopen [arg pool] [opt [arg maxopen]]"]
-Get or set the [arg maxopen] option for [arg pool]. This is the maximum number
-of seconds a handle can remain open, regardless of whether it is used or not.
-After this timeout, when the handle is returned to it's pool, it will be
-automatically closed. The default is 0, which means handle are not closed due
-to age.
-
-[opt_def "maxqueries [arg pool] [opt [arg maxqueries]]"]
-Get or set the [arg maxqueries] option for [arg pool]. A handle will be closed
-after this number of queries when it is returned to the pool. The default is 0.
-
-[para]
-This option can be used to ensure that a cached plan for a prepared statement
-does not become stale after many inserts/updates. Set it to something high, like
-10,000.
 
 [list_end]
 
@@ -279,10 +316,10 @@ does not become stale after many inserts/updates. Set it to something high, like
 [section {OPTIONS}]
 [list_begin options]
 
-[opt_def -pool [arg poolname]]
-The name of the pool to get a handle from. If none specified, the default
-pool is used. Pool names are defined each time a driver module is loaded --
-the module name is the pool name.
+[opt_def -db [arg name]]
+The name of the [arg db] to query. If not specified, the default
+[arg db] is used. Database names are defined each time a driver
+module is loaded -- the module name is the db name.
 
 [opt_def -timeout [arg t]]
 Time to wait for a database handle if none available immediately. [arg t] is
@@ -295,7 +332,8 @@ value is used (which defaults to 10 seconds).
 
 [para]
 If a handle does not become available during the timeout period a Tcl error
-is thrown with the NS_TIMEOUT...
+is thrown with [term errorCode] "NS_TIMEOUT". (If this is not caught the server
+will return a [term "503 Busy"] response).
 
 
 [opt_def -bind [arg array|set]]
@@ -348,66 +386,77 @@ string.
 [para]
 To use the nsdbi commands you must first load a driver, e.g. the postgreSQL
 driver [term nsdbipg]. Driver's can be loaded more than once to create
-multiple pools of database handles, each pool with it's own configuration
-options.
+multiple pools of database handles, each with it's own configuration options.
 
 [example_begin]
-[cmd ns_section] "ns/server/$server1/modules"
-[cmd ns_param] [arg pool1] [arg nsdbipg.so]
-[cmd ns_param] [arg pool2] [arg nsdbipg.so]
+[cmd ns_section] "ns/modules"
+[cmd ns_param]   [arg global1]       [arg nsdbipg.so]
+[cmd ns_param]   [arg global2]       [arg nsdbipg.so]
 ...
 
-[cmd ns_section] "ns/server/$server1/module/[arg pool1]"
+[cmd ns_section] "ns/server/server1/modules"
+[cmd ns_param]   [arg db3]           [arg nsdbipg.so]
+[cmd ns_param]   [arg db4]           [arg nsdbipg.so]
 ...
+
+[cmd ns_section] "ns/server/server1/module/[arg db4]"
+
+# The following parameters can be changed at runtime using [cmd dbi_ctl]
+# and are explained above.
+
+[cmd ns_param]   [arg default]       true
+[cmd ns_param]   [arg maxhandles]    0
+[cmd ns_param]   [arg timeout]       10
+[cmd ns_param]   [arg maxidle]       0
+[cmd ns_param]   [arg maxopen]       0
+[cmd ns_param]   [arg maxqueries]    0
+[cmd ns_param]   [arg maxrows]       1000
+
+# The following parameters are configured at server-startup.
+
+[cmd ns_param]   [arg user]          dbusername
+[cmd ns_param]   [arg password]      dbpassword
+[cmd ns_param]   [arg database]      dbname
+[cmd ns_param]   [arg cachesize]     [lb]expr 1024*1024[rb]
+[cmd ns_param]   [arg checkinterval] 600
 [example_end]
 
 Standard configuration options which are available with every driver:
         
 [list_begin definitions]
 
-[def "[cmd ns_param] [arg default] false"]
-When this option is true, the pool for which it is defined becomes the
-default pool for the virtual server.
+[def "user"]
+The [arg user] name with which to log in to the database.
 
-[def "[cmd ns_param] [arg cachesize] 1024*1024"]
-The number of bytes used to cache prepared statements. There is one cache
-per-handle.
+[def "password"]
+The password with which to log in to the database.
 
-[def "[cmd ns_param] [arg maxhandles] 0"]
-The maximum number of open connections to the database.
+[def "database"]
+Which [arg database] to connect to.
 
-[def "[cmd ns_param] [arg timeout] 10"]
-Seconds to wait if handle is at first unavailable.
+[def "cachesize"]
+The number of bytes used to cache the query text of prepared statements.
+The default is 1MB. There is one cache per-handle.
 
-[def "[cmd ns_param] [arg maxidle] 0"]
-If a handle is unused for [term maxidle] seconds, it is closed.
-
-[def "[cmd ns_param] [arg maxopen] 0"]
-Handles are closed after [term maxopen] seconds, regardless of whether it
-has been used or not.
-
-[def "[cmd ns_param] [arg maxqueries] 0"]
-Handles are closed after [term maxqueries] queries, if value is more than 0.
-
-[def "[cmd ns_param] [arg checkinterval] 600"]
-Check for idle handles every [term checkinterval] seconds.
+[def "checkinterval"]
+Check for idle handles every [term checkinterval] seconds. The default
+is 600 seconds.
 
 [list_end]
 
-Each driver also takes driver-specific parameters to specify the user,
-password etc. to connect to the database.
+Each driver may also takes driver-specific parameters.
 
 
 
 [section EXAMPLES]
 
 
-Select rows from a table using pool [arg x]. Only rows in which column [arg a]
+Select rows from a table using db [arg x]. Only rows in which column [arg a]
 matches the bind variable will be returned:
 
 [example_begin]
 set a "someValue"
-set rows [lb][cmd dbi_rows] [option "-pool [arg x]"] {
+set rows [lb][cmd dbi_rows] [option "-db [arg x]"] {
     select a, b
     from table
     where a = :a

@@ -11,55 +11,55 @@ eval ::tcltest::configure $argv
 
 
 
-test pools {list all pools} -body {
-    lsort [dbi_ctl pools]
-} -result {OPENERR OPENERR0 global1 global2 pool1 pool2}
+test dblist {list all dbs} -body {
+    lsort [dbi_ctl dblist]
+} -result {OPENERR OPENERR0 db1 db2 global1 global2}
 
 
-test default {default pool} -body {
+test default {default db} -body {
     dbi_ctl default
-} -result pool1
+} -result db1
 
 
 
 test ctl.1 {driver} -body {
-    dbi_ctl driver pool1
+    dbi_ctl driver db1
 } -result test
 
 test ctl.2 {database} -body {
-    dbi_ctl database pool1
+    dbi_ctl database db1
 } -result db
 
 test ctl.3 {default} -body {
     dbi_ctl default
-} -result pool1
+} -result db1
 
 test ctl.4 {maxhandles} -body {
-    dbi_ctl maxhandles pool1
-} -result [ns_config ns/server/server1/module/pool1 maxhandles -1]
+    dbi_ctl maxhandles db1
+} -result [ns_config ns/server/server1/module/db1 maxhandles -1]
 
 test ctl.5 {maxidle} -body {
-    dbi_ctl maxidle pool1
-} -result [ns_config ns/server/server1/module/pool1 maxidle -1]
+    dbi_ctl maxidle db1
+} -result [ns_config ns/server/server1/module/db1 maxidle -1]
 
 test ctl.6 {maxopen} -body {
-    dbi_ctl maxopen pool1
-} -result [ns_config ns/server/server1/module/pool1 maxopen -1]
+    dbi_ctl maxopen db1
+} -result [ns_config ns/server/server1/module/db1 maxopen -1]
 
 test ctl.7 {maxqueries} -body {
-    dbi_ctl maxqueries pool1
-} -result [ns_config ns/server/server1/module/pool1 maxqueries -1]
+    dbi_ctl maxqueries db1
+} -result [ns_config ns/server/server1/module/db1 maxqueries -1]
 
 test ctl.8 {change config} -body {
-    set old [dbi_ctl maxhandles pool1 99]
-    set new [dbi_ctl maxhandles pool1 $old]
+    set old [dbi_ctl maxhandles db1 99]
+    set new [dbi_ctl maxhandles db1 $old]
     list $old $new
-} -result "[ns_config ns/server/server1/module/pool1 maxhandles -1] 99"
+} -result "[ns_config ns/server/server1/module/db1 maxhandles -1] 99"
 
 
 
 test stats.1 {pool stats} -body {
-     array set a [dbi_ctl stats pool1]
+     array set a [dbi_ctl stats db1]
      lsort [array names a]
 } -cleanup {
     unset -nocomplain a
@@ -68,7 +68,7 @@ test stats.1 {pool stats} -body {
 
 
 test open-1.1 {simulate driver open callback failure} -body {
-    dbi_rows -pool OPENERR {ROWS 1 1}
+    dbi_rows -db OPENERR {ROWS 1 1}
 } -returnCodes error -result {handle allocation failed}
 
 
@@ -266,26 +266,26 @@ test template-12 {now rows, no default} -body {
 
 
 test pool-global {query from non-default global pool} -body {
-    dbi_rows -pool global1 {ROWS 1 1 v}
+    dbi_rows -db global1 {ROWS 1 1 v}
 } -result v
 
 
 
 
 test thread-handle-1.1 {maxhandles 0} -body {
-    dbi_rows -pool global2 {ROWS 1 1 v}
+    dbi_rows -db global2 {ROWS 1 1 v}
 } -result v
 
 test thread-handle-1.2 {maxhandles 0, thread exit w/handle cleanup} -body {
     ns_thread wait [ns_thread begin {
-        dbi_rows -pool global2 {ROWS 1 1 v}
+        dbi_rows -db global2 {ROWS 1 1 v}
     }]
 } -result v
 
 test thread-handle-1.3 {maxhandles 0, thread handle reuse} -body {
     ns_thread wait [ns_thread begin {
-        dbi_rows -pool global2 {ROWS 1 1 v}
-        dbi_rows -pool global2 {ROWS 1 1 v}
+        dbi_rows -db global2 {ROWS 1 1 v}
+        dbi_rows -db global2 {ROWS 1 1 v}
     }]
 } -result v
 
@@ -294,12 +294,12 @@ test thread-handle-1.4 {maxhandles 0/1/0} -body {
     dbi_ctl maxhandles global2 0
 
     ns_thread wait [ns_thread begin {
-        dbi_rows -pool global2 {ROWS 1 1 v}
+        dbi_rows -db global2 {ROWS 1 1 v}
         dbi_ctl maxhandles global2 1
     }]
 
     ns_thread wait [ns_thread begin {
-        dbi_rows -pool global2 -timeout 3 {ROWS 2 2 v}
+        dbi_rows -db global2 -timeout 3 {ROWS 2 2 v}
     }]
 
 } -cleanup {
@@ -311,12 +311,12 @@ test thread-handle-1.5 {maxhandles 0/2/0} -body {
     dbi_ctl maxhandles global2 0
 
     ns_thread wait [ns_thread begin {
-        dbi_rows -pool global2 {ROWS 1 1 v}
+        dbi_rows -db global2 {ROWS 1 1 v}
         dbi_ctl maxhandles global2 2
     }]
 
     ns_thread wait [ns_thread begin {
-        dbi_rows -pool global2 -timeout 2 {ROWS 1 2 v}
+        dbi_rows -db global2 -timeout 2 {ROWS 1 2 v}
     }]
 
 } -cleanup {
@@ -328,15 +328,15 @@ test thread-handle-1.6 {maxhandles 0/2/0/0} -body {
     dbi_ctl maxhandles global2 0
 
     ns_thread wait [ns_thread begin {
-        dbi_rows -pool global2 {ROWS 1 1 v}
+        dbi_rows -db global2 {ROWS 1 1 v}
         dbi_ctl maxhandles global2 2
     }]
 
     ns_thread wait [ns_thread begin {
-        dbi_rows -pool global2 -timeout 1 {ROWS 1 2 v}
-        dbi_rows -pool global2 -timeout 1 {ROWS 1 3 v}
+        dbi_rows -db global2 -timeout 1 {ROWS 1 2 v}
+        dbi_rows -db global2 -timeout 1 {ROWS 1 3 v}
         dbi_ctl maxhandles global2 0
-        dbi_rows -pool global2 -timeout 1 {ROWS 1 4 v}
+        dbi_rows -db global2 -timeout 1 {ROWS 1 4 v}
     }]
 
 } -cleanup {
@@ -344,18 +344,18 @@ test thread-handle-1.6 {maxhandles 0/2/0/0} -body {
 } -result {v 1.0 2.0 3.0}
 
 test thread-handle-1.7 {open error} -body {
-    dbi_rows -pool OPENERR0 {ROWS 1 1}
+    dbi_rows -db OPENERR0 {ROWS 1 1}
 } -returnCodes error -result {handle allocation failed}
 
 
 
 
 test poolhandle-1 {cache pool pointer in pool name obj} -body {
-    set poolname pool1
-    dbi_rows -pool $poolname {ROWS 1 1}
-    dbi_rows -pool $poolname {ROWS 1 1}
-    set poolname
-} -result pool1
+    set db db1
+    dbi_rows -db $db {ROWS 1 1}
+    dbi_rows -db $db {ROWS 1 1}
+    set db
+} -result db1
 
 
 
@@ -472,7 +472,7 @@ test bindset-1 {bind ns_set} -body {
 
 
 test bounce-1 {bounce pool} -body {
-    dbi_ctl bounce pool1
+    dbi_ctl bounce db1
 } -result {}
 
 
@@ -485,23 +485,23 @@ test withhandle-1 {two queries, same handle} -body {
 } -result {bar 0.1 1.0 1.1}
 
 test withhandle-2 {two queries, same handle, global pool} -body {
-    dbi_eval -pool global1 {
+    dbi_eval -db global1 {
         dbi_rows {ROWS 2 2 foo}
         dbi_rows {ROWS 2 2 bar}
     }
 } -result {bar 0.1 1.0 1.1}
 
 test withhandle-3 {two queries, different handles} -body {
-    dbi_eval -pool global1 {
+    dbi_eval -db global1 {
         dbi_rows {ROWS 2 2 foo}
-        dbi_rows -pool pool1 {ROWS 2 2 bar}
+        dbi_rows -db db1 {ROWS 2 2 bar}
     }
 } -result {bar 0.1 1.0 1.1}
 
 test withhandle-4 {two queries, different handles} -body {
     dbi_eval {
         dbi_rows {ROWS 2 2 foo}
-        dbi_rows -pool global1 {ROWS 2 2 bar}
+        dbi_rows -db global1 {ROWS 2 2 bar}
     }
 } -result {bar 0.1 1.0 1.1}
 
@@ -533,20 +533,20 @@ test transaction-2 {transaction error, rollback} -body {
 
 test timeout-1 {timeout getting handle, relative time} -body {
     ns_thread begindetached {
-        dbi_rows -pool pool2 -- {SLEEP 3 0}
+        dbi_rows -db db2 -- {SLEEP 3 0}
     }
     after 1000
-    dbi_rows -timeout 1 -pool pool2 -- {ROWS 2 2}
+    dbi_rows -timeout 1 -db db2 -- {ROWS 2 2}
 } -cleanup {
     after 2500
 } -returnCodes error -result {wait for database handle timed out}
 
 test timeout-2 {timeout getting handle, absolute time} -body {
     ns_thread begindetached {
-        dbi_rows -pool pool2 -- {SLEEP 3 0}
+        dbi_rows -db db2 -- {SLEEP 3 0}
     }
     after 1000
-    dbi_rows -timeout [ns_time incr [ns_time get] 1] -pool pool2 -- {ROWS 2 2}
+    dbi_rows -timeout [ns_time incr [ns_time get] 1] -db db2 -- {ROWS 2 2}
 } -cleanup {
     after 2500
 } -returnCodes error -result {wait for database handle timed out}

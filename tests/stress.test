@@ -12,7 +12,7 @@ eval ::tcltest::configure $argv
 
 test dbi-stress-1 {stability...} -constraints stress -body {
 
-    # 5 handles in pool1 -- use more to promote handle misses.
+    # 5 handles in db1 -- use more to promote handle misses.
 
     foreach h {0 1 2 3 4 5 6 7 8 9} {
 
@@ -53,7 +53,7 @@ test dbi-stress-1 {stability...} -constraints stress -body {
         ns_thread join $t
     }
 
-    ns_log notice [dbi stats pool1]
+    ns_log notice [dbi stats db1]
 
 } -cleanup {
     unset -nocomplain x y i h query threads t

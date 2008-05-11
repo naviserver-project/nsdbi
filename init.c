@@ -404,7 +404,7 @@ Dbi_RegisterDriver(CONST char *server, CONST char *module,
 
     path = Ns_ConfigGetPath(server, module, NULL);
     if (path == NULL) {
-        Ns_Log(Error, "dbi[%s]: no configuration for pool", module);
+        Ns_Log(Error, "dbi[%s]: no configuration for db", module);
         return NS_ERROR;
     }
 
@@ -490,7 +490,7 @@ Dbi_GetPool(CONST char *server, CONST char *poolname)
     Dbi_Pool       *pool;
 
     if ((sdataPtr = GetServer(server)) == NULL) {
-        Ns_Log(Error, "dbi: invalid server '%s' while getting pool '%s'", server, poolname);
+        Ns_Log(Error, "dbi: invalid server '%s' while getting db '%s'", server, poolname);
         return NULL;
     }
     if (poolname == NULL) {
@@ -501,9 +501,9 @@ Dbi_GetPool(CONST char *server, CONST char *poolname)
     }
     if (pool == NULL) {
         if (poolname == NULL) {
-            Ns_Log(Error, "dbi: no default pool for server '%s'", server); 
+            Ns_Log(Error, "dbi: no default db for server '%s'", server); 
         } else {
-            Ns_Log(Error, "dbi: invalid pool '%s' for server '%s'", poolname, server);
+            Ns_Log(Error, "dbi: invalid db '%s' for server '%s'", poolname, server);
         }
     }
     return pool;

@@ -256,7 +256,7 @@ GetPool(InterpData *idataPtr, Tcl_Obj *poolObj)
                 Ns_TclSetOpaqueObj(poolObj, poolType, pool);
             } else {
                 Tcl_SetResult(interp,
-                    "invalid pool name or pool not available to virtual server",
+                    "invalid db name or db not available to virtual server",
                     TCL_STATIC);
             }
         }
@@ -267,7 +267,7 @@ GetPool(InterpData *idataPtr, Tcl_Obj *poolObj)
         pool = Dbi_DefaultPool(idataPtr->server);
         if (pool == NULL) {
             Tcl_SetResult(interp,
-                "no pool specified and no default configured",
+                "no db specified and no default configured",
                  TCL_STATIC);
         }
     }
@@ -534,7 +534,7 @@ RowsObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
     int           end, status, maxRows = -1;
 
     Ns_ObjvSpec opts[] = {
-        {"-pool",      Ns_ObjvObj,    &poolObj,    NULL},
+        {"-db",        Ns_ObjvObj,    &poolObj,    NULL},
         {"-timeout",   Ns_ObjvTime,   &timeoutPtr, NULL},
         {"-bind",      Ns_ObjvObj,    &valuesObj,  NULL},
         {"-max",       Ns_ObjvInt,    &maxRows,    NULL},
@@ -620,7 +620,7 @@ DmlObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
     Ns_Time      *timeoutPtr = NULL;
 
     Ns_ObjvSpec opts[] = {
-        {"-pool",      Ns_ObjvObj,    &poolObj,    NULL},
+        {"-db",        Ns_ObjvObj,    &poolObj,    NULL},
         {"-timeout",   Ns_ObjvTime,   &timeoutPtr, NULL},
         {"-bind",      Ns_ObjvObj,    &valuesObj,  NULL},
         {"--",         Ns_ObjvBreak,  NULL,        NULL},
@@ -705,7 +705,7 @@ RowCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[],
     int           found, end, status;
 
     Ns_ObjvSpec opts[] = {
-        {"-pool",      Ns_ObjvObj,    &poolObj,    NULL},
+        {"-db",        Ns_ObjvObj,    &poolObj,    NULL},
         {"-timeout",   Ns_ObjvTime,   &timeoutPtr, NULL},
         {"-bind",      Ns_ObjvObj,    &valuesObj,  NULL},
         {"--",         Ns_ObjvBreak,  NULL,        NULL},
@@ -812,7 +812,7 @@ EvalObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
     int              status = TCL_ERROR;
 
     Ns_ObjvSpec opts[] = {
-        {"-pool",        Ns_ObjvObj,   &poolObj,    NULL},
+        {"-db",          Ns_ObjvObj,   &poolObj,    NULL},
         {"-timeout",     Ns_ObjvTime,  &timeoutPtr, NULL},
         {"-transaction", Ns_ObjvIndex, &isolation,  levels},
         {"--",           Ns_ObjvBreak, NULL,        NULL},
@@ -909,14 +909,14 @@ CtlObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
     int         cmd, oldValue, newValue;
 
     static CONST char *cmds[] = {
-        "bounce", "database", "default", "driver",
+        "bounce", "database", "dblist", "default", "driver",
         "maxhandles", "maxrows", "maxidle", "maxopen", "maxqueries",
-        "pools", "stats", "timeout", NULL
+        "stats", "timeout", NULL
     };
     enum CmdIdx {
-        CBounceCmd, CDatabaseCmd, CDefaultCmd, CDriverCmd,
+        CBounceCmd, CDatabaseCmd, CDBListCmd, CDefaultCmd, CDriverCmd,
         CMaxHandlesCmd, CMaxRowsCmd, CMaxIdleCmd, CMaxOpenCmd, CMaxQueriesCmd,
-        CPoolsCmd, CStatsCmd, CTimeoutCmd,
+        CStatsCmd, CTimeoutCmd,
     };
     if (objc < 2) {
         Tcl_WrongNumArgs(interp, 1, objv, "command ?args?");
@@ -932,7 +932,7 @@ CtlObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
      */
 
     switch (cmd) {
-    case CPoolsCmd:
+    case CDBListCmd:
         Ns_DStringInit(&ds);
         if (Dbi_ListPools(&ds, server) != NS_OK) {
             return TCL_ERROR;
@@ -946,17 +946,17 @@ CtlObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
             Tcl_SetResult(interp, (char *) Dbi_PoolName(pool), TCL_VOLATILE);
         }
         if (objc == 3) {
-            
+
         }
         return TCL_OK;
     }
 
     /*
-     * All other commands require a pool to opperate on.
+     * All other commands require a db to opperate on.
      */
 
     if (objc != 3 && objc != 4) {
-        Tcl_WrongNumArgs(interp, 2, objv, "pool ?args?");
+        Tcl_WrongNumArgs(interp, 2, objv, "db ?args?");
         return TCL_ERROR;
     }
     if ((pool = GetPool(idataPtr, objv[2])) == NULL) {
