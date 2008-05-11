@@ -30,7 +30,7 @@ test dbi-stress-1 {stability...} -constraints stress -body {
 
                 # catch handle timeout errors and yield.
                 if {[catch {
-                    dbi rows -timeout 0 -- $query
+                    dbi_rows -timeout 0 -- $query
                 } err]} {
                     ns_thread yield
                 }
@@ -53,7 +53,7 @@ test dbi-stress-1 {stability...} -constraints stress -body {
         ns_thread join $t
     }
 
-    ns_log notice [dbi stats db1]
+    ns_log notice [dbi_ctl stats db1]
 
 } -cleanup {
     unset -nocomplain x y i h query threads t

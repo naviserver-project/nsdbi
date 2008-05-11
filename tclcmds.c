@@ -46,7 +46,7 @@ NS_RCSID("@(#) $Header$");
 
 extern int
 DbiTclSubstTemplate(Tcl_Interp *, Dbi_Handle *,
-                    Tcl_Obj *templateObj, Tcl_Obj *defaultObj);
+                    Tcl_Obj *templateObj, Tcl_Obj *defaultObj, int adp);
 
 
 /*
@@ -531,13 +531,14 @@ RowsObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
     Tcl_Obj      *poolObj = NULL, *valuesObj = NULL;
     Tcl_Obj      *templateObj = NULL, *defaultObj = NULL;
     Ns_Time      *timeoutPtr = NULL;
-    int           end, status, maxRows = -1;
+    int           end, status, maxRows = -1, adp = 0;
 
     Ns_ObjvSpec opts[] = {
         {"-db",        Ns_ObjvObj,    &poolObj,    NULL},
         {"-timeout",   Ns_ObjvTime,   &timeoutPtr, NULL},
         {"-bind",      Ns_ObjvObj,    &valuesObj,  NULL},
         {"-max",       Ns_ObjvInt,    &maxRows,    NULL},
+        {"-append",    Ns_ObjvBool,   &adp,        (void *) NS_TRUE},
         {"--",         Ns_ObjvBreak,  NULL,        NULL},
         {NULL, NULL, NULL, NULL}
     };
@@ -566,7 +567,7 @@ RowsObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
 
     if (templateObj != NULL) {
         status = DbiTclSubstTemplate(interp, handle,
-                                     templateObj, defaultObj);
+                                     templateObj, defaultObj, adp);
     } else {
 
         resObj = Tcl_GetObjResult(interp);

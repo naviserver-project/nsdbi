@@ -21,6 +21,7 @@ nsdbi provides an easy to use interface to databases.
 [call [cmd dbi_rows] \
       [vset standard_options] \
       [opt [option "-max [arg nrows]"]] \
+      [opt [option -append]] \
       [opt [arg --]] \
       [arg query] \
       [opt [arg template]] \
@@ -39,6 +40,10 @@ set result
 <li>Jolly Roger</li>
 [example_end]
 
+[list_begin arguments]
+
+[arg_def string [opt template]]
+
 If [arg template] is given then for each row returned by the query, template
 variables are substituted for the values of the corresponding columns. The
 templated rows are concatenated and returned as a string.
@@ -47,14 +52,6 @@ templated rows are concatenated and returned as a string.
 [cmd dbi_rows] {select first, last from peeps} {<li>$first $last</li>\n}
 <li>Dirty Harry</li>
 <li>Jolly Roger</li>
-[example_end]
-
-If no rows are returned then an error is raised, unless the [arg default]
-argument is given in which case it becomes the complete result.
-
-[example_begin]
-[cmd dbi_rows] {select leader from government} {${leader}! \n} {nobody here but us chickens}
-nobody here but us chickens
 [example_end]
 
 If a template variable name does not correspond to a column name in the result
@@ -72,16 +69,45 @@ Yo, Dirty Harry!
 Yo, Jolly Roger!
 [example_end]
 
+[arg_def string [opt default]]
+
+If no rows are returned then an error is raised, unless the [arg default]
+argument is given in which case it becomes the complete result.
+
+[example_begin]
+[cmd dbi_rows] {select leader from government} {${leader}! \n} {nobody here but us chickens}
+nobody here but us chickens
+[example_end]
+
+[list_end]
+
+[list_begin options]
+
+[opt_def -max [arg nrows]]
+
 If the [option -max] option is given then it is an assertion that the query
 will return no more than this number of rows. An error will be raised if
 it does. If [option -max] is not given then the default [arg maxrows] for
 the [term db] is used (see [cmd dbi_ctl] below).
 
 [para]
-Useful values for [option -max] include [term >1000] when you're absolutely
+Useful values for [option -max] are: [term >1000] when you're absolutely
 sure that a paricular query needs to return that much data (which would be
-unsusual on the web) and [term 1], in which case [cmd dbi_rows] acts like
+unusual on the web) and [term 1], in which case [cmd dbi_rows] acts like
 [cmd dbi_0or1row], except returning the result instead of setting variables.
+
+[opt_def -append]
+
+If the [option -append] option is given then the result is appended efficiently
+to the [term ADP] output buffer. If no ADP frame is active an error is raised.
+
+[example_begin]
+<ul>
+<% [cmd dbi_rows] [option -append] -- {select first, last from peeps} {<li>$first $last</li>} %>
+</ul>
+[example_end]
+
+[list_end]
 
 
 
@@ -385,7 +411,7 @@ string.
         
 [para]
 To use the nsdbi commands you must first load a driver, e.g. the postgreSQL
-driver [term nsdbipg]. Driver's can be loaded more than once to create
+driver [term nsdbipg]. Drivers can be loaded more than once to create
 multiple pools of database handles, each with it's own configuration options.
 
 [example_begin]
@@ -478,6 +504,6 @@ ns_log notice "foo: $array(foo)"
 
 
 [see_also nsdb subst]
-[keywords NaviServer database sql query]
+[keywords NaviServer database sql query adp]
 
 [manpage_end]

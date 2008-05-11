@@ -45,7 +45,7 @@ typedef struct Template {
 
 
 int DbiTclSubstTemplate(Tcl_Interp *, Dbi_Handle *,
-                        Tcl_Obj *templateObj, Tcl_Obj *defaultObj);
+                        Tcl_Obj *templateObj, Tcl_Obj *defaultObj, int adp);
 
 
 /*
@@ -55,9 +55,9 @@ int DbiTclSubstTemplate(Tcl_Interp *, Dbi_Handle *,
 static int GetTemplateFromObj(Tcl_Interp *interp, Dbi_Handle *,
                               Tcl_Obj *templateObj, Template **templatePtrPtr);
 static int AppendValue(Tcl_Interp *interp, Dbi_Handle *handle, unsigned int index,
-                       Tcl_Obj *resObj);
+                       Tcl_Obj *resObj, Ns_DString *dsPtr);
 static int AppendTokenVariable(Tcl_Interp *interp, Tcl_Token *tokenPtr,
-                               Tcl_Obj *resObj);
+                               Tcl_Obj *resObj, Ns_DString *dsPtr);
 static void MapVariablesToColumns(Dbi_Handle *handle, Template *templatePtr);
 static void NewTextToken(Tcl_Parse *parsePtr, char *string, int length);
 static int NextRow(Tcl_Interp *interp, Dbi_Handle *handle, int *endPtr);
@@ -100,13 +100,16 @@ static Tcl_ObjType templateType = {
 
 int
 DbiTclSubstTemplate(Tcl_Interp *interp, Dbi_Handle *handle,
-                    Tcl_Obj *templateObj, Tcl_Obj *defaultObj)
+                    Tcl_Obj *templateObj, Tcl_Obj *defaultObj, int adp)
 {
     Template      *templatePtr;
     Tcl_Parse     *parsePtr;
     Tcl_Token     *tokenPtr;
     Tcl_Obj       *resObj;
-    int           *varColMap, end;
+    Ns_DString    *dsPtr;
+    char          *def;
+    int           *varColMap, end, len;
+    int            stream, maxBuffer;
     unsigned int   tokIdx, varIdx, colIdx, numCols, numRows;
 
     /*
@@ -122,11 +125,24 @@ DbiTclSubstTemplate(Tcl_Interp *interp, Dbi_Handle *handle,
     varColMap = templatePtr->varColMap;
 
     /*
+     * Append to the Tcl result or directly to the ADP output buffer.
+     */
+
+    if (adp) {
+        resObj = NULL;
+        if (Ns_AdpGetOutput(interp, &dsPtr, &stream, &maxBuffer) != TCL_OK) {
+            return TCL_ERROR;
+        }
+    } else {
+        resObj = Tcl_GetObjResult(interp);
+        dsPtr = NULL;
+    }
+
+    /*
      * Step through the result rows, appending column values and Tcl
      * variables to the final result.
      */
 
-    resObj = Tcl_GetObjResult(interp);
     numCols = Dbi_NumColumns(handle);
     numRows = 0;
 
@@ -144,7 +160,14 @@ DbiTclSubstTemplate(Tcl_Interp *interp, Dbi_Handle *handle,
             switch (tokenPtr->type) {
 
             case TCL_TOKEN_TEXT:
-                Tcl_AppendToObj(resObj, tokenPtr->start, tokenPtr->size);
+                if (adp) {
+                    if (Ns_AdpAppend(interp, tokenPtr->start, tokenPtr->size)
+                            != TCL_OK) {
+                        return TCL_ERROR;
+                    }
+                } else {
+                    Tcl_AppendToObj(resObj, tokenPtr->start, tokenPtr->size);
+                }
                 break;
 
             case TCL_TOKEN_VARIABLE:
@@ -152,11 +175,13 @@ DbiTclSubstTemplate(Tcl_Interp *interp, Dbi_Handle *handle,
                 colIdx = varColMap[varIdx++];
 
                 if (colIdx == -1) {
-                    if (AppendTokenVariable(interp, tokenPtr, resObj) != TCL_OK) {
+                    if (AppendTokenVariable(interp, tokenPtr, resObj, dsPtr)
+                            != TCL_OK) {
                         return TCL_ERROR;
                     }
                 } else {
-                    if (AppendValue(interp, handle, colIdx, resObj) != TCL_OK) {
+                    if (AppendValue(interp, handle, colIdx, resObj, dsPtr)
+                            != TCL_OK) {
                         return TCL_ERROR;
                     }
                 }
@@ -168,11 +193,30 @@ DbiTclSubstTemplate(Tcl_Interp *interp, Dbi_Handle *handle,
                 break;
             }
         }
+
+        /*
+         * Flush the ADP buffer after every row if we're in streaming
+         * mode or the buffer grows too large.
+         */
+
+        if (dsPtr != NULL
+                && (stream || Ns_DStringLength(dsPtr) > maxBuffer)
+                && Ns_AdpFlush(interp, 1) != TCL_OK) {
+            return TCL_ERROR;
+        }
+
     }
 
     if (numRows == 0) {
         if (defaultObj != NULL) {
-            Tcl_SetObjResult(interp, defaultObj);
+            if (adp) {
+                def = Tcl_GetStringFromObj(defaultObj, &len);
+                if (Ns_AdpAppend(interp, def, len) != TCL_OK) {
+                    return TCL_ERROR;
+                }
+            } else {
+                Tcl_SetObjResult(interp, defaultObj);
+            }
         } else {
             Tcl_SetResult(interp, "query was not a statement returning rows",
                           TCL_STATIC);
@@ -203,7 +247,7 @@ DbiTclSubstTemplate(Tcl_Interp *interp, Dbi_Handle *handle,
 
 static int
 AppendValue(Tcl_Interp *interp, Dbi_Handle *handle, unsigned int index,
-            Tcl_Obj *resObj)
+            Tcl_Obj *resObj, Ns_DString *dsPtr)
 {
     size_t  valueLength;
     int     resultLength, binary;
@@ -219,10 +263,15 @@ AppendValue(Tcl_Interp *interp, Dbi_Handle *handle, unsigned int index,
         return TCL_ERROR;
     }
 
-    bytes = Tcl_GetStringFromObj(resObj, &resultLength);
-    Tcl_SetObjLength(resObj, resultLength + valueLength);
-
-    bytes = resObj->bytes + resultLength;
+    if (dsPtr) {
+        resultLength = Ns_DStringLength(dsPtr);
+        Ns_DStringSetLength(dsPtr, resultLength + valueLength);
+        bytes = dsPtr->string + resultLength;
+    } else {
+        (void) Tcl_GetStringFromObj(resObj, &resultLength);
+        Tcl_SetObjLength(resObj, resultLength + valueLength);
+        bytes = resObj->bytes + resultLength;
+    }
 
     if (Dbi_ColumnValue(handle, index, bytes, valueLength) != NS_OK) {
         Dbi_TclErrorResult(interp, handle);
@@ -251,10 +300,11 @@ AppendValue(Tcl_Interp *interp, Dbi_Handle *handle, unsigned int index,
  */
 
 static int
-AppendTokenVariable(Tcl_Interp *interp, Tcl_Token *tokenPtr, Tcl_Obj *resObj)
+AppendTokenVariable(Tcl_Interp *interp, Tcl_Token *tokenPtr,
+                    Tcl_Obj *resObj, Ns_DString *dsPtr)
 {
     Tcl_Obj *objPtr;
-    char    *name, save;
+    char    *name, *value, save;
     int      size;
 
     /* NB: Skip past leading '$' */
@@ -274,7 +324,12 @@ AppendTokenVariable(Tcl_Interp *interp, Tcl_Token *tokenPtr, Tcl_Obj *resObj)
     }
     name[size] = save;
 
-    Tcl_AppendObjToObj(resObj, objPtr);
+    if (dsPtr) {
+        value = Tcl_GetStringFromObj(objPtr, &size);
+        Ns_DStringNAppend(dsPtr, value, size);
+    } else {
+        Tcl_AppendObjToObj(resObj, objPtr);
+    }
 
     return TCL_OK;
 }

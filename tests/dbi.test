@@ -264,6 +264,12 @@ test template-12 {now rows, no default} -body {
 
 
 
+test adp-template-1 {append to adp} -body {
+    ns_adp_eval {-<% dbi_rows -append -- {ROWS 2 2} {$0 $1 } %>-}
+} -result {-0.0 0.1 1.0 1.1 -}
+
+
+
 
 test pool-global {query from non-default global pool} -body {
     dbi_rows -db global1 {ROWS 1 1 v}
