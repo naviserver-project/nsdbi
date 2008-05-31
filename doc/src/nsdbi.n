@@ -18,6 +18,53 @@ nsdbi provides an easy to use interface to databases.
 
 
 
+[call [cmd dbi_1row] \
+      [vset standard_options] \
+      [opt [arg --]] \
+      [arg query]]
+
+Execute a [arg query] which is expected to return exactly one row. If no rows are
+returned then an error is raised.
+
+[para]
+The column values of the row are set as variables in the current stack frame
+using the column names as Tcl variable names.
+
+[example_begin]
+[cmd dbi_1row] {select first, last from peeps where id = 1}
+set mysteryMan "$first $last"
+[example_end]
+
+Array-name syntax may be used to build an array result:
+
+[example_begin]
+[cmd dbi_1row] {select first as 'name(first)', last as 'name(last)' from peeps where id = 1}
+set mysteryMan "$name(first) $name(last)"
+[example_end]
+
+
+
+
+[call [cmd dbi_0or1row] \
+      [vset standard_options] \
+      [opt [arg --]] \
+      [arg query]]
+
+Execute a [arg query] which is expected to return either zero rows or exactly one
+row. If no rows are returned the result is 0 (false), otherwise it is 1 (true).
+If more than 1 row is returned an error is raised.
+
+[example_begin]
+if {[lb][cmd dbi_0or1row] {select first, last from peeps where id = 1}[rb]} {
+    set mysteryMan "$first $last"
+} else {
+    set mysteryMan "Benny Hill"
+}
+[example_end]
+
+
+
+
 [call [cmd dbi_rows] \
       [vset standard_options] \
       [opt [option "-max [arg nrows]"]] \
@@ -109,25 +156,6 @@ to the [term ADP] output buffer. If no ADP frame is active an error is raised.
 
 [list_end]
 
-
-
-[call [cmd dbi_1row] \
-      [vset standard_options] \
-      [opt [arg --]] \
-      [arg query]]
-
-Execute a query which is expected to return exactly one row. If no rows are
-returned then an error is thrown.
-
-
-
-[call [cmd dbi_0or1row] \
-      [vset standard_options] \
-      [opt [arg --]] \
-      [arg query]]
-
-Execute a query which is expected to return either zero rows or exactly one
-row. If no rows are returned the result is the empty string.
 
 
 

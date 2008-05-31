@@ -673,7 +673,12 @@ ZeroOrOneRowObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST 
 {
     int foundRow;
 
-    return RowCmd(arg, interp, objc, objv, &foundRow);
+    if (RowCmd(arg, interp, objc, objv, &foundRow) != TCL_OK) {
+        return TCL_ERROR;
+    }
+    Tcl_SetObjResult(interp, Tcl_NewBooleanObj(foundRow));
+
+    return TCL_OK;
 }
 
 static int

@@ -90,26 +90,26 @@ test dml-2 {dml error} -body {
 
 
 test 0or1row-1 {found single column} -body {
-    dbi_0or1row {ROWS 1 1 v}
-    set 0
+    set n [dbi_0or1row {ROWS 1 1}]
+    list $n $0
 } -cleanup {
-    unset -nocomplain 0
-} -result v
+    unset -nocomplain n 0
+} -result {1 0.0}
 
 test 0or1row-2 {found multiple columns} -body {
-    dbi_0or1row {ROWS 3 1 v}
-    list $0 $1 $2
+    set n [dbi_0or1row {ROWS 3 1}]
+    list $n $0 $1 $2
 } -cleanup {
-    unset -nocomplain 0 1 2
-} -result {v 0.1 0.2}
+    unset -nocomplain n 0 1 2
+} -result {1 0.0 0.1 0.2}
 
 test 0or1row-3 {not found} -body {
     set 0 x
-    dbi_0or1row {ROWS 1 0}
-    set 0
+    set n [dbi_0or1row {ROWS 1 0}]
+    list $n $0
 } -cleanup {
-    unset -nocomplain 0
-} -result x
+    unset -nocomplain n 0
+} -result {0 x}
 
 test 0or1row-4 {more than 1 row} -body {
     dbi_0or1row {ROWS 1 2}
