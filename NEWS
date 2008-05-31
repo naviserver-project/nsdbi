@@ -1,0 +1,43 @@
+
+2008-??-?? nsdbi-0.2 released
+
+* New 'template' and 'default' args to dbi_rows provide an easy way
+  to build a formatted result efficiently. The new -append option
+  provides an optimisation for ADP pages.
+
+* New -max option to dbi_rows asserting the max number of rows
+  expected. The default is a web-friendly 1000.
+
+* dbi_0or1row now returns 1 when it finds a row, 0 otherwise.
+
+* The options -bindarray and -bindset become simply -bind. The -pool
+  option is now known as -db. The maxwait config option was renamed
+  timeout.
+
+* The interface for drivers has changed. Results are now fetched
+  row-by-row, and value buffers are pre-sized for efficient fetching
+  with a minimum of copies using the new Dbi_ColumnLengthProc callback.
+
+* Some routines have been exposed for Tcl command writers: Dbi_TclGetPool,
+  Dbi_TclGetHandle, Dbi_TclErrorResult.
+
+
+
+2008-04-17 nsdbi-0.1 released
+
+Initial release of a new database driver interface for NaviServer.
+Features include:
+
+* Native bind variables. All drivers support bind variables natively
+  using a common syntax: select col from table where key = :variable
+
+* Native, transparent prepared statements. Statements are prepared when
+  first executed and cached for reuse in the future, which saves repeated
+  parsing and planning.
+
+* Automatic handle management. Handles are managed transparently, discouraging
+  sloppy usage such as keeping handles from the pool, blocking other threads.
+
+* Nested transactions with save points.
+
+* Statistics on usage with dynamic configuration.
