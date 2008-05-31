@@ -48,14 +48,17 @@ TCL         = util.tcl
 include $(NAVISERVER)/include/Makefile.module
 
 
-doc:
-	$(MKDIR) doc/html doc/man
+DTPLITE = dtplite
 
-html-doc: doc
-	dtplite -o doc/html html doc/src/nsdbi.n
+doc: html-doc man-doc
 
-man-doc: doc
-	dtplite -o doc/man nroff doc/src/nsdbi.n
+html-doc:
+	$(MKDIR) doc/html
+	$(DTPLITE) -o doc/html html doc/src/mann/nsdbi.man
+
+man-doc:
+	$(MKDIR) doc/man
+	$(DTPLITE) -o doc/man nroff doc/src/mann/nsdbi.man
 
 
 
