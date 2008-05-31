@@ -30,6 +30,8 @@
 # 
 #
 
+VERSION     = 0.2
+
 NAVISERVER  = /usr/local/ns
 NSD         = $(NAVISERVER)/bin/nsd
 
@@ -88,6 +90,16 @@ memcheck: all
 runmemcheck: all
 	export $(LD_LIBRARY_PATH); valgrind --tool=memcheck $(NSD) $(NS_TEST_CFG)
 
+
+SRCS = init.c tclcmds.c tclsubst.c nsdbitest.c util.tcl $(LIBHDRS)
+EXTRA = README NEWS TODO license.terms sample-config.tcl version_include.man \
+		Makefile doc tests
+
+dist: doc all
+	rm -rf nsdbi-$(VERSION)
+	mkdir nsdbi-$(VERSION)
+	$(CP) $(SRCS) $(DOC) $(EXTRA) nsdbi-$(VERSION)
+	tar czf nsdbi-$(VERSION).tgz nsdbi-$(VERSION)
 
 
 .PHONY: doc html-doc man-doc
