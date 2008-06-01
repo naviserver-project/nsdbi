@@ -96,10 +96,11 @@ EXTRA = README NEWS TODO license.terms sample-config.tcl version_include.man \
 		Makefile doc tests
 
 dist: doc all
-	rm -rf nsdbi-$(VERSION)
-	mkdir nsdbi-$(VERSION)
-	$(CP) $(SRCS) $(DOC) $(EXTRA) nsdbi-$(VERSION)
-	tar czf nsdbi-$(VERSION).tgz nsdbi-$(VERSION)
+	rm -rf $(MODNAME)-$(VERSION)
+	mkdir $(MODNAME)-$(VERSION)
+	$(CP) $(SRCS) $(DOC) $(EXTRA) $(MODNAME)-$(VERSION)
+	hg log > $(MODNAME)-$(VERSION)/ChangeLog
+	tar czf $(MODNAME)-$(VERSION).tgz $(MODNAME)-$(VERSION)
 
 
 .PHONY: doc html-doc man-doc
