@@ -85,7 +85,7 @@ test dml-1 {dml} -body {
 
 test dml-2 {dml error} -body {
     dbi_dml {ROWS 1 1}
-} -returnCodes error -result {query was not a DML or DDL command.}
+} -returnCodes error -result {query was not a DML or DDL command}
 
 
 
@@ -120,6 +120,10 @@ test 0or1row-4 {more than 1 row} -body {
 test 0or1row-5 {query error} -body {
     dbi_0or1row {EXECERR 1 1}
 } -returnCodes error -result {driver error}
+
+test 0or1row-6 {surprise DML} -body {
+    dbi_0or1row {DML 0 0}
+} -returnCodes error -result {query was not a statement returning rows}
 
 
 

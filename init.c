@@ -999,9 +999,6 @@ Dbi_Exec(Dbi_Handle *handle, Dbi_Value *values, int maxRows)
     Log(handle, Debug, "Dbi_ExecProc: id: %u, variables: %u",
         stmtPtr->id, stmtPtr->numVars);
 
-    handlePtr->stats.queries++;
-    stmtPtr->nqueries++;
-
     handlePtr->maxRows = maxRows > -1 ? maxRows : poolPtr->maxRows;
 
     if ((*poolPtr->execProc)(handle, (Dbi_Statement *) stmtPtr,
@@ -1009,6 +1006,8 @@ Dbi_Exec(Dbi_Handle *handle, Dbi_Value *values, int maxRows)
         return NS_ERROR;
     }
     handlePtr->fetchingRows = NS_TRUE;
+    handlePtr->stats.queries++;
+    stmtPtr->nqueries++;
 
     return NS_OK;
 }

@@ -1089,11 +1089,11 @@ Exec(InterpData *idataPtr, Tcl_Obj *poolObj, Ns_Time *timeoutPtr,
     numCols = Dbi_NumColumns(handle);
 
     if (dml && numCols > 0) {
-        Tcl_SetResult(interp, "query was not a DML or DDL command.",
+        Tcl_SetResult(interp, "query was not a DML or DDL command",
                       TCL_STATIC);
         goto error;
     } else if (!dml && numCols == 0) {
-        Tcl_SetResult(interp, "query was not a statment returning rows.",
+        Tcl_SetResult(interp, "query was not a statement returning rows",
                       TCL_STATIC);
         goto error;
     }

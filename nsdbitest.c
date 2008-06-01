@@ -401,8 +401,8 @@ PrepareClose(Dbi_Handle *handle, Dbi_Statement *stmt)
     assert(conn);
     assert(STREQ(conn->configData, "driver config data"));
 
-    assert((stmt->nqueries <= 1 && !stmt->driverData)
-           || (stmt->nqueries > 1 && stmt->driverData));
+    assert((stmt->nqueries == 0 && !stmt->driverData)
+           || (stmt->nqueries > 0 && stmt->driverData));
 
     stmt->driverData = NULL;
 }
@@ -436,8 +436,8 @@ Exec(Dbi_Handle *handle, Dbi_Statement *stmt,
     assert(numValues <= DBI_MAX_BIND);
     assert(numValues == 0 || (numValues > 0 && values != NULL));
 
-    assert((stmt->nqueries <= 1 && !stmt->driverData)
-           || (stmt->nqueries > 1 && stmt->driverData));
+    assert((stmt->nqueries == 0 && !stmt->driverData)
+           || (stmt->nqueries > 0 && stmt->driverData));
 
     assert(conn);
     assert(STREQ(conn->configData, "driver config data"));
