@@ -1,0 +1,105 @@
+[include version_include.man]
+
+[manpage_begin nsdbi 3 [vset version]]
+[moddesc   {NaviServer Database Interface}]
+[titledesc {Register a database driver implementation}]
+
+[description]
+
+The following routines are available for database-specific driver modules.
+
+
+[section FUNCTIONS]
+[list_begin definitions]
+
+
+[call [fun Dbi_RegisterDriver](CONST [type char] *[arg server], \
+                               CONST [type char] *[arg module], \
+                               CONST [type char] *[arg driver], \
+                               CONST [type char] *[arg database], \
+                               CONST [type Dbi_DriverProc] *procs, \
+                               [type ClientData] configData) ]
+
+Register a set of [type Dbi_DriverProc] callbacks to provide access to a
+new type of database. Call this from your module's Ns_ModuleInit() routine.
+
+
+[list_end]
+
+
+
+[section ARGUMENTS]
+[list_begin arguments]
+
+[arg_def [type char] *server in]
+The name of a virtual server.
+
+[arg_def [type char] *module in]
+The name of the module instance.
+
+[arg_def [type char] *driver in]
+The name this driver is known by.
+
+[arg_def [type char] *database in]
+The name of the database this driver connects to. e.g. "sqlite".
+
+[arg_def [type Dbi_DriverProc] *procs in]
+The structure used to pass callbacks during driver registration.
+
+
+[list_end]
+
+
+
+[section EXAMPLES]
+
+Log the number of connections handled by a single TCP socket:
+
+[example_begin]
+#include "nsdbidrv.h"
+
+NS_EXPORT int Ns_ModuleVersion = 1;
+
+static [type Dbi_DriverProc] procs[] = {
+    {Dbi_OpenProcId,         Open},
+    {Dbi_CloseProcId,        Close},
+    {Dbi_ConnectedProcId,    Connected},
+    {Dbi_BindVarProcId,      Bind},
+    {Dbi_PrepareProcId,      Prepare},
+    {Dbi_PrepareCloseProcId, PrepareClose},
+    {Dbi_ExecProcId,         Exec},
+    {Dbi_NextRowProcId,      NextRow},
+    {Dbi_ColumnLengthProcId, ColumnLength},
+    {Dbi_ColumnValueProcId,  ColumnValue},
+    {Dbi_ColumnNameProcId,   ColumnName},
+    {Dbi_TransactionProcId,  Transaction},
+    {Dbi_FlushProcId,        Flush},
+    {Dbi_ResetProcId,        Reset},
+    {0, NULL}
+};
+
+int
+Ns_ModuleInit(CONST char *server, CONST char *module)
+{
+    static CONST char *drivername = "dbdriver";
+    static CONST char *database   = "db";
+
+    return [fun Dbi_RegisterDriver](server, module,
+                              drvername, database,
+                              procs, NULL);
+}
+
+static int
+Open(ClientData configData, [type Dbi_Handle] *handle)
+{
+    ...
+}
+
+...
+[example_end]
+
+
+[see_also nsdbi Dbi_GetHandle Dbi_TclGetHandle Dbi_SetException]
+[keywords NaviServer database driver sql query]
+
+[manpage_end]

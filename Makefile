@@ -57,10 +57,12 @@ doc: html-doc man-doc
 html-doc:
 	$(MKDIR) doc/html
 	$(DTPLITE) -o doc/html html doc/src/mann/nsdbi.man
+	$(DTPLITE) -o doc/html html doc/src/man3/*.man
 
 man-doc:
 	$(MKDIR) doc/man
 	$(DTPLITE) -o doc/man nroff doc/src/mann/nsdbi.man
+	$(DTPLITE) -o doc/man nroff doc/src/man3/*.man
 
 
 
@@ -98,7 +100,7 @@ EXTRA = README NEWS TODO license.terms sample-config.tcl version_include.man \
 dist: doc all
 	rm -rf $(MODNAME)-$(VERSION)
 	mkdir $(MODNAME)-$(VERSION)
-	$(CP) $(SRCS) $(DOC) $(EXTRA) $(MODNAME)-$(VERSION)
+	$(CP) $(SRCS) $(EXTRA) $(MODNAME)-$(VERSION)
 	hg log > $(MODNAME)-$(VERSION)/ChangeLog
 	tar czf $(MODNAME)-$(VERSION).tgz $(MODNAME)-$(VERSION)
 
