@@ -1,10 +1,7 @@
---- sample-config.tcl
-+++ sample-config.tcl
-@@ -0,0 +1,0 @@
 #
 # nsdbi configuration example.
 #
-#     Unlike the nsdb module you may be used to, drivers are loaded
+#     Unlike the old nsdb module you may be used to, drivers are loaded
 #     directly, once for each pool.
 #
 #     nsdbi drivers loaded globaly are available to all virtual
