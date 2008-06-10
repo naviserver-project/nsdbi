@@ -266,6 +266,10 @@ test template-12 {now rows, no default} -body {
     dbi_rows {ROWS 2 0} {$0 $1}
 } -returnCodes error -result {query was not a statement returning rows}
 
+test template-13 {special variables} -body {
+    dbi_rows {ROWS 1 2} {$0 $dbi(rowidx) $dbi(rownum) $dbi(parity) }
+} -result {0.0 0 1 even 1.0 1 2 odd }
+
 
 
 test adp-template-1 {append to adp} -body {

@@ -102,8 +102,7 @@ templated rows are concatenated and returned as a string.
 [example_end]
 
 If a template variable name does not correspond to a column name in the result
-then a Tcl variable by the same name is substituted. If no such variable exists,
-an error is raised.
+then a Tcl variable by the same name is substituted.
 
 [example_begin]
 proc greet_the_people {{greeting "Hello"}} {
@@ -115,6 +114,33 @@ greet_the_people "Yo"
 Yo, Dirty Harry!
 Yo, Jolly Roger!
 [example_end]
+
+There are also three special variables:
+
+[list_begin definitions]
+
+[def dbi(rowidx)]
+The zero-based row index. The rows are numbered 0, 1, 2 etc.
+
+[def dbi(rownum)]
+The 1 based row number. The rows are numbered 1, 2, 3 etc.
+
+[def dbi(parity)]
+The string "even" or "odd", based on the rowidx.
+
+[list_end]
+
+[example_begin]
+[cmd dbi_rows] {select first, last from peeps} {
+    <tr class="$dbi(parity)"><th>$dbi(rownum)</th><td>$first $last</td></tr>
+}
+<tr class="even"><th>1</th><td>Dirty Harry</td></tr>
+<tr class="odd"><th>2</th><td>Jolly Roger</td></tr>
+[example_end]
+
+If a template variable does not correspond to a column name, one of the
+three special variables, or an existing Tcl variable, an error is raised.
+
 
 [arg_def string [opt default]]
 

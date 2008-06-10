@@ -54,10 +54,12 @@ int DbiTclSubstTemplate(Tcl_Interp *, Dbi_Handle *,
 
 static int GetTemplateFromObj(Tcl_Interp *interp, Dbi_Handle *,
                               Tcl_Obj *templateObj, Template **templatePtrPtr);
-static int AppendValue(Tcl_Interp *interp, Dbi_Handle *handle, unsigned int index,
+static int AppendValue(Tcl_Interp *interp, Dbi_Handle *handle, unsigned int colIdx,
                        Tcl_Obj *resObj, Ns_DString *dsPtr);
 static int AppendTokenVariable(Tcl_Interp *interp, Tcl_Token *tokenPtr,
                                Tcl_Obj *resObj, Ns_DString *dsPtr);
+static void AppendInt(Tcl_Interp *, unsigned int rowint,
+                      Tcl_Obj *resObj, Ns_DString *dsPtr);
 static void MapVariablesToColumns(Dbi_Handle *handle, Template *templatePtr);
 static void NewTextToken(Tcl_Parse *parsePtr, char *string, int length);
 static int NextRow(Tcl_Interp *interp, Dbi_Handle *handle, int *endPtr);
@@ -78,6 +80,24 @@ static Tcl_ObjType templateType = {
     Ns_TclSetFromAnyError
 };
 
+/*
+ * The following defines the variable types other than column names
+ * which may appear in a template. Numbers >= 0 are column indexes.
+ */
+
+#define VARTYPE_TCL     -1  /* A Tcl variable. */
+#define VARTYPE_ROWIDX  -2  /* The zero-based row number. */
+#define VARTYPE_ROWNUM  -3  /* The one-based row number. */
+#define VARTYPE_PARITY  -4  /* Whether the row is even or odd (zero-based). */
+
+static struct {
+    const char *varName;
+    int         type;
+} specials[] = {
+    {"dbi(rowidx)", VARTYPE_ROWIDX},
+    {"dbi(rownum)", VARTYPE_ROWNUM},
+    {"dbi(parity)", VARTYPE_PARITY},
+};
 
 
 /*
@@ -108,6 +128,7 @@ DbiTclSubstTemplate(Tcl_Interp *interp, Dbi_Handle *handle,
     Tcl_Obj       *resObj;
     Ns_DString    *dsPtr;
     char          *def;
+    const char    *parity;
     int           *varColMap, end, len;
     int            stream, maxBuffer;
     unsigned int   tokIdx, varIdx, colIdx, numCols, numRows;
@@ -174,16 +195,37 @@ DbiTclSubstTemplate(Tcl_Interp *interp, Dbi_Handle *handle,
 
                 colIdx = varColMap[varIdx++];
 
-                if (colIdx == -1) {
+                switch (colIdx) {
+                case VARTYPE_TCL:
                     if (AppendTokenVariable(interp, tokenPtr, resObj, dsPtr)
                             != TCL_OK) {
                         return TCL_ERROR;
                     }
-                } else {
+                    break;
+
+                case VARTYPE_ROWIDX:
+                    AppendInt(interp, handle->rowIdx, resObj, dsPtr);
+                    break;
+
+                case VARTYPE_ROWNUM:
+                    AppendInt(interp, handle->rowIdx +1, resObj, dsPtr);
+                    break;
+
+                case VARTYPE_PARITY:
+                    parity = handle->rowIdx % 2 == 0 ? "even" : "odd";
+                    if (dsPtr != NULL) {
+                        Ns_DStringAppend(dsPtr, parity);
+                    } else {
+                        Tcl_AppendToObj(resObj, parity, -1);
+                    }
+                    break;
+
+                default:
                     if (AppendValue(interp, handle, colIdx, resObj, dsPtr)
                             != TCL_OK) {
                         return TCL_ERROR;
                     }
+                    break;
                 }
                 break;
 
@@ -332,6 +374,37 @@ AppendTokenVariable(Tcl_Interp *interp, Tcl_Token *tokenPtr,
     }
 
     return TCL_OK;
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * AppendInt --
+ *
+ *      Append the string rep of the given int to the result buffer.
+ *
+ * Results:
+ *      None.
+ *
+ * Side effects:
+ *      None.
+ *
+ *----------------------------------------------------------------------
+ */
+
+static void
+AppendInt(Tcl_Interp *interp, unsigned int rowint,
+          Tcl_Obj *resObj, Ns_DString *dsPtr)
+{
+    char buf[TCL_INTEGER_SPACE];
+
+    snprintf(buf, sizeof(buf), "%u", rowint);
+    if (dsPtr) {
+        Ns_DStringAppend(dsPtr, buf);
+    } else {
+        Tcl_AppendToObj(resObj, buf, -1);
+    }
 }
 
 
@@ -495,7 +568,7 @@ MapVariablesToColumns(Dbi_Handle *handle, Template *templatePtr)
     int           *varColMap = templatePtr->varColMap;
     Tcl_Token     *tokenPtr;
     CONST char    *tokenString, *colName;
-    int            tokenSize, tokIdx, varIdx, colIdx, numCols;
+    int            i, tokenSize, tokIdx, varIdx, colIdx, numCols;
 
     numCols = Dbi_NumColumns(handle);
 
@@ -512,7 +585,7 @@ MapVariablesToColumns(Dbi_Handle *handle, Template *templatePtr)
         tokenString = tokenPtr->start +1;
         tokenSize   = tokenPtr->size  -1;
 
-        varColMap[varIdx] = -1;
+        varColMap[varIdx] = VARTYPE_TCL;
 
         for (colIdx = 0; colIdx < numCols; colIdx++) {
 
@@ -523,6 +596,19 @@ MapVariablesToColumns(Dbi_Handle *handle, Template *templatePtr)
                 break;
             }
         }
+
+        /*
+         * Check for special variables.
+         */
+
+        if (varColMap[varIdx] == VARTYPE_TCL) {
+            for (i = 0; i < sizeof(specials) / sizeof(specials[0]); i++) {
+                if (strncmp(specials[i].varName, tokenString, tokenSize) == 0) {
+                    varColMap[varIdx] = specials[i].type;
+                }
+            }
+        }
+
         varIdx++;
     }
 }
