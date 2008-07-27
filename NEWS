@@ -1,7 +1,11 @@
 
 2008-??-?? nsdbi-0.3 released
 
-* ...
+* Add -columns option to dbi_rows to return the column names of the result.
+
+* Add -array option to dbi_1row and dbi_0or1row which if given id used to
+  store the row result rather than using variables in the callers stack frame.
+
 
 
 2008-06-10 nsdbi-0.2 released
