@@ -103,6 +103,13 @@ test 0or1row-2 {found multiple columns} -body {
     unset -nocomplain n 0 1 2
 } -result {1 0.0 0.1 0.2}
 
+test 0or1row-2.1 {column array} -body {
+    set n [dbi_0or1row -array a {ROWS 3 1}]
+    list $n [lsort [array names a]]
+} -cleanup {
+    unset -nocomplain n a
+} -result {1 {0 1 2}}
+
 test 0or1row-3 {not found} -body {
     set 0 x
     set n [dbi_0or1row {ROWS 1 0}]
@@ -140,6 +147,13 @@ test 1row-2 {found multiple columns} -body {
 } -cleanup {
     unset -nocomplain 0 1 2
 } -result {v 0.1 0.2}
+
+test 1row-2.1 {column array} -body {
+    dbi_0or1row -array a {ROWS 3 1}
+    lsort [array names a]
+} -cleanup {
+    unset -nocomplain a
+} -result {0 1 2}
 
 test 1row-3 {clobber existing variable} -body {
     set 0 x

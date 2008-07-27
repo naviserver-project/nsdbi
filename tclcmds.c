@@ -741,13 +741,14 @@ RowCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[],
     Tcl_Obj      *valueObj, *queryObj;
     Tcl_Obj      *poolObj = NULL, *valuesObj = NULL;
     Ns_Time      *timeoutPtr = NULL;
-    CONST char   *column;
+    CONST char   *column, *varName1, *varName2, *arrayName = NULL;
     int           found, end, status;
 
     Ns_ObjvSpec opts[] = {
         {"-db",        Ns_ObjvObj,    &poolObj,    NULL},
         {"-timeout",   Ns_ObjvTime,   &timeoutPtr, NULL},
         {"-bind",      Ns_ObjvObj,    &valuesObj,  NULL},
+        {"-array",     Ns_ObjvString, &arrayName,  NULL},
         {"--",         Ns_ObjvBreak,  NULL,        NULL},
         {NULL, NULL, NULL, NULL}
     };
@@ -768,13 +769,12 @@ RowCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[],
         return TCL_ERROR;
     }
 
-    /*
-     * Make sure the result has no more than a single row in the result
-     * and set the values of that row as variables in the callers frame..
-     */
-
     status = TCL_ERROR;
     found = 0;
+
+    /*
+     * Fetch the one and only row.
+     */
 
     if (NextRow(interp, handle, &end) != TCL_OK) {
         goto cleanup;
@@ -782,6 +782,11 @@ RowCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[],
     if (end) {
         goto done;
     }
+
+    /*
+     * Set column-value variable in the callers stack frame, or in the
+     * specified array.
+     */
 
     found = 1;
     numCols = Dbi_NumColumns(handle);
@@ -794,7 +799,14 @@ RowCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[],
             Dbi_TclErrorResult(interp, handle);
             goto cleanup;
         }
-        if (Tcl_SetVar2Ex(interp, column, NULL, valueObj,
+        if (arrayName != NULL) {
+            varName1 = arrayName;
+            varName2 = column;
+        } else {
+            varName1 = column;
+            varName2 = NULL;
+        }
+        if (Tcl_SetVar2Ex(interp, varName1, varName2, valueObj,
                           TCL_LEAVE_ERR_MSG) == NULL) {
             Tcl_DecrRefCount(valueObj);
             goto cleanup;

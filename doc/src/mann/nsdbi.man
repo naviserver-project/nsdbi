@@ -20,6 +20,7 @@ nsdbi provides an easy to use interface to databases.
 
 [call [cmd dbi_1row] \
       [vset standard_options] \
+      [opt [option "-array [arg name]"]] \
       [opt [arg --]] \
       [arg query]]
 
@@ -28,7 +29,9 @@ returned then an error is raised.
 
 [para]
 The column values of the row are set as variables in the current stack frame
-using the column names as Tcl variable names.
+using the column names as Tcl variable names. If the [option -array] option
+is given then an array of that name is created instead with the column names
+corresponding to keys in the array.
 
 [example_begin]
 [cmd dbi_1row] {select first, last from peeps where id = 1}
@@ -38,6 +41,9 @@ set mysteryMan "$first $last"
 Array-name syntax may be used to build an array result:
 
 [example_begin]
+[cmd dbi_1row] [option "-array [arg name]"] {select first, last from peeps where id = 1}
+set mysteryMan "$name(first) $name(last)"
+
 [cmd dbi_1row] {select first as 'name(first)', last as 'name(last)' from peeps where id = 1}
 set mysteryMan "$name(first) $name(last)"
 [example_end]
@@ -47,6 +53,7 @@ set mysteryMan "$name(first) $name(last)"
 
 [call [cmd dbi_0or1row] \
       [vset standard_options] \
+      [opt [option "-array [arg name]"]] \
       [opt [arg --]] \
       [arg query]]
 
