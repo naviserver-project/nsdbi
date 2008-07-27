@@ -47,13 +47,6 @@
    when?  e.g. round-robin requests between 3 databases?
 
 
-** Column meta-data?
-
-     set rows [dbi_rows -columns columns {select a, b, c from ...}]
-     puts $columns
-     {a b c}
-
-
 ** Add higher level Tcl commands 'update', 'insert' etc.
 
      set a(x) 1; set a(y) 2; set a(z) 3

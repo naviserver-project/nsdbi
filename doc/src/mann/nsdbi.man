@@ -67,6 +67,7 @@ if {[lb][cmd dbi_0or1row] {select first, last from peeps where id = 1}[rb]} {
 
 [call [cmd dbi_rows] \
       [vset standard_options] \
+      [opt [option "-columns [arg varname]"]] \
       [opt [option "-max [arg nrows]"]] \
       [opt [option -append]] \
       [opt [arg --]] \
@@ -155,6 +156,24 @@ nobody here but us chickens
 [list_end]
 
 [list_begin options]
+
+[opt_def -columns [arg varname]]
+
+If the [option -columns] option is given then it is the name of a Tcl variable
+which will be created to hold a list of the column names of the result.
+
+[para]
+This is useful in queries of the form "select * from ..." (but don't do that),
+and for generic procedures which handle a variety of queries, such as formatting
+queries as an HTML table.
+
+[example_begin]
+% dbi_rows [option "-columns [arg cols]"] {select first, last from peeps}
+{{Dirty Harry} {Jolly Roger}}
+
+% set cols
+{first last}
+[example_end]
 
 [opt_def -max [arg nrows]]
 

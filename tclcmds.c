@@ -527,19 +527,21 @@ RowsObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
     InterpData   *idataPtr = arg;
     Dbi_Handle   *handle;
     unsigned int  colIdx, numCols;
-    Tcl_Obj      *resObj, *valueObj, *queryObj;
-    Tcl_Obj      *poolObj = NULL, *valuesObj = NULL;
+    CONST char   *colName;
+    Tcl_Obj      *resObj, *valueObj, *colListObj, *queryObj;
+    Tcl_Obj      *poolObj = NULL, *valuesObj = NULL, *colsNameObj = NULL;
     Tcl_Obj      *templateObj = NULL, *defaultObj = NULL;
     Ns_Time      *timeoutPtr = NULL;
     int           end, status, maxRows = -1, adp = 0;
 
     Ns_ObjvSpec opts[] = {
-        {"-db",        Ns_ObjvObj,    &poolObj,    NULL},
-        {"-timeout",   Ns_ObjvTime,   &timeoutPtr, NULL},
-        {"-bind",      Ns_ObjvObj,    &valuesObj,  NULL},
-        {"-max",       Ns_ObjvInt,    &maxRows,    NULL},
-        {"-append",    Ns_ObjvBool,   &adp,        (void *) NS_TRUE},
-        {"--",         Ns_ObjvBreak,  NULL,        NULL},
+        {"-db",        Ns_ObjvObj,    &poolObj,     NULL},
+        {"-timeout",   Ns_ObjvTime,   &timeoutPtr,  NULL},
+        {"-bind",      Ns_ObjvObj,    &valuesObj,   NULL},
+        {"-columns",   Ns_ObjvObj,    &colsNameObj, NULL},
+        {"-max",       Ns_ObjvInt,    &maxRows,     NULL},
+        {"-append",    Ns_ObjvBool,   &adp,         (void *) NS_TRUE},
+        {"--",         Ns_ObjvBreak,  NULL,         NULL},
         {NULL, NULL, NULL, NULL}
     };
     Ns_ObjvSpec args[] = {
@@ -575,7 +577,7 @@ RowsObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
 
         while ((status = NextRow(interp, handle, &end)) == TCL_OK && !end) {
 
-            for (colIdx = 0; colIdx < numCols; colIdx ++) {
+            for (colIdx = 0; colIdx < numCols; colIdx++) {
                 if ((status = ColumnValue(interp, handle, colIdx, &valueObj))
                         != TCL_OK) {
                     goto done;
@@ -587,6 +589,38 @@ RowsObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
                 }
             }
         }
+    }
+
+    /*
+     * Report the column names of the result set.
+     */
+
+    if (colsNameObj != NULL) {
+
+        status = TCL_ERROR;
+
+        colListObj = Tcl_ObjSetVar2(interp, colsNameObj, NULL,
+                                    Tcl_NewListObj(0, NULL), TCL_LEAVE_ERR_MSG);
+        if (colListObj == NULL) {
+            goto done;
+        }
+
+        numCols = Dbi_NumColumns(handle);
+        for (colIdx = 0; colIdx < numCols; colIdx++) {
+
+            if (Dbi_ColumnName(handle, colIdx, &colName) != NS_OK) {
+                Dbi_TclErrorResult(interp, handle);
+                goto done;
+            }
+            valueObj = Tcl_NewStringObj(colName, -1);
+            if (Tcl_ListObjAppendElement(interp, colListObj, valueObj)
+                    != TCL_OK) {
+                Tcl_DecrRefCount(valueObj);
+                goto done;
+            }
+        }
+
+        status = TCL_OK;
     }
 
  done:

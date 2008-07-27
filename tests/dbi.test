@@ -285,6 +285,22 @@ test pool-global {query from non-default global pool} -body {
 
 
 
+test columns-1 {1 column name} -body {
+    dbi_rows -columns cols {ROWS 1 1}
+    set cols
+} -cleanup {
+    unset -nocomplain cols
+} -result 0
+
+test columns-2 {multiple column names} -body {
+    dbi_rows -columns cols {ROWS 5 1}
+    set cols
+} -cleanup {
+    unset -nocomplain cols
+} -result {0 1 2 3 4}
+
+
+
 
 test thread-handle-1.1 {maxhandles 0} -body {
     dbi_rows -db global2 {ROWS 1 1 v}
