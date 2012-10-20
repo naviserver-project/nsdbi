@@ -96,7 +96,7 @@ typedef enum {
 
 typedef struct Dbi_DriverProc {
     Dbi_ProcId     id;
-    void          *proc;
+    Ns_Callback   *proc;
 } Dbi_DriverProc;
 
 

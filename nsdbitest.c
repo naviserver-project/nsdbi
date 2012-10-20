@@ -36,9 +36,6 @@
 
 #include "nsdbidrv.h"
 
-NS_RCSID("@(#) $Header$");
-
-
 NS_EXPORT int Ns_ModuleVersion = 1;
 
 
@@ -91,20 +88,20 @@ static Dbi_ResetProc        Reset;
  */
 
 static CONST Dbi_DriverProc procs[] = {
-    {Dbi_OpenProcId,         Open},
-    {Dbi_CloseProcId,        Close},
-    {Dbi_ConnectedProcId,    Connected},
-    {Dbi_BindVarProcId,      Bind},
-    {Dbi_PrepareProcId,      Prepare},
-    {Dbi_PrepareCloseProcId, PrepareClose},
-    {Dbi_ExecProcId,         Exec},
-    {Dbi_NextRowProcId,      NextRow},
-    {Dbi_ColumnLengthProcId, ColumnLength},
-    {Dbi_ColumnValueProcId,  ColumnValue},
-    {Dbi_ColumnNameProcId,   ColumnName},
-    {Dbi_TransactionProcId,  Transaction},
-    {Dbi_FlushProcId,        Flush},
-    {Dbi_ResetProcId,        Reset},
+  {Dbi_OpenProcId,           (Ns_Callback *)Open},
+    {Dbi_CloseProcId,        (Ns_Callback *)Close},
+    {Dbi_ConnectedProcId,    (Ns_Callback *)Connected},
+    {Dbi_BindVarProcId,      (Ns_Callback *)Bind},
+    {Dbi_PrepareProcId,      (Ns_Callback *)Prepare},
+    {Dbi_PrepareCloseProcId, (Ns_Callback *)PrepareClose},
+    {Dbi_ExecProcId,         (Ns_Callback *)Exec},
+    {Dbi_NextRowProcId,      (Ns_Callback *)NextRow},
+    {Dbi_ColumnLengthProcId, (Ns_Callback *)ColumnLength},
+    {Dbi_ColumnValueProcId,  (Ns_Callback *)ColumnValue},
+    {Dbi_ColumnNameProcId,   (Ns_Callback *)ColumnName},
+    {Dbi_TransactionProcId,  (Ns_Callback *)Transaction},
+    {Dbi_FlushProcId,        (Ns_Callback *)Flush},
+    {Dbi_ResetProcId,        (Ns_Callback *)Reset},
     {0, NULL}
 };
 
@@ -465,7 +462,8 @@ Exec(Dbi_Handle *handle, Dbi_Statement *stmt,
                    || (!values[i].length && !values[i].data));
 
             if (values[i].binary) {
-                Ns_DStringPrintf(&conn->ds, " %u", values[i].length);
+	        /* we have no PRIdz around */
+                Ns_DStringPrintf(&conn->ds, " %zd", values[i].length);
             } else {
                 Tcl_DStringAppendElement(&conn->ds, values[i].data);
             }

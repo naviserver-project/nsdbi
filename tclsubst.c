@@ -130,7 +130,8 @@ DbiTclSubstTemplate(Tcl_Interp *interp, Dbi_Handle *handle,
     char          *def;
     const char    *parity;
     int           *varColMap, end, len;
-    int            stream, maxBuffer;
+    int            stream;
+    size_t         maxBuffer;
     unsigned int   tokIdx, varIdx, colIdx, numCols, numRows;
 
     /*

@@ -38,9 +38,6 @@
 
 #include "nsdbi.h"
 
-NS_RCSID("@(#) $Header$");
-
-
 #define MAX_NESTING_DEPTH 32
 
 

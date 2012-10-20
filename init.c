@@ -38,9 +38,6 @@
 #include "nsdbi.h"
 #include "nsdbidrv.h"
 
-NS_RCSID("@(#) $Header$");
-
-
 extern Ns_TclInterpInitProc DbiInitInterp;
 
 
@@ -277,8 +274,8 @@ Dbi_LibInit(void)
         Tcl_InitHashTable(&serversTable, TCL_STRING_KEYS);
         Ns_TlsAlloc(&tls, FreeThreadHandles);
 
-        Ns_RegisterProcInfo(ScheduledPoolCheck, "dbi:idlecheck", PoolCheckArgProc);
-        Ns_RegisterProcInfo(DbiInitInterp, "dbi:initinterp", NULL);
+        Ns_RegisterProcInfo((void *)ScheduledPoolCheck, "dbi:idlecheck", PoolCheckArgProc);
+        Ns_RegisterProcInfo((void *)DbiInitInterp, "dbi:initinterp", NULL);
 
         set = Ns_ConfigGetSection("ns/servers");
         for (i = 0; i < Ns_SetSize(set); i++) {
@@ -338,46 +335,46 @@ Dbi_RegisterDriver(CONST char *server, CONST char *module,
     for (procPtr = procs, nprocs = 0; procPtr->proc != NULL; procPtr++) {
         switch (procPtr->id) {
         case Dbi_OpenProcId:
-            poolPtr->openProc = procPtr->proc;
+	    poolPtr->openProc = (Dbi_OpenProc *)procPtr->proc;
             break;
         case Dbi_CloseProcId:
-            poolPtr->closeProc = procPtr->proc;
+	  poolPtr->closeProc = (Dbi_CloseProc *)procPtr->proc;
             break;
         case Dbi_ConnectedProcId:
-            poolPtr->connectedProc = procPtr->proc;
+            poolPtr->connectedProc = (Dbi_ConnectedProc *)procPtr->proc;
             break;
         case Dbi_PrepareProcId:
-            poolPtr->prepareProc = procPtr->proc;
+            poolPtr->prepareProc = (Dbi_PrepareProc *)procPtr->proc;
             break;
         case Dbi_PrepareCloseProcId:
-            poolPtr->prepareCloseProc = procPtr->proc;
+            poolPtr->prepareCloseProc = (Dbi_PrepareCloseProc *)procPtr->proc;
             break;
         case Dbi_BindVarProcId:
-            poolPtr->bindVarProc = procPtr->proc;
+            poolPtr->bindVarProc = (Dbi_BindVarProc *)procPtr->proc;
             break;
         case Dbi_ExecProcId:
-            poolPtr->execProc = procPtr->proc;
+            poolPtr->execProc = (Dbi_ExecProc *)procPtr->proc;
             break;
         case Dbi_NextRowProcId:
-            poolPtr->nextRowProc = procPtr->proc;
+            poolPtr->nextRowProc = (Dbi_NextRowProc *)procPtr->proc;
             break;
         case Dbi_ColumnLengthProcId:
-            poolPtr->columnLengthProc = procPtr->proc;
+            poolPtr->columnLengthProc = (Dbi_ColumnLengthProc *)procPtr->proc;
             break;
         case Dbi_ColumnValueProcId:
-            poolPtr->columnValueProc = procPtr->proc;
+            poolPtr->columnValueProc = (Dbi_ColumnValueProc *)procPtr->proc;
             break;
         case Dbi_ColumnNameProcId:
-            poolPtr->columnNameProc = procPtr->proc;
+            poolPtr->columnNameProc = (Dbi_ColumnNameProc *)procPtr->proc;
             break;
         case Dbi_TransactionProcId:
-            poolPtr->transProc = procPtr->proc;
+            poolPtr->transProc = (Dbi_TransactionProc *)procPtr->proc;
             break;
         case Dbi_FlushProcId:
-            poolPtr->flushProc = procPtr->proc;
+            poolPtr->flushProc = (Dbi_FlushProc *)procPtr->proc;
             break;
         case Dbi_ResetProcId:
-            poolPtr->resetProc = procPtr->proc;
+            poolPtr->resetProc = (Dbi_ResetProc *)procPtr->proc;
             break;        
         default:
             Ns_Log(Error, "dbi: Dbi_RegisterDriver: invalid Dbi_ProcId: %d",
