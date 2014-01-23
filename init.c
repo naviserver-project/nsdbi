@@ -261,13 +261,14 @@ void
 Dbi_LibInit(void)
 {
     ServerData    *sdataPtr;
-    Tcl_HashEntry *hPtr;
-    Ns_Set        *set;
     char          *server;
-    int            i, new;
+    int            new;
     static int     once = 0;
 
     if (!once) {
+	Ns_Set  *set;
+	int      i;
+
         once = 1;
 
         Nsd_LibInit();
@@ -279,6 +280,8 @@ Dbi_LibInit(void)
 
         set = Ns_ConfigGetSection("ns/servers");
         for (i = 0; i < Ns_SetSize(set); i++) {
+	    Tcl_HashEntry *hPtr;
+
             server = Ns_SetKey(set, i);
 
             sdataPtr = ns_calloc(1, sizeof(ServerData));
@@ -593,7 +596,6 @@ Dbi_GetHandle(Dbi_Pool *pool, Ns_Time *timeoutPtr, Dbi_Handle **handlePtrPtr)
 {
     Pool       *poolPtr = (Pool *) pool;
     Handle     *handlePtr, *threadHandlePtr;
-    char        buf[100];
     Ns_Time     time;
     int         maxhandles, status;
 
@@ -643,6 +645,7 @@ Dbi_GetHandle(Dbi_Pool *pool, Ns_Time *timeoutPtr, Dbi_Handle **handlePtrPtr)
 
             if (poolPtr->maxhandles == 0
                 || poolPtr->nhandles < poolPtr->maxhandles) {
+		char buf[100];
 
                 poolPtr->nhandles++;
 
@@ -733,7 +736,6 @@ Dbi_PutHandle(Dbi_Handle *handle)
     Handle  *handlePtr = (Handle *) handle;
     Pool    *poolPtr   = (Pool *) handlePtr->poolPtr;
     time_t   now;
-    int      closed;
 
     /*
      * Cleanup the handle.
@@ -745,6 +747,7 @@ Dbi_PutHandle(Dbi_Handle *handle)
     }
 
     if (handlePtr->n != -1) {
+	int  closed;
 
         /*
          * For non-thread handles which are going back to the pool
@@ -1594,12 +1597,13 @@ Dbi_SetException(Dbi_Handle *handle, CONST char *sqlstate, CONST char *fmt, ...)
     Handle      *handlePtr = (Handle *) handle;
     Ns_DString  *ds = &handlePtr->dsExceptionMsg;
     va_list      ap;
-    int          len;
 
     strncpy(handlePtr->cExceptionCode, sqlstate, 6);
     handlePtr->cExceptionCode[5] = '\0';
 
     if (fmt != NULL) {
+	int len;
+
         Ns_DStringTrunc(ds, 0);
         va_start(ap, fmt);
         Ns_DStringVPrintf(ds, (char *) fmt, ap);
@@ -1852,9 +1856,10 @@ CloseIfStale(Handle *handlePtr, time_t now)
 {
     Dbi_Handle *handle  = (Dbi_Handle *) handlePtr;
     Pool       *poolPtr = handlePtr->poolPtr;
-    char       *reason  = NULL;
 
     if (Connected(handlePtr)) {
+	char *reason  = NULL;
+
         if (poolPtr->stopping) {
             reason = "stopped";
         } else if (poolPtr->epoch > handlePtr->epoch) {
@@ -1987,7 +1992,6 @@ AtShutdown(Ns_Time *toPtr, void *arg)
 {
     Pool       *poolPtr = arg;
     Ns_DString  ds;
-    int         status;
 
     if (toPtr == NULL) {
         Ns_MutexLock(&poolPtr->lock);
@@ -1995,6 +1999,7 @@ AtShutdown(Ns_Time *toPtr, void *arg)
         Ns_CondBroadcast(&poolPtr->cond);
         Ns_MutexUnlock(&poolPtr->lock);
     } else {
+	int status;
 
         Ns_DStringInit(&ds);
         Ns_Log(Notice, "dbi[%s:%s]: %s", poolPtr->drivername, poolPtr->module,
@@ -2040,7 +2045,6 @@ Connect(Handle *handlePtr)
 {
     Dbi_Handle *handle  = (Dbi_Handle *) handlePtr;
     Pool       *poolPtr = handlePtr->poolPtr;
-    char       *msg;
     int         status  = NS_ERROR;
 
     if (!poolPtr->stopping) {
@@ -2055,6 +2059,8 @@ Connect(Handle *handlePtr)
             poolPtr->stats.handlefailures++;
             Dbi_LogException(handle, Error);
         } else {
+	    char  *msg;
+
             handlePtr->atime = handlePtr->otime = time(NULL);
             msg = Dbi_ExceptionMsg(handle);
             Log(handle, Notice, "opened handle %d/%d%s%s",
@@ -2151,12 +2157,11 @@ FreeStatement(void *arg)
 {
     Statement  *stmtPtr = arg;
     Pool       *poolPtr;
-    Dbi_Handle *handle;
 
     if (stmtPtr->driverData != NULL) {
+	Dbi_Handle *handle = (Dbi_Handle *) stmtPtr->handlePtr;
 
         poolPtr = stmtPtr->handlePtr->poolPtr;
-        handle = (Dbi_Handle *) stmtPtr->handlePtr;
 
         Log(stmtPtr->handlePtr, Debug,
             "Dbi_PrepareCloseProc(FreeStatement): nqueries: %u",
@@ -2318,7 +2323,7 @@ DefineBindVar(Statement *stmtPtr, CONST char *name, Ns_DString *dsPtr)
 
     hPtr = Tcl_CreateHashEntry(&stmtPtr->bindTable, name, &new);
     if (new) {
-        Tcl_SetHashValue(hPtr, (void *) index);
+        Tcl_SetHashValue(hPtr, (ClientData)(intptr_t) index);
     }
     stmtPtr->vars[index].name = Tcl_GetHashKey(&stmtPtr->bindTable, hPtr);
     stmtPtr->numVars++;

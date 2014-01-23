@@ -426,7 +426,7 @@ Exec(Dbi_Handle *handle, Dbi_Statement *stmt,
      Dbi_Value *values, unsigned int numValues)
 {
     Connection *conn = handle->driverData;
-    int         i, j;
+    int         i;
 
     assert(stmt);
 
@@ -484,6 +484,8 @@ Exec(Dbi_Handle *handle, Dbi_Statement *stmt,
          */
 
         for (i = 0; i < numValues; i++) {
+	    int j;
+
             if (!values[i].binary) {
                 Ns_Fatal("BINARY: values[%d].binary not 1", i);
             }

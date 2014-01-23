@@ -32,7 +32,6 @@
  *
  *      Public types and function declarations for the nsdbi module.
  *
- *  $Header$
  */
 
 #ifndef NSDBIDRV_H

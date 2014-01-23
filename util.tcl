@@ -28,10 +28,6 @@
 #
 
 #
-# $Header$
-#
-
-#
 # nsdbi/util.tcl --
 #
 #   Database utils.

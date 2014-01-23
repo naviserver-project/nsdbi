@@ -30,9 +30,12 @@
 # 
 #
 
-VERSION     = 0.3
+VERSION     = 0.4
 
-NAVISERVER  = /usr/local/ns
+ifndef NAVISERVER
+    NAVISERVER  = /usr/local/ns
+endif
+
 NSD         = $(NAVISERVER)/bin/nsd
 
 MODNAME     = nsdbi
@@ -45,7 +48,6 @@ MOD         = nsdbitest.so
 MODOBJS     = nsdbitest.o
 
 TCL         = util.tcl
-
 
 include $(NAVISERVER)/include/Makefile.module
 
@@ -66,8 +68,8 @@ man-doc:
 
 
 
-NS_TEST_CFG		= -c -d -t tests/config.tcl
-NS_TEST_ALL		= tests/all.tcl $(TCLTESTARGS)
+NS_TEST_CFG	= -c -d -t tests/config.tcl
+NS_TEST_ALL	= tests/all.tcl $(TCLTESTARGS)
 LD_LIBRARY_PATH	= LD_LIBRARY_PATH="./:$$LD_LIBRARY_PATH"
 
 test: all

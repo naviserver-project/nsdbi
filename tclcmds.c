@@ -243,9 +243,10 @@ GetPool(InterpData *idataPtr, Tcl_Obj *poolObj)
 {
     Tcl_Interp        *interp = idataPtr->interp;
     Dbi_Pool          *pool;
-    static const char *poolType = "dbi:pool";
 
     if (poolObj != NULL) {
+	static const char *poolType = "dbi:pool";
+
         if (Ns_TclGetOpaqueFromObj(poolObj, poolType, (void **) &pool)
                 != TCL_OK) {
             pool = Dbi_GetPool(idataPtr->server, Tcl_GetString(poolObj));
@@ -404,7 +405,7 @@ Dbi_TclBindVariables(Tcl_Interp *interp, Dbi_Handle *handle,
     CONST char     *key, *data;
     char           *name;
     unsigned int    numVars, i;
-    int             length, binary;
+    int             length;
 
     numVars = Dbi_NumVariables(handle);
     if (numVars == 0) {
@@ -433,6 +434,7 @@ Dbi_TclBindVariables(Tcl_Interp *interp, Dbi_Handle *handle,
     }
 
     for (i = 0; i < numVars; i++) {
+	int binary = 0;
 
         if (Dbi_VariableName(handle, i, &key) != NS_OK) {
             Dbi_TclErrorResult(interp, handle);
@@ -440,7 +442,6 @@ Dbi_TclBindVariables(Tcl_Interp *interp, Dbi_Handle *handle,
         }
 
         data = NULL;
-        binary = 0;
 
         if (set != NULL) {
             if ((data = Ns_SetGet(set, key)) != NULL) {

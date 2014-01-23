@@ -127,12 +127,11 @@ DbiTclSubstTemplate(Tcl_Interp *interp, Dbi_Handle *handle,
     Tcl_Token     *tokenPtr;
     Tcl_Obj       *resObj;
     Ns_DString    *dsPtr;
-    char          *def;
     const char    *parity;
     int           *varColMap, end, len;
     int            stream;
     size_t         maxBuffer;
-    unsigned int   tokIdx, varIdx, colIdx, numCols, numRows;
+    unsigned int   tokIdx, varIdx, colIdx, numCols NS_GNUC_UNUSED, numRows;
 
     /*
      * Convert the template into a stream of text + variable tokens.
@@ -253,7 +252,8 @@ DbiTclSubstTemplate(Tcl_Interp *interp, Dbi_Handle *handle,
     if (numRows == 0) {
         if (defaultObj != NULL) {
             if (adp) {
-                def = Tcl_GetStringFromObj(defaultObj, &len);
+		char *def = Tcl_GetStringFromObj(defaultObj, &len);
+
                 if (Ns_AdpAppend(interp, def, len) != TCL_OK) {
                     return TCL_ERROR;
                 }
@@ -347,7 +347,7 @@ AppendTokenVariable(Tcl_Interp *interp, Tcl_Token *tokenPtr,
                     Tcl_Obj *resObj, Ns_DString *dsPtr)
 {
     Tcl_Obj *objPtr;
-    char    *name, *value, save;
+    char    *name, save;
     int      size;
 
     /* NB: Skip past leading '$' */
@@ -368,7 +368,7 @@ AppendTokenVariable(Tcl_Interp *interp, Tcl_Token *tokenPtr,
     name[size] = save;
 
     if (dsPtr) {
-        value = Tcl_GetStringFromObj(objPtr, &size);
+        char *value = Tcl_GetStringFromObj(objPtr, &size);
         Ns_DStringNAppend(dsPtr, value, size);
     } else {
         Tcl_AppendObjToObj(resObj, objPtr);
@@ -669,13 +669,13 @@ static void
 NewTextToken(Tcl_Parse *parsePtr, char *string, int length)
 {
     Tcl_Token  *tokenPtr;
-    int         newCount;
 
     if (parsePtr->numTokens == parsePtr->tokensAvailable) {
         /*
          * Expand the token array.
          */
-        newCount = parsePtr->tokensAvailable * 2;
+        int newCount = parsePtr->tokensAvailable * 2;
+
         tokenPtr = (Tcl_Token *) ckalloc((unsigned) (newCount * sizeof(Tcl_Token)));
         memcpy((void *) tokenPtr, (void *) parsePtr->tokenPtr,
                (size_t) (parsePtr->tokensAvailable * sizeof(Tcl_Token)));
