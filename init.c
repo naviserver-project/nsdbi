@@ -1568,6 +1568,8 @@ Dbi_Config(Dbi_Pool *pool, DBI_CONFIG_OPTION opt, int newValue)
             poolPtr->timeout = newValue;
         }
         break;
+    default:
+	oldValue = -1;
     }
     Ns_MutexUnlock(&poolPtr->lock);
 

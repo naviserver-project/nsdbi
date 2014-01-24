@@ -463,7 +463,7 @@ Exec(Dbi_Handle *handle, Dbi_Statement *stmt,
 
             if (values[i].binary) {
 	        /* we have no PRIdz around */
-                Ns_DStringPrintf(&conn->ds, " %zd", values[i].length);
+                Ns_DStringPrintf(&conn->ds, " %" PRIdz, values[i].length);
             } else {
                 Tcl_DStringAppendElement(&conn->ds, values[i].data);
             }

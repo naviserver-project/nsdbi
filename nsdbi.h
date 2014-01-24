@@ -66,7 +66,7 @@ typedef enum {
 typedef enum {
     Dbi_QuoteNone = 0,
     Dbi_QuoteHTML,
-    Dbi_QuoteJS,
+    Dbi_QuoteJS
 } Dbi_quotingLevel;
 
 /*

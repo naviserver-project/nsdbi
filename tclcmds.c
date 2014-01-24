@@ -987,7 +987,7 @@ CtlObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
     enum CmdIdx {
         CBounceCmd, CDatabaseCmd, CDBListCmd, CDefaultCmd, CDriverCmd,
         CMaxHandlesCmd, CMaxRowsCmd, CMaxIdleCmd, CMaxOpenCmd, CMaxQueriesCmd,
-        CStatsCmd, CTimeoutCmd,
+        CStatsCmd, CTimeoutCmd
     };
     if (objc < 2) {
         Tcl_WrongNumArgs(interp, 1, objv, "command ?args?");
@@ -1091,6 +1091,8 @@ CtlObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
     case CTimeoutCmd:
         oldValue = Dbi_Config(pool, DBI_CONFIG_TIMEOUT, newValue);
         break;
+    default:
+	oldValue = -1;
     }
     Tcl_SetIntObj(Tcl_GetObjResult(interp), oldValue);
 
