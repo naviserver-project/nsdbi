@@ -43,7 +43,7 @@
 
 extern int
 DbiTclSubstTemplate(Tcl_Interp *, Dbi_Handle *,
-                    Tcl_Obj *templateObj, Tcl_Obj *defaultObj, int adp, int quote);
+                    Tcl_Obj *templateObj, Tcl_Obj *defaultObj, int adp, Dbi_quotingLevel quote);
 
 
 /*
@@ -111,6 +111,21 @@ static Ns_ObjvTable levels[] = {
     {"serializable",    Dbi_Serializable},
     {NULL, 0}
 };
+
+
+/*	
+ * The following are the values that can be passed to the
+ * dbi_eval '-quote' option.
+ */
+
+static Ns_ObjvTable quotingTypeStrings[] = {
+    {"none", Dbi_QuoteNone}, 
+    {"html", Dbi_QuoteHTML}, 
+    {"js", Dbi_QuoteJS}, 
+    {NULL, 0}
+};
+
+
 
 
 /*
@@ -525,12 +540,13 @@ RowsObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
     InterpData   *idataPtr = arg;
     Dbi_Handle   *handle;
     unsigned int  colIdx, numCols;
-    CONST char   *colName, *quoteString = NULL;
+    CONST char   *colName;
     Tcl_Obj      *resObj, *valueObj, *colListObj, *queryObj;
     Tcl_Obj      *poolObj = NULL, *valuesObj = NULL, *colsNameObj = NULL;
     Tcl_Obj      *templateObj = NULL, *defaultObj = NULL;
     Ns_Time      *timeoutPtr = NULL;
-    int           end, status, maxRows = -1, adp = 0, quote = 0;
+    int           end, status, maxRows = -1, adp = 0;
+    Dbi_quotingLevel quote = Dbi_QuoteNone;
 
     Ns_ObjvSpec opts[] = {
         {"-db",        Ns_ObjvObj,    &poolObj,     NULL},
@@ -539,7 +555,7 @@ RowsObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
         {"-columns",   Ns_ObjvObj,    &colsNameObj, NULL},
         {"-max",       Ns_ObjvInt,    &maxRows,     NULL},
         {"-append",    Ns_ObjvBool,   &adp,         (void *) NS_TRUE},
-        {"-quote",     Ns_ObjvString, &quoteString, NULL},
+        {"-quote",     Ns_ObjvIndex,  &quote,       quotingTypeStrings},
         {"--",         Ns_ObjvBreak,  NULL,         NULL},
         {NULL, NULL, NULL, NULL}
     };
@@ -553,21 +569,9 @@ RowsObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
         return TCL_ERROR;
     }
 
-    if (quoteString) {
-	if (*quoteString != 'h' && *quoteString != 'j' && *quoteString != 'n') {
-            Tcl_SetResult(interp, "dbi: value of '-quote' must be 'html', 'js' or 'none'", TCL_STATIC);
-	    return TCL_ERROR;
-	}
-
-	if (*quoteString != 'n') {
-	    quote = *quoteString == 'h' ? 1 : 2;
-	}
-
-	if (templateObj == NULL && quote) {
-	    Tcl_SetResult(interp, "dbi: '-quote' is only allowed when template is given", TCL_STATIC);
-	    return TCL_ERROR;
-	}
-
+    if (templateObj == NULL && quote != Dbi_QuoteNone) {
+	Tcl_SetResult(interp, "dbi: '-quote' is only allowed when template is given", TCL_STATIC);
+	return TCL_ERROR;
     }
 
     /*

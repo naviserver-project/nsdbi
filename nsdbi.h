@@ -59,6 +59,15 @@ typedef enum {
     Dbi_Serializable
 } Dbi_Isolation;
 
+/*
+ * The following define Quoting for templating
+ */
+
+typedef enum {
+    Dbi_QuoteNone = 0,
+    Dbi_QuoteHTML,
+    Dbi_QuoteJS,
+} Dbi_quotingLevel;
 
 /*
  * The following are valid configuration options for a

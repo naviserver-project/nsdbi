@@ -45,7 +45,7 @@ typedef struct Template {
 
 
 int DbiTclSubstTemplate(Tcl_Interp *, Dbi_Handle *,
-                        Tcl_Obj *templateObj, Tcl_Obj *defaultObj, int adp, int quote);
+                        Tcl_Obj *templateObj, Tcl_Obj *defaultObj, int adp, Dbi_quotingLevel quote);
 
 
 /*
@@ -55,9 +55,9 @@ int DbiTclSubstTemplate(Tcl_Interp *, Dbi_Handle *,
 static int GetTemplateFromObj(Tcl_Interp *interp, Dbi_Handle *,
                               Tcl_Obj *templateObj, Template **templatePtrPtr);
 static int AppendValue(Tcl_Interp *interp, Dbi_Handle *handle, unsigned int colIdx,
-                       Tcl_Obj *resObj, Ns_DString *dsPtr, int quote);
+                       Tcl_Obj *resObj, Ns_DString *dsPtr, Dbi_quotingLevel quote);
 static int AppendTokenVariable(Tcl_Interp *interp, Tcl_Token *tokenPtr,
-                               Tcl_Obj *resObj, Ns_DString *dsPtr, int quote);
+                               Tcl_Obj *resObj, Ns_DString *dsPtr, Dbi_quotingLevel quote);
 static void AppendInt(Tcl_Interp *, unsigned int rowint,
                       Tcl_Obj *resObj, Ns_DString *dsPtr);
 static void MapVariablesToColumns(Dbi_Handle *handle, Template *templatePtr);
@@ -153,11 +153,11 @@ QuoteJS(Ns_DString *dsPtr, char *string)
  *----------------------------------------------------------------------
  */
 static void
-Quote(Ns_DString *dsPtr, char *value, int quote) 
+Quote(Ns_DString *dsPtr, char *value, Dbi_quotingLevel quote) 
 {
-    if (likely(quote == 1)) {
+    if (likely(quote == Dbi_QuoteHTML)) {
 	Ns_QuoteHtml(dsPtr, value);
-    } else if (quote == 2) {
+    } else if (quote == Dbi_QuoteJS) {
 	QuoteJS(dsPtr, value);
     } else {
 	Ns_DStringNAppend(dsPtr, value, -1);
@@ -186,7 +186,7 @@ Quote(Ns_DString *dsPtr, char *value, int quote)
 
 int
 DbiTclSubstTemplate(Tcl_Interp *interp, Dbi_Handle *handle,
-                    Tcl_Obj *templateObj, Tcl_Obj *defaultObj, int adp, int quote)
+                    Tcl_Obj *templateObj, Tcl_Obj *defaultObj, int adp, Dbi_quotingLevel quote)
 {
     Template      *templatePtr;
     Tcl_Parse     *parsePtr;
@@ -356,7 +356,7 @@ DbiTclSubstTemplate(Tcl_Interp *interp, Dbi_Handle *handle,
 
 static int
 AppendValue(Tcl_Interp *interp, Dbi_Handle *handle, unsigned int index,
-            Tcl_Obj *resObj, Ns_DString *dsPtr, int quote)
+            Tcl_Obj *resObj, Ns_DString *dsPtr, Dbi_quotingLevel quote)
 {
     size_t  valueLength;
     int     resultLength, binary;
@@ -388,7 +388,7 @@ AppendValue(Tcl_Interp *interp, Dbi_Handle *handle, unsigned int index,
     }
 
 
-    if (quote > 0) {
+    if (quote != Dbi_QuoteNone) {
 	Tcl_DString ds, *dsPtr2 = &ds;
 	size_t      quotedLength;
 	
@@ -436,7 +436,7 @@ AppendValue(Tcl_Interp *interp, Dbi_Handle *handle, unsigned int index,
 
 static int
 AppendTokenVariable(Tcl_Interp *interp, Tcl_Token *tokenPtr,
-                    Tcl_Obj *resObj, Ns_DString *dsPtr, int quote)
+                    Tcl_Obj *resObj, Ns_DString *dsPtr, Dbi_quotingLevel quote)
 {
     Tcl_Obj *objPtr;
     char    *name, *value, save;
@@ -463,7 +463,7 @@ AppendTokenVariable(Tcl_Interp *interp, Tcl_Token *tokenPtr,
     if (dsPtr) {
 	Quote(dsPtr, value, quote);
     } else {
-	if (quote > 0) {
+	if (quote != Dbi_QuoteNone) {
 	    Tcl_DString ds, *dsPtr = &ds;
 
 	    Tcl_DStringInit(dsPtr);

@@ -283,7 +283,7 @@ test template-13 {special variables} -body {
 
 test template-14 {wrong argument to -quote} -body {
     dbi_rows -quote foo -- {ROWS 2 2} {x}
-} -returnCodes error -result {dbi: value of '-quote' must be 'html', 'js' or 'none'}
+} -returnCodes error -result {bad option "foo": must be none, html, or js}
 
 test template-15 {-quote but no template} -body {
     dbi_rows -quote html -- {ROWS 2 2} 
@@ -298,11 +298,11 @@ test template-17 {template with locals} -body {
 } -result {<,' 0.0 0.1 <,' 1.0 1.1 }
 
 test adp-template-18 {template with locals} -body {
-    set x <; set y '; dbi_rows -quote html-- {ROWS 2 2} {$x,$y $0 $1 }
+    set x <; set y '; dbi_rows -quote html -- {ROWS 2 2} {$x,$y $0 $1 }
 } -result {&lt;,&#39; 0.0 0.1 &lt;,&#39; 1.0 1.1 }
 
 test adp-template-19 {template with locals} -body {
-    set x <; set y '; dbi_rows -quote js-- {ROWS 2 2} {$x,$y $0 $1 }
+    set x <; set y '; dbi_rows -quote js -- {ROWS 2 2} {$x,$y $0 $1 }
 } -result {'<','\'' '0.0' '0.1' '<','\'' '1.0' '1.1' }
 
 
