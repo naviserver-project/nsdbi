@@ -43,7 +43,7 @@
 
 extern int
 DbiTclSubstTemplate(Tcl_Interp *, Dbi_Handle *,
-                    Tcl_Obj *templateObj, Tcl_Obj *defaultObj, int adp);
+                    Tcl_Obj *templateObj, Tcl_Obj *defaultObj, int adp, int quote);
 
 
 /*
@@ -525,12 +525,12 @@ RowsObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
     InterpData   *idataPtr = arg;
     Dbi_Handle   *handle;
     unsigned int  colIdx, numCols;
-    CONST char   *colName;
+    CONST char   *colName, *quoteString = NULL;
     Tcl_Obj      *resObj, *valueObj, *colListObj, *queryObj;
     Tcl_Obj      *poolObj = NULL, *valuesObj = NULL, *colsNameObj = NULL;
     Tcl_Obj      *templateObj = NULL, *defaultObj = NULL;
     Ns_Time      *timeoutPtr = NULL;
-    int           end, status, maxRows = -1, adp = 0;
+    int           end, status, maxRows = -1, adp = 0, quote = 0;
 
     Ns_ObjvSpec opts[] = {
         {"-db",        Ns_ObjvObj,    &poolObj,     NULL},
@@ -539,6 +539,7 @@ RowsObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
         {"-columns",   Ns_ObjvObj,    &colsNameObj, NULL},
         {"-max",       Ns_ObjvInt,    &maxRows,     NULL},
         {"-append",    Ns_ObjvBool,   &adp,         (void *) NS_TRUE},
+        {"-quote",     Ns_ObjvString, &quoteString, NULL},
         {"--",         Ns_ObjvBreak,  NULL,         NULL},
         {NULL, NULL, NULL, NULL}
     };
@@ -550,6 +551,23 @@ RowsObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
     };
     if (Ns_ParseObjv(opts, args, interp, 1, objc, objv) != NS_OK) {
         return TCL_ERROR;
+    }
+
+    if (quoteString) {
+	if (*quoteString != 'h' && *quoteString != 'j' && *quoteString != 'n') {
+            Tcl_SetResult(interp, "dbi: value of '-quote' must be 'html', 'js' or 'none'", TCL_STATIC);
+	    return TCL_ERROR;
+	}
+
+	if (*quoteString != 'n') {
+	    quote = *quoteString == 'h' ? 1 : 2;
+	}
+
+	if (templateObj == NULL && quote) {
+	    Tcl_SetResult(interp, "dbi: '-quote' is only allowed when template is given", TCL_STATIC);
+	    return TCL_ERROR;
+	}
+
     }
 
     /*
@@ -564,10 +582,9 @@ RowsObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
     /*
      * Successful result is a flat list of all values (or an empty list)
      */
-
     if (templateObj != NULL) {
         status = DbiTclSubstTemplate(interp, handle,
-                                     templateObj, defaultObj, adp);
+                                     templateObj, defaultObj, adp, quote);
     } else {
 
         resObj = Tcl_GetObjResult(interp);
@@ -577,7 +594,7 @@ RowsObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
 
             for (colIdx = 0; colIdx < numCols; colIdx++) {
                 if ((status = ColumnValue(interp, handle, colIdx, &valueObj))
-                        != TCL_OK) {
+		        != TCL_OK) {
                     goto done;
                 }
                 if ((status = Tcl_ListObjAppendElement(interp, resObj, valueObj))
@@ -1234,6 +1251,7 @@ ColumnValue(Tcl_Interp *interp, Dbi_Handle *handle, unsigned int index,
         Tcl_DecrRefCount(objPtr);
         return TCL_ERROR;
     }
+
     *valueObjPtr = objPtr;
 
     return TCL_OK;

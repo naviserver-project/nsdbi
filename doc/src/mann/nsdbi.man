@@ -77,6 +77,7 @@ if {[lb][cmd dbi_0or1row] {select first, last from peeps where id = 1}[rb]} {
       [opt [option "-columns [arg varname]"]] \
       [opt [option "-max [arg nrows]"]] \
       [opt [option -append]] \
+      [opt [option "-quote [arg quoting-type]"]] \
       [opt [arg --]] \
       [arg query] \
       [opt [arg template]] \
@@ -205,6 +206,13 @@ to the [term ADP] output buffer. If no ADP frame is active an error is raised.
 <% [cmd dbi_rows] [option -append] -- {select first, last from peeps} {<li>$first $last</li>} %>
 </ul>
 [example_end]
+
+[opt_def "-quote [arg quoting-type]"]
+
+Quote substituted variables (tcl variables or column values) in the
+template according to the quoting type. valid quoting types are
+"none", "html", or "js".  This option can be only specified, when a
+template is given.
 
 [list_end]
 

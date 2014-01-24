@@ -8,9 +8,6 @@ namespace import -force ::tcltest::*
 
 eval ::tcltest::configure $argv
 
-
-
-
 test dblist {list all dbs} -body {
     lsort [dbi_ctl dblist]
 } -result {OPENERR OPENERR0 db1 db2 global1 global2}
@@ -284,14 +281,52 @@ test template-13 {special variables} -body {
     dbi_rows {ROWS 1 2} {$0 $dbi(rowidx) $dbi(rownum) $dbi(parity) }
 } -result {0.0 0 1 even 1.0 1 2 odd }
 
+test template-14 {wrong argument to -quote} -body {
+    dbi_rows -quote foo -- {ROWS 2 2} {x}
+} -returnCodes error -result {dbi: value of '-quote' must be 'html', 'js' or 'none'}
+
+test template-15 {-quote but no template} -body {
+    dbi_rows -quote html -- {ROWS 2 2} 
+} -returnCodes error -result {dbi: '-quote' is only allowed when template is given}
+
+test template-16 {template with locals} -body {
+    set x <; set y '; dbi_rows -- {ROWS 2 2} {$x,$y $0 $1 }
+} -result {<,' 0.0 0.1 <,' 1.0 1.1 }
+
+test template-17 {template with locals} -body {
+    set x <; set y '; dbi_rows -quote none -- {ROWS 2 2} {$x,$y $0 $1 }
+} -result {<,' 0.0 0.1 <,' 1.0 1.1 }
+
+test adp-template-18 {template with locals} -body {
+    set x <; set y '; dbi_rows -quote html-- {ROWS 2 2} {$x,$y $0 $1 }
+} -result {&lt;,&#39; 0.0 0.1 &lt;,&#39; 1.0 1.1 }
+
+test adp-template-19 {template with locals} -body {
+    set x <; set y '; dbi_rows -quote js-- {ROWS 2 2} {$x,$y $0 $1 }
+} -result {'<','\'' '0.0' '0.1' '<','\'' '1.0' '1.1' }
+
+
 
 
 test adp-template-1 {append to adp} -body {
     ns_adp_eval {-<% dbi_rows -append -- {ROWS 2 2} {$0 $1 } %>-}
 } -result {-0.0 0.1 1.0 1.1 -}
 
+test adp-template-2 {append to adp} -body {
+    ns_adp_eval {-<% set x <;set y '; dbi_rows -append -- {ROWS 2 2} {$x,$y $0 $1 } %>-}
+} -result {-<,' 0.0 0.1 <,' 1.0 1.1 -}
 
+test adp-template-3 {append to adp} -body {
+    ns_adp_eval {-<% set x <; dbi_rows -append -quote none -- {ROWS 2 2} {$x,$y $0 $1 } %>-}
+} -result {-<,' 0.0 0.1 <,' 1.0 1.1 -}
 
+test adp-template-4 {append to adp} -body {
+    ns_adp_eval {-<% set x <; dbi_rows -append -quote html -- {ROWS 2 2} {$x,$y $0 $1 } %>-}
+} -result {-&lt;,&#39; 0.0 0.1 &lt;,&#39; 1.0 1.1 -}
+
+test adp-template-5 {append to adp} -body {
+    ns_adp_eval {-<% set x <; dbi_rows -append -quote js -- {ROWS 2 2} {$x,$y $0 $1 } %>-}
+} -result {-'<','\'' '0.0' '0.1' '<','\'' '1.0' '1.1' -}
 
 test pool-global {query from non-default global pool} -body {
     dbi_rows -db global1 {ROWS 1 1 v}
@@ -599,3 +634,10 @@ test timeout-2 {timeout getting handle, absolute time} -body {
 
 
 cleanupTests
+
+#
+# Local variables:
+#    mode: tcl
+#    tcl-indent-level: 4
+#    indent-tabs-mode: nil
+# End:

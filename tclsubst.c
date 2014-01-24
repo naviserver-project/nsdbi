@@ -45,7 +45,7 @@ typedef struct Template {
 
 
 int DbiTclSubstTemplate(Tcl_Interp *, Dbi_Handle *,
-                        Tcl_Obj *templateObj, Tcl_Obj *defaultObj, int adp);
+                        Tcl_Obj *templateObj, Tcl_Obj *defaultObj, int adp, int quote);
 
 
 /*
@@ -55,9 +55,9 @@ int DbiTclSubstTemplate(Tcl_Interp *, Dbi_Handle *,
 static int GetTemplateFromObj(Tcl_Interp *interp, Dbi_Handle *,
                               Tcl_Obj *templateObj, Template **templatePtrPtr);
 static int AppendValue(Tcl_Interp *interp, Dbi_Handle *handle, unsigned int colIdx,
-                       Tcl_Obj *resObj, Ns_DString *dsPtr);
+                       Tcl_Obj *resObj, Ns_DString *dsPtr, int quote);
 static int AppendTokenVariable(Tcl_Interp *interp, Tcl_Token *tokenPtr,
-                               Tcl_Obj *resObj, Ns_DString *dsPtr);
+                               Tcl_Obj *resObj, Ns_DString *dsPtr, int quote);
 static void AppendInt(Tcl_Interp *, unsigned int rowint,
                       Tcl_Obj *resObj, Ns_DString *dsPtr);
 static void MapVariablesToColumns(Dbi_Handle *handle, Template *templatePtr);
@@ -99,6 +99,72 @@ static struct {
     {"dbi(parity)", VARTYPE_PARITY},
 };
 
+
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * QuoteJS --
+ *
+ *      Append valid javascript strings (between single quotes)
+ *      to first argument
+ *
+ * Results:
+ *      none
+ *
+ * Side effects:
+ *      Properly escaped string is returned in the passed DString object.
+ *
+ *----------------------------------------------------------------------
+ */
+static void
+QuoteJS(Ns_DString *dsPtr, char *string)
+{
+    Ns_DStringAppend(dsPtr, "'");
+    while (likely(*string != '\0')) {
+        switch (*string) {
+        case '\'':
+            Ns_DStringAppend(dsPtr, "\\'");
+            break;
+	    
+	default:
+            Ns_DStringNAppend(dsPtr, string, 1);
+            break;
+        }
+        ++string;
+    }
+    Ns_DStringAppend(dsPtr, "'");
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * Quote --
+ *
+ *      Append a potentially quoted string to first argument.
+ *
+ * Results:
+ *      None
+ *
+ * Side effects:
+ *      Passed string is appended to first argument, potentially quoted.
+ *
+ *----------------------------------------------------------------------
+ */
+static void
+Quote(Ns_DString *dsPtr, char *value, int quote) 
+{
+    if (likely(quote == 1)) {
+	Ns_QuoteHtml(dsPtr, value);
+    } else if (quote == 2) {
+	QuoteJS(dsPtr, value);
+    } else {
+	Ns_DStringNAppend(dsPtr, value, -1);
+    }
+}
+
+
 
 /*
  *----------------------------------------------------------------------
@@ -120,7 +186,7 @@ static struct {
 
 int
 DbiTclSubstTemplate(Tcl_Interp *interp, Dbi_Handle *handle,
-                    Tcl_Obj *templateObj, Tcl_Obj *defaultObj, int adp)
+                    Tcl_Obj *templateObj, Tcl_Obj *defaultObj, int adp, int quote)
 {
     Template      *templatePtr;
     Tcl_Parse     *parsePtr;
@@ -197,7 +263,7 @@ DbiTclSubstTemplate(Tcl_Interp *interp, Dbi_Handle *handle,
 
                 switch (colIdx) {
                 case VARTYPE_TCL:
-                    if (AppendTokenVariable(interp, tokenPtr, resObj, dsPtr)
+                    if (AppendTokenVariable(interp, tokenPtr, resObj, dsPtr, quote)
                             != TCL_OK) {
                         return TCL_ERROR;
                     }
@@ -221,7 +287,7 @@ DbiTclSubstTemplate(Tcl_Interp *interp, Dbi_Handle *handle,
                     break;
 
                 default:
-                    if (AppendValue(interp, handle, colIdx, resObj, dsPtr)
+                    if (AppendValue(interp, handle, colIdx, resObj, dsPtr, quote)
                             != TCL_OK) {
                         return TCL_ERROR;
                     }
@@ -290,7 +356,7 @@ DbiTclSubstTemplate(Tcl_Interp *interp, Dbi_Handle *handle,
 
 static int
 AppendValue(Tcl_Interp *interp, Dbi_Handle *handle, unsigned int index,
-            Tcl_Obj *resObj, Ns_DString *dsPtr)
+            Tcl_Obj *resObj, Ns_DString *dsPtr, int quote)
 {
     size_t  valueLength;
     int     resultLength, binary;
@@ -321,6 +387,32 @@ AppendValue(Tcl_Interp *interp, Dbi_Handle *handle, unsigned int index,
         return TCL_ERROR;
     }
 
+
+    if (quote > 0) {
+	Tcl_DString ds, *dsPtr2 = &ds;
+	size_t      quotedLength;
+	
+	Tcl_DStringInit(dsPtr2);
+	Quote(dsPtr2, bytes, quote);
+	quotedLength = Tcl_DStringLength(dsPtr2);
+
+	/*
+	 * If nothing has to be quoted, the sizes are identical, no
+	 * need to copy result from quoteing
+	 */
+	
+	if (quotedLength != valueLength) {
+	    if (dsPtr) {
+		Ns_DStringSetLength(dsPtr, resultLength + quotedLength);
+		memcpy(dsPtr->string + resultLength, dsPtr2->string, quotedLength);
+	    } else {
+		Tcl_SetObjLength(resObj, resultLength + quotedLength);
+		memcpy(resObj->bytes + resultLength, dsPtr2->string, quotedLength);
+	    }
+	}
+	Tcl_DStringFree(dsPtr2);
+    }
+
     return TCL_OK;
 }
 
@@ -344,10 +436,10 @@ AppendValue(Tcl_Interp *interp, Dbi_Handle *handle, unsigned int index,
 
 static int
 AppendTokenVariable(Tcl_Interp *interp, Tcl_Token *tokenPtr,
-                    Tcl_Obj *resObj, Ns_DString *dsPtr)
+                    Tcl_Obj *resObj, Ns_DString *dsPtr, int quote)
 {
     Tcl_Obj *objPtr;
-    char    *name, save;
+    char    *name, *value, save;
     int      size;
 
     /* NB: Skip past leading '$' */
@@ -366,12 +458,23 @@ AppendTokenVariable(Tcl_Interp *interp, Tcl_Token *tokenPtr,
         return TCL_ERROR;
     }
     name[size] = save;
+    value = Tcl_GetStringFromObj(objPtr, &size);
 
     if (dsPtr) {
-        char *value = Tcl_GetStringFromObj(objPtr, &size);
-        Ns_DStringNAppend(dsPtr, value, size);
+	Quote(dsPtr, value, quote);
     } else {
-        Tcl_AppendObjToObj(resObj, objPtr);
+	if (quote > 0) {
+	    Tcl_DString ds, *dsPtr = &ds;
+
+	    Tcl_DStringInit(dsPtr);
+	    Quote(dsPtr, value, quote);
+	    Tcl_AppendToObj(resObj, 
+			    Tcl_DStringValue(dsPtr), 
+			    Tcl_DStringLength(dsPtr));
+	    Tcl_DStringFree(dsPtr);
+	} else {
+	    Tcl_AppendObjToObj(resObj, objPtr);
+	}
     }
 
     return TCL_OK;
