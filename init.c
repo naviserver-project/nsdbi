@@ -434,14 +434,15 @@ Dbi_RegisterDriver(CONST char *server, CONST char *module,
     isdefault = Ns_ConfigBool(path, "default", 0); /* Default pool for this server. */
 
     /*
-     * Hard to believe: when we use "if (server == NULL) ..." as the
+     * Hard to believe: when we use "if (server != NULL) ..." as the
      * next command, gcc version 4.8.2 (on GenToo and MacPorts)
      * produces at least with -O3 code the enters the first branch
      * even when "server" is NULL. This leads to a crash in
      * Tcl_FindHashEntry(). Compiling with -O0 is fine for this gcc
      * version, clang is as well ok.
      */
-    if (!server) {
+    if (server != NULL) {
+	assert(server != NULL);
         hPtr = Tcl_FindHashEntry(&serversTable, server);
         assert(hPtr != NULL);
         sdataPtr = Tcl_GetHashValue(hPtr);
