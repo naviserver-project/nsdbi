@@ -390,8 +390,9 @@ Prepare(Dbi_Handle *handle, Dbi_Statement *stmt,
 static void
 PrepareClose(Dbi_Handle *handle, Dbi_Statement *stmt)
 {
+#ifndef NDEBUG
     Connection *conn = handle->driverData;
-
+#endif
     assert(handle);
     assert(stmt);
 
