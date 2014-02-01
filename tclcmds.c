@@ -81,8 +81,8 @@ static int RowCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST o
                   int *rowPtr);
 
 static int Exec(InterpData *idataPtr, Tcl_Obj *poolObj, Ns_Time *timeoutPtr,
-                Tcl_Obj *queryObj, Tcl_Obj *valuesObj, int maxRows, int dml,
-                Dbi_Handle **handlePtrPtr);
+                Tcl_Obj *queryObj, Tcl_Obj *valuesObj, int maxRows, int dml, 
+		int missingIsNull, Dbi_Handle **handlePtrPtr);
 
 static Dbi_Pool *GetPool(InterpData *, Tcl_Obj *poolObj);
 static Dbi_Handle *GetHandle(InterpData *, Dbi_Pool *, Ns_Time *);
@@ -115,16 +115,27 @@ static Ns_ObjvTable levels[] = {
 
 /*	
  * The following are the values that can be passed to the
- * dbi_eval '-quote' option.
+ * dbi_rows '-quote' option.
  */
 
 static Ns_ObjvTable quotingTypeStrings[] = {
     {"none", Dbi_QuoteNone}, 
     {"html", Dbi_QuoteHTML}, 
-    {"js", Dbi_QuoteJS}, 
+    {"js",   Dbi_QuoteJS}, 
     {NULL, 0}
 };
 
+/*	
+ * The following are the values that can be passed to the
+ * dbi_rows '-output' option.
+ */
+
+static Ns_ObjvTable resultFormatStrings[] = {
+    {"flat",   Dbi_ResultFlat}, 
+    {"sets",   Dbi_ResultSets}, 
+    {"dicts",  Dbi_ResultDicts}, 
+    {NULL, 0}
+};
 
 
 
@@ -413,10 +424,11 @@ PutHandle(InterpData *idataPtr, Dbi_Handle *handle)
 
 int
 Dbi_TclBindVariables(Tcl_Interp *interp, Dbi_Handle *handle,
-                     Dbi_Value *dbValues, Tcl_Obj *tclValues)
+                     Dbi_Value *dbValues, Tcl_Obj *tclValues, 
+		     int missingIsNull)
 {
     Ns_Set         *set;
-    Tcl_Obj        *valueObj;
+    Tcl_Obj        *valueObj, *dictObj = NULL;
     CONST char     *key, *data;
     char           *name;
     unsigned int    numVars, i;
@@ -427,26 +439,29 @@ Dbi_TclBindVariables(Tcl_Interp *interp, Dbi_Handle *handle,
         return TCL_OK;
     }
 
-    /*
-     * FIXME: This is ugly. Need to eficiently distinguish types.
-     *        Also, handle Tcl 8.5 dicts.
-     */
-
-    name = NULL;
     set = NULL;
+    name = NULL;
 
     if (tclValues != NULL) {
-        name = Tcl_GetString(tclValues);
+	int length = 0;
 
-        if (name[0] != '\0'
-            && (name[0] == 'd' || name[0] == 't')
-            && name[1] != '\0'
-            && isdigit(UCHAR(name[1]))
-            && Ns_TclGetSet2(interp, name, &set) != TCL_OK) {
+	Tcl_ListObjLength(interp, tclValues, &length);
 
-            return TCL_ERROR;
-        }
-    }
+	if (length == 1) {
+	    name = Tcl_GetString(tclValues);
+
+	    if ((name[0] == 'd' || name[0] == 't')
+		&& name[1] != '\0'
+		&& isdigit(UCHAR(name[1]))
+		&& Ns_TclGetSet2(interp, name, &set) != TCL_OK
+		) {
+		return TCL_ERROR;
+	    }
+
+	} else {
+	    dictObj = tclValues;
+	}
+    } 
 
     for (i = 0; i < numVars; i++) {
 	int binary = 0;
@@ -462,15 +477,32 @@ Dbi_TclBindVariables(Tcl_Interp *interp, Dbi_Handle *handle,
             if ((data = Ns_SetGet(set, key)) != NULL) {
                 length = strlen(data);
             }
+
         } else {
+	    /*
+	     * Set the valueObj either from the dict or from local variables
+	     */
+	    if (dictObj != NULL) {
+		Tcl_Obj *keyObj = Tcl_NewStringObj(key, -1);
+	    
+		if (Tcl_DictObjGet(interp, dictObj, keyObj, &valueObj) != TCL_OK) {
+		    Tcl_DecrRefCount(keyObj);
+		    return TCL_ERROR;
+		}
+		Tcl_DecrRefCount(keyObj);
+		
+	    } else {
+		/*	
+		 * NB: handle both array and variable lookup here.
+		 */
 
-            /*
-             * NB: handle both array and variable lookup here.
-             */
+		valueObj = Tcl_GetVar2Ex(interp, 
+					 name ? name : key, 
+					 name ? key : NULL, 
+					 0 /*TCL_LEAVE_ERR_MSG*/);
+	    }
 
-            valueObj = Tcl_GetVar2Ex(interp, name ? name : key,
-                                     name ? key : NULL, TCL_LEAVE_ERR_MSG);
-            if (valueObj != NULL) {
+	    if (valueObj != NULL) {
                 if (valueObj->typePtr == bytearrayTypePtr) {
                     data = (char *) Tcl_GetByteArrayFromObj(valueObj, &length);
                     binary = 1;
@@ -480,11 +512,26 @@ Dbi_TclBindVariables(Tcl_Interp *interp, Dbi_Handle *handle,
             }
         }
         if (data == NULL) {
-            Tcl_AddObjErrorInfo(interp, "\ndbi: bind variable not found: ", -1);
-            Tcl_AddObjErrorInfo(interp, key, -1);
-            return TCL_ERROR;
-        }
+	    length = 0;
+	    
+	    if (!missingIsNull) {
+		char *source;
 
+		if (set != NULL) {
+		    source = "in ns set";
+		} else if (dictObj != NULL) {
+		    source = "in dict";
+		} else if (name != NULL) {
+		    source = "in array";
+		} else {
+		    source = "as local variable";
+		}
+		Ns_TclPrintfResult(interp, "dbi: bind variable \"%s\" not found %s", 
+				   key, source);
+		return TCL_ERROR;
+	    }
+	}
+	
         dbValues[i].data = length ? data : NULL; /* Coerce the empty string to null. */
         dbValues[i].length = length;
         dbValues[i].binary = binary;
@@ -543,20 +590,23 @@ RowsObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
     CONST char   *colName;
     Tcl_Obj      *resObj, *valueObj, *colListObj, *queryObj;
     Tcl_Obj      *poolObj = NULL, *valuesObj = NULL, *colsNameObj = NULL;
-    Tcl_Obj      *templateObj = NULL, *defaultObj = NULL;
+    Tcl_Obj      *templateObj = NULL, *defaultObj = NULL, *dictObj = NULL;
     Ns_Time      *timeoutPtr = NULL;
-    int           end, status, maxRows = -1, adp = 0;
+    int           end, status, maxRows = -1, adp = 0, missingIsNull = 0;
     Dbi_quotingLevel quote = Dbi_QuoteNone;
+    Dbi_resultFormat resultFormat = Dbi_ResultFlat;
 
     Ns_ObjvSpec opts[] = {
-        {"-db",        Ns_ObjvObj,    &poolObj,     NULL},
-        {"-timeout",   Ns_ObjvTime,   &timeoutPtr,  NULL},
-        {"-bind",      Ns_ObjvObj,    &valuesObj,   NULL},
-        {"-columns",   Ns_ObjvObj,    &colsNameObj, NULL},
-        {"-max",       Ns_ObjvInt,    &maxRows,     NULL},
-        {"-append",    Ns_ObjvBool,   &adp,         (void *) NS_TRUE},
-        {"-quote",     Ns_ObjvIndex,  &quote,       quotingTypeStrings},
-        {"--",         Ns_ObjvBreak,  NULL,         NULL},
+        {"-db",        Ns_ObjvObj,    &poolObj,       NULL},
+        {"-autonull",  Ns_ObjvBool,   &missingIsNull, (void *) NS_TRUE},
+        {"-timeout",   Ns_ObjvTime,   &timeoutPtr,    NULL},
+        {"-bind",      Ns_ObjvObj,    &valuesObj,     NULL},
+        {"-columns",   Ns_ObjvObj,    &colsNameObj,   NULL},
+        {"-max",       Ns_ObjvInt,    &maxRows,       NULL},
+        {"-result",    Ns_ObjvIndex,  &resultFormat,  resultFormatStrings},
+        {"-append",    Ns_ObjvBool,   &adp,           (void *) NS_TRUE},
+        {"-quote",     Ns_ObjvIndex,  &quote,         quotingTypeStrings},
+        {"--",         Ns_ObjvBreak,  NULL,           NULL},
         {NULL, NULL, NULL, NULL}
     };
     Ns_ObjvSpec args[] = {
@@ -574,11 +624,16 @@ RowsObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
 	return TCL_ERROR;
     }
 
+    if (templateObj != NULL && resultFormat != Dbi_ResultFlat) {
+	Tcl_SetResult(interp, "dbi: '-result' option is only allowed when no template is given", TCL_STATIC);
+	return TCL_ERROR;
+    }
+
     /*
-     * Get a handle, prepare, bind, and run the qeuery.
+     * Get a handle, prepare, bind, and run the query.
      */
 
-    if (Exec(idataPtr, poolObj, timeoutPtr, queryObj, valuesObj, maxRows, 0,
+    if (Exec(idataPtr, poolObj, timeoutPtr, queryObj, valuesObj, maxRows, 0, missingIsNull,
              &handle) != TCL_OK) {
         return TCL_ERROR;
     }
@@ -590,23 +645,67 @@ RowsObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
         status = DbiTclSubstTemplate(interp, handle,
                                      templateObj, defaultObj, adp, quote);
     } else {
-
+	status = TCL_OK;
         resObj = Tcl_GetObjResult(interp);
         numCols = Dbi_NumColumns(handle);
 
         while ((status = NextRow(interp, handle, &end)) == TCL_OK && !end) {
+	    Ns_Set *set = NULL;
+
+	    switch (resultFormat) {
+	    case Dbi_ResultFlat: break;
+	    case Dbi_ResultDicts: dictObj = Tcl_NewListObj(0,NULL); break;
+	    case Dbi_ResultSets:  set     = Ns_SetCreate("r"); break;
+	    }
 
             for (colIdx = 0; colIdx < numCols; colIdx++) {
-                if ((status = ColumnValue(interp, handle, colIdx, &valueObj))
-		        != TCL_OK) {
-                    goto done;
+                if (ColumnValue(interp, handle, colIdx, &valueObj) != TCL_OK) {
+                    goto error;
                 }
-                if ((status = Tcl_ListObjAppendElement(interp, resObj, valueObj))
-                        != TCL_OK) {
-                    Tcl_DecrRefCount(valueObj);
-                    goto done;
-                }
+
+		if (resultFormat != Dbi_ResultFlat) {
+		    if (Dbi_ColumnName(handle, colIdx, &colName) != NS_OK) {
+			Dbi_TclErrorResult(interp, handle);
+			Tcl_DecrRefCount(valueObj);
+			goto error;
+		    }
+
+		    if (resultFormat == Dbi_ResultDicts) {
+			Tcl_Obj *nameObj = Tcl_NewStringObj(colName, -1);
+
+			if (Tcl_ListObjAppendElement(interp, dictObj, nameObj) != TCL_OK) {
+			    Tcl_DecrRefCount(nameObj);
+			    Tcl_DecrRefCount(valueObj);
+			    goto error;
+			}
+			if (Tcl_ListObjAppendElement(interp, dictObj, valueObj) != TCL_OK) {
+			    Tcl_DecrRefCount(nameObj);
+			    Tcl_DecrRefCount(valueObj);
+			    goto error;
+			}
+		    } else if (resultFormat == Dbi_ResultSets) {
+			Ns_SetPutSz(set, colName, Tcl_GetString(valueObj), -1);
+		    }
+		    
+		} else {
+		    if (Tcl_ListObjAppendElement(interp, resObj, valueObj) != TCL_OK) {
+			Tcl_DecrRefCount(valueObj);
+			goto error;
+		    }
+		}
             }
+
+	    switch (resultFormat) {
+	    case Dbi_ResultFlat: break;
+	    case Dbi_ResultSets: Ns_TclEnterSet(interp, set, 0); break;
+	    case Dbi_ResultDicts: 
+		if (Tcl_ListObjAppendElement(interp, resObj, dictObj) != TCL_OK) {
+		    Tcl_DecrRefCount(dictObj);
+		    goto error;
+		}
+		break;
+	    }
+
         }
     }
 
@@ -616,12 +715,10 @@ RowsObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
 
     if (colsNameObj != NULL) {
 
-        status = TCL_ERROR;
-
         colListObj = Tcl_ObjSetVar2(interp, colsNameObj, NULL,
                                     Tcl_NewListObj(0, NULL), TCL_LEAVE_ERR_MSG);
         if (colListObj == NULL) {
-            goto done;
+            goto error;
         }
 
         numCols = Dbi_NumColumns(handle);
@@ -629,13 +726,12 @@ RowsObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
 
             if (Dbi_ColumnName(handle, colIdx, &colName) != NS_OK) {
                 Dbi_TclErrorResult(interp, handle);
-                goto done;
+                goto error;
             }
             valueObj = Tcl_NewStringObj(colName, -1);
-            if (Tcl_ListObjAppendElement(interp, colListObj, valueObj)
-                    != TCL_OK) {
+            if (Tcl_ListObjAppendElement(interp, colListObj, valueObj) != TCL_OK) {
                 Tcl_DecrRefCount(valueObj);
-                goto done;
+                goto error;
             }
         }
 
@@ -646,6 +742,14 @@ RowsObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
     PutHandle(idataPtr, handle);
 
     return status;
+
+ error:
+    if (dictObj != NULL) {
+	Tcl_DecrRefCount(dictObj);
+    }
+
+    status = TCL_ERROR;
+    goto done;
 }
 
 
@@ -672,12 +776,14 @@ DmlObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
     Dbi_Handle   *handle;
     Tcl_Obj      *queryObj, *poolObj = NULL, *valuesObj = NULL;
     Ns_Time      *timeoutPtr = NULL;
+    int           missingIsNull = 0;
 
     Ns_ObjvSpec opts[] = {
-        {"-db",        Ns_ObjvObj,    &poolObj,    NULL},
-        {"-timeout",   Ns_ObjvTime,   &timeoutPtr, NULL},
-        {"-bind",      Ns_ObjvObj,    &valuesObj,  NULL},
-        {"--",         Ns_ObjvBreak,  NULL,        NULL},
+        {"-db",        Ns_ObjvObj,    &poolObj,       NULL},
+        {"-autonull",  Ns_ObjvBool,   &missingIsNull, (void *) NS_TRUE},
+        {"-timeout",   Ns_ObjvTime,   &timeoutPtr,    NULL},
+        {"-bind",      Ns_ObjvObj,    &valuesObj,     NULL},
+        {"--",         Ns_ObjvBreak,  NULL,           NULL},
         {NULL, NULL, NULL, NULL}
     };
     Ns_ObjvSpec args[] = {
@@ -689,10 +795,10 @@ DmlObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
     }
 
     /*
-     * Get a handle, prepare, bind, and run the qeuery.
+     * Get a handle, prepare, bind, and run the query.
      */
 
-    if (Exec(idataPtr, poolObj, timeoutPtr, queryObj, valuesObj, -1, 1,
+    if (Exec(idataPtr, poolObj, timeoutPtr, queryObj, valuesObj, -1, 1, missingIsNull,
              &handle) != TCL_OK) {
         return TCL_ERROR;
     }
@@ -761,10 +867,11 @@ RowCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[],
     Tcl_Obj      *poolObj = NULL, *valuesObj = NULL;
     Ns_Time      *timeoutPtr = NULL;
     CONST char   *column, *varName1, *varName2, *arrayName = NULL;
-    int           found, end, status;
+    int           found, end, status, missingIsNull = 0;
 
     Ns_ObjvSpec opts[] = {
         {"-db",        Ns_ObjvObj,    &poolObj,    NULL},
+        {"-autonull",  Ns_ObjvBool,   &missingIsNull, (void *) NS_TRUE},
         {"-timeout",   Ns_ObjvTime,   &timeoutPtr, NULL},
         {"-bind",      Ns_ObjvObj,    &valuesObj,  NULL},
         {"-array",     Ns_ObjvString, &arrayName,  NULL},
@@ -780,10 +887,10 @@ RowCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[],
     }
 
     /*
-     * Get handle, then prepare, bind, and run the qeuery.
+     * Get handle, then prepare, bind, and run the query.
      */
 
-    if (Exec(idataPtr, poolObj, timeoutPtr, queryObj, valuesObj, 1, 0,
+    if (Exec(idataPtr, poolObj, timeoutPtr, queryObj, valuesObj, 1, 0, missingIsNull,
              &handle) != TCL_OK) {
         return TCL_ERROR;
     }
@@ -1120,8 +1227,8 @@ CtlObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
 
 static int
 Exec(InterpData *idataPtr, Tcl_Obj *poolObj, Ns_Time *timeoutPtr,
-     Tcl_Obj *queryObj, Tcl_Obj *valuesObj, int maxRows, int dml,
-     Dbi_Handle **handlePtrPtr)
+     Tcl_Obj *queryObj, Tcl_Obj *valuesObj, int maxRows, int dml, 
+     int missingIsNull, Dbi_Handle **handlePtrPtr)
 {
     Tcl_Interp       *interp = idataPtr->interp;
     Dbi_Pool         *pool;
@@ -1169,7 +1276,7 @@ Exec(InterpData *idataPtr, Tcl_Obj *poolObj, Ns_Time *timeoutPtr,
      * Bind values to variable as required and execute the statement.
      */
 
-    if (Dbi_TclBindVariables(interp, handle, dbValues, valuesObj) != TCL_OK) {
+    if (Dbi_TclBindVariables(interp, handle, dbValues, valuesObj, missingIsNull) != TCL_OK) {
         goto error;
     }
     if (Dbi_Exec(handle, dbValues, maxRows) != NS_OK) {

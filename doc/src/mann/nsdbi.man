@@ -7,10 +7,12 @@
 [description]
 nsdbi provides an easy to use interface to databases.
 
-[vset standard_options "\
-[opt [option "-db [arg name]"]] \
-[opt [option "-timeout [arg t]"]] \
-[opt [option "-bind [arg array|set]"]] "]
+[vset standard_options [subst {
+	[opt [option "-db [arg name]"]] 
+	[opt [option "-autonull"]] 
+	[opt [option "-timeout [arg t]"]]
+	[opt [option "-bind [arg array|set|dict]"]] 
+}]]
 
 
 [section {COMMANDS}]
@@ -77,7 +79,8 @@ if {[lb][cmd dbi_0or1row] {select first, last from peeps where id = 1}[rb]} {
       [opt [option "-columns [arg varname]"]] \
       [opt [option "-max [arg nrows]"]] \
       [opt [option -append]] \
-      [opt [option "-quote [arg quoting-type]"]] \
+      [opt [option "-quote [arg none|html|js]"]] \
+      [opt [option "-result [arg flat|sets|dicts]"]] \
       [opt [arg --]] \
       [arg query] \
       [opt [arg template]] \
@@ -176,7 +179,7 @@ and for generic procedures which handle a variety of queries, such as formatting
 queries as an HTML table.
 
 [example_begin]
-% dbi_rows [option "-columns [arg cols]"] {select first, last from peeps}
+% [cmd dbi_rows] [option "-columns [arg cols]"] {select first, last from peeps}
 {{Dirty Harry} {Jolly Roger}}
 
 % set cols
@@ -192,7 +195,7 @@ the [term db] is used (see [cmd dbi_ctl] below).
 
 [para]
 Useful values for [option -max] are: [term >1000] when you're absolutely
-sure that a paricular query needs to return that much data (which would be
+sure that a particular query needs to return that much data (which would be
 unusual on the web) and [term 1], in which case [cmd dbi_rows] acts like
 [cmd dbi_0or1row], except returning the result instead of setting variables.
 
@@ -203,16 +206,27 @@ to the [term ADP] output buffer. If no ADP frame is active an error is raised.
 
 [example_begin]
 <ul>
-<% [cmd dbi_rows] [option -append] -- {select first, last from peeps} {<li>$first $last</li>} %>
+<% [cmd dbi_rows] [option -append] [option "-quote html"] -- {select first, last from peeps} {<li>$first $last</li>} %>
 </ul>
 [example_end]
 
-[opt_def "-quote [arg quoting-type]"]
+[opt_def "-quote [arg none|html|js]"]
 
 Quote substituted variables (tcl variables or column values) in the
 template according to the quoting type. valid quoting types are
-"none", "html", or "js".  This option can be only specified, when a
+[term none], 
+[term html], or 
+[term js].  This option can be only specified, when a
 template is given.
+
+[opt_def [option "-result [arg flat|sets|dicts]"]] 
+
+This option can be used to specify alternate formats of the result of
+dbi_rows. Per default, the result list is flat. If the result type is
+set to [term sets] then the result list contains ns_sets. When 
+[term dicts] is used, every resulting tuple is of the form of a Tcl
+dict. Note that results of the type [term flat] or [term dicts] are cachable.
+
 
 [list_end]
 
@@ -357,7 +371,7 @@ handle are not closed due to age.
 
 [opt_def "maxqueries [arg db] [opt [arg maxqueries]]"]
 If [arg maxqueries] is set then a handle will be closed after this
-number of queries have been executed. The default is 0, which dissables
+number of queries have been executed. The default is 0, which disables
 this feature.
 
 [para]
@@ -449,15 +463,18 @@ If a handle does not become available during the timeout period a Tcl error
 is thrown with [term errorCode] "NS_TIMEOUT". (If this is not caught the server
 will return a [term "503 Busy"] response).
 
+[opt_def -autonull]
+When this option is specified, missing bind variables are treated as
+NULL values. Per default  missing bind variables raise an exception.
 
-[opt_def -bind [arg array|set]]
-Specifies an array or ns_set which will be used to bind values to any
-variables in a query. The names of the query variables must match the keys
-in the array or set. The array or set must contain a key for each of the
-variables in the query.
+[opt_def -bind [arg array|set|dict]]
+Specifies the source for setting bind variables. The bind source might
+be array, ns_set or dict. The names of the bind variables in the query
+(prefixed with a single colon) must match the keys in the bind source.
+The bind source must provide for each bind variable of the query  a value.
 
 [para]
-If [option -bind] is not specified and the query contains variables, the
+If [option -bind] is not specified and the query contains bind variables, the
 command will look for Tcl variables of the same name in the current stack
 level. There must be one Tcl variable for each query variable.
 
@@ -487,9 +504,9 @@ understood by the underlying database.
 
 [para]
 If a bind variable is the empty string "" then a [term NULL] is passed
-to the database. Simillarly, NULLs in result sets become the empty
-string.
-
+to the database. Similarly, NULLs in result sets become the empty
+string. When the option [term -autonull] is used, missing bind
+variables are treated as NULL values.
 
 [list_end]
 
@@ -507,17 +524,17 @@ multiple pools of database handles, each with it's own configuration options.
 [cmd ns_param]   [arg global1]       [arg nsdbipg.so]
 [cmd ns_param]   [arg global2]       [arg nsdbipg.so]
 ...
-
+ 
 [cmd ns_section] "ns/server/server1/modules"
 [cmd ns_param]   [arg db3]           [arg nsdbipg.so]
 [cmd ns_param]   [arg db4]           [arg nsdbipg.so]
 ...
-
+ 
 [cmd ns_section] "ns/server/server1/module/[arg db4]"
-
+ 
 # The following parameters can be changed at runtime using [cmd dbi_ctl]
 # and are explained above.
-
+ 
 [cmd ns_param]   [arg default]       true
 [cmd ns_param]   [arg maxhandles]    0
 [cmd ns_param]   [arg timeout]       10
@@ -525,9 +542,9 @@ multiple pools of database handles, each with it's own configuration options.
 [cmd ns_param]   [arg maxopen]       0
 [cmd ns_param]   [arg maxqueries]    0
 [cmd ns_param]   [arg maxrows]       1000
-
+ 
 # The following parameters are configured at server-startup.
-
+ 
 [cmd ns_param]   [arg user]          dbusername
 [cmd ns_param]   [arg password]      dbpassword
 [cmd ns_param]   [arg database]      dbname
@@ -565,7 +582,7 @@ Each driver may also takes driver-specific parameters.
 [section EXAMPLES]
 
 
-Select rows from a table using db [arg x]. Only rows in which column [arg a]
+Select rows from a table using pool [arg x]. Only rows in which column [arg a]
 matches the bind variable will be returned:
 
 [example_begin]
@@ -577,6 +594,26 @@ set rows [lb][cmd dbi_rows] [option "-db [arg x]"] {
 }[rb]
 [example_end]
 
+The following example shows a usage for templating where
+the result of a query should be sent back in html form to the client
+
+[example_begin]
+ns_write "<ul>"
+ns_write [lb][cmd "dbi_rows -quote html"] {select a, b  from table} {
+   <li>a: $a</li>
+}[rb]
+ns_write "</ul>"
+[example_end]
+
+If the results of the query should be processed further in Tcl, 
+it might be useful in some situations to treat every resulting tuple
+as a Tcl dict.
+
+[example_begin]
+foreach d [lb][cmd "dbi_rows -result dict"] {select a, b  from table}[rb] {
+   ns_log notice "a: [lb]dict get $d a[rb]"
+}
+[example_end]
 
 
 The following example shows how to bind a Tcl variable in a query and also

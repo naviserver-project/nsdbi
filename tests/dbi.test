@@ -84,6 +84,10 @@ test dml-2 {dml error} -body {
     dbi_dml {ROWS 1 1}
 } -returnCodes error -result {query was not a DML or DDL command}
 
+test dml-2 {dml3 error} -body {
+    dbi_dml {ROWS 0 0 :x}
+} -returnCodes error -result {dbi: bind variable "x" not found as local variable}
+
 
 
 test 0or1row-1 {found single column} -body {
@@ -129,6 +133,27 @@ test 0or1row-6 {surprise DML} -body {
     dbi_0or1row {DML 0 0}
 } -returnCodes error -result {query was not a statement returning rows}
 
+test 0or1row-7 {single row with bind variable} -body {
+    set x 1
+    set n [dbi_0or1row {ROWS 1 1 :x}]
+    list $n $0
+} -cleanup {
+    unset -nocomplain n 0
+} -result {1 {1 0:x}}
+
+test 0or1row-8 {single row with bind variable not found} -body {
+    set n [dbi_0or1row {ROWS 1 1 :xxxx}]
+    list $n $0
+} -cleanup {
+    unset -nocomplain n 0
+} -returnCodes error -result {dbi: bind variable "xxxx" not found as local variable}
+
+test 0or1row-9 {single row with bind variable autonull} -body {
+    set n [dbi_0or1row -autonull {ROWS 1 1 :xxxx}]
+    list $n $0
+} -cleanup {
+    unset -nocomplain n 0
+} -result {1 {{} 0:xxxx}}
 
 
 test 1row-1 {found single column} -body {
@@ -445,9 +470,16 @@ test bindvars-1 {local variable} -body {
     unset -nocomplain x
 } -result {{X 0:x} 0.1}
 
-test bindvars-1.1 {missing local variable} -body {
+test bindvars-1.1a {missing local variable} -body {
     dbi_rows {ROWS 1 1 :x}
-} -returnCodes error -result {can't read "x": no such variable}
+} -returnCodes error -result {dbi: bind variable "x" not found as local variable}
+
+test bindvars-1.1b {missing local variable} -body {
+    set xxxx 1
+    set zzzz 3
+    dbi_rows -autonull -- {ROWS 1 1 :xxxx :yyyy :zzzz}
+} -result {{1 {} 3 {0:xxxx 1:yyyy 2:zzzz}}}
+
 
 test bindvars-2 {duplicate bind vars} -body {
     set x X
@@ -490,13 +522,14 @@ test bindvars-8 {bound vars get reset} -body {
 } -result {{1 0:x} 0.1 {{2 0:x} 0.1}}
 
 test bindvars-9 {null bind var} -body {
-	set x ""
-	dbi_rows {ROWS 1 1 :x}
+	set xx ""
+	dbi_rows {ROWS 1 1 :xx}
 } -cleanup {
-	unset -nocomplain x
-} -result {{{} 0:x}}
+	unset -nocomplain xx
+} -result {{{} 0:xx}}
 
 test bindvars-10 {multiple null bind vars} -body {
+    ns_log notice multiple-null-bind
 	set x ""
 	set y Y
 	set z ""
@@ -527,15 +560,23 @@ test bindarray-1 {bind array vars} -body {
     unset -nocomplain a
 } -result {{X Y {0:x 1:y}} 0.1}
 
-test bindarray-2 {bind missing value} -body {
+test bindarray-2a {bind missing value} -body {
     dbi_rows -bind a -- {ROWS 2 1 :x}
-} -returnCodes error -result {can't read "a(x)": no such variable}
+} -returnCodes error -result {dbi: bind variable "x" not found in array}
 
-test bindarray-3 {bind non-array} -body {
+test bindarray-2b {bind missing value} -body {
+    dbi_rows -autonull -bind a -- {ROWS 2 1 :x}
+} -result {{{} 0:x} 0.1}
+
+test bindarray-3a {bind non-array} -body {
     set a b
     dbi_rows -bind a -- {ROWS 2 1 :x}
-} -returnCodes error -result {can't read "a(x)": variable isn't array}
+} -returnCodes error -result {dbi: bind variable "x" not found in array}
 
+test bindarray-3b {bind non-array} -body {
+    set a b
+    dbi_rows -bind a -autonull -- {ROWS 2 1 :x}
+} -result {{{} 0:x} 0.1}
 
 
 test bindset-1 {bind ns_set} -body {
@@ -547,6 +588,15 @@ test bindset-1 {bind ns_set} -body {
     ns_set free $s
 } -result {{X Y {0:x 1:y}} 0.1}
 
+
+
+test binddict-1 {bind dict} -body {
+    dbi_rows -bind {x X y Y} -- {ROWS 2 1 :x :y}
+} -result {{X Y {0:x 1:y}} 0.1}
+
+test binddict-2 {bind dict with unknown variable} -body {
+    dbi_rows -bind {x X y Y} -- {ROWS 2 1 :x :z}
+} -returnCodes error -result {dbi: bind variable "z" not found in dict}
 
 
 

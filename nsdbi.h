@@ -60,7 +60,7 @@ typedef enum {
 } Dbi_Isolation;
 
 /*
- * The following define Quoting for templating
+ * The following define quoting levels for templating in dbi_rows
  */
 
 typedef enum {
@@ -68,6 +68,17 @@ typedef enum {
     Dbi_QuoteHTML,
     Dbi_QuoteJS
 } Dbi_quotingLevel;
+
+/*
+ * The following define output formats for dbi_rows
+ */
+
+typedef enum {
+    Dbi_ResultFlat = 0,
+    Dbi_ResultSets,
+    Dbi_ResultDicts
+} Dbi_resultFormat;
+
 
 /*
  * The following are valid configuration options for a
@@ -291,7 +302,7 @@ Dbi_TclPutHandle(Tcl_Interp *interp, Dbi_Handle *handle)
 
 NS_EXTERN int
 Dbi_TclBindVariables(Tcl_Interp *interp, Dbi_Handle *handle,
-                     Dbi_Value *dbValues, Tcl_Obj *tclValues)
+                     Dbi_Value *dbValues, Tcl_Obj *tclValues, int warn)
     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2) NS_GNUC_NONNULL(3);
 
 NS_EXTERN void
