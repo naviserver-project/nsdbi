@@ -333,7 +333,7 @@ Prepare(Dbi_Handle *handle, Dbi_Statement *stmt,
     }
 
     /*
-     * Simulate a failed prepare opperation.
+     * Simulate a failed prepare operation.
      */
 
     if (STREQ(conn->cmd, "PREPERR")) {
@@ -463,10 +463,9 @@ Exec(Dbi_Handle *handle, Dbi_Statement *stmt,
                    || (!values[i].length && !values[i].data));
 
             if (values[i].binary) {
-	        /* we have no PRIdz around */
                 Ns_DStringPrintf(&conn->ds, " %" PRIdz, values[i].length);
             } else {
-                Tcl_DStringAppendElement(&conn->ds, values[i].data);
+	        Tcl_DStringAppendElement(&conn->ds, values[i].length > 0 ? values[i].data : "");
             }
         }
         if (conn->rest) {
