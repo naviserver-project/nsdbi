@@ -1005,8 +1005,8 @@ Dbi_Exec(Dbi_Handle *handle, Dbi_Value *values, int maxRows)
     assert(stmtPtr->numVars == 0
            || (stmtPtr->numVars > 0 && values != NULL));
 
-    Log(handle, Debug, "Dbi_ExecProc: id: %u, variables: %u",
-        stmtPtr->id, stmtPtr->numVars);
+    Log(handle, Debug, "Dbi_ExecProc: id: %u, variables: %u sql: %s",
+        stmtPtr->id, stmtPtr->numVars, stmtPtr->sql);
 
     handlePtr->maxRows = maxRows > -1 ? maxRows : poolPtr->maxRows;
 
