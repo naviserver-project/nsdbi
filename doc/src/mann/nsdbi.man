@@ -11,7 +11,7 @@ nsdbi provides an easy to use interface to databases.
 	[opt [option "-db [arg name]"]] 
 	[opt [option "-autonull"]] 
 	[opt [option "-timeout [arg t]"]]
-	[opt [option "-bind [arg array|set|dict]"]] 
+	[opt [option "-bind [arg bindSource]"]] 
 }]]
 
 
@@ -164,7 +164,6 @@ argument is given in which case it becomes the complete result.
 nobody here but us chickens
 [example_end]
 
-[list_end]
 
 [list_begin options]
 
@@ -227,8 +226,33 @@ set to [term sets] then the result list contains ns_sets. When
 [term dicts] is used, every resulting tuple is of the form of a Tcl
 dict. Note that results of the type [term flat] or [term dicts] are cachable.
 
-
 [list_end]
+[list_end]
+
+
+
+
+
+[call [cmd dbi_foreach] \
+      [vset standard_options] \
+      [opt [option "-max [arg nrows]"]] \
+      [opt [arg --]] \
+      [arg query] \
+      [opt [arg body]] ]
+
+Execute the SQL [arg query] which is expected to return zero or more
+rows. For every row the output variables of the query are set as Tcl variables
+and the provided [arg body] is evaluated (somwhat similar to the Tcl
+[term foreach] command). In case not all rows should be processed
+in the body, the Tcl command [term break] can be used to leave 
+the loop.
+
+[example_begin]
+[cmd dbi_foreach] {select first, last from peeps}[rb] {
+    ns_log notice "row: $first, $last"
+    if {$first > 100} { break }
+}
+[example_end]
 
 
 
@@ -467,16 +491,14 @@ will return a [term "503 Busy"] response).
 When this option is specified, missing bind variables are treated as
 NULL values. Per default  missing bind variables raise an exception.
 
-[opt_def -bind [arg array|set|dict]]
-Specifies the source for setting bind variables. The bind source might
-be array, ns_set or dict. The names of the bind variables in the query
-(prefixed with a single colon) must match the keys in the bind source.
-The bind source must provide for each bind variable of the query  a value.
-
-[para]
-If [option -bind] is not specified and the query contains bind variables, the
-command will look for Tcl variables of the same name in the current stack
-level. There must be one Tcl variable for each query variable.
+[opt_def -bind [arg bindSource]] 
+Specifies the source for bind variables. When the query contains bind
+variables, the query uses per default variables from the current tcl
+frame. When the [arg bindSource] is provided, this value might be an
+[term ns_set], the name of an Tcl array, or a dict (list of name value
+pairs).  Note that all variables are taken always from the same bind
+source. A missing variable raises an error unless [option -autonull] 
+is given.
 
 [list_end]
 
@@ -582,7 +604,7 @@ Each driver may also takes driver-specific parameters.
 [section EXAMPLES]
 
 
-Select rows from a table using pool [arg x]. Only rows in which column [arg a]
+Select rows from a table using db [arg x]. Only rows in which column [arg a]
 matches the bind variable will be returned:
 
 [example_begin]

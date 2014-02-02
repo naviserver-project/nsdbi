@@ -18,6 +18,9 @@ test default {default db} -body {
 } -result db1
 
 
+#
+# ------ dbi_ctl
+#
 
 test ctl.1 {driver} -body {
     dbi_ctl driver db1
@@ -51,6 +54,8 @@ test ctl.8 {change config} -body {
     set old [dbi_ctl maxhandles db1 99]
     set new [dbi_ctl maxhandles db1 $old]
     list $old $new
+} -cleanup {
+    unset -nocomplain old new
 } -result "[ns_config ns/server/server1/module/db1 maxhandles -1] 99"
 
 
@@ -63,18 +68,27 @@ test stats.1 {pool stats} -body {
 } -result {agedcloses bounces handlefailures handlegets handlemisses handleopens idlecloses oppscloses queries}
 
 
+test bounce-1 {bounce pool} -body {
+    dbi_ctl bounce db1
+} -result {}
+
+
+#
+# ------ driver callbacks
+#
 
 test open-1.1 {simulate driver open callback failure} -body {
     dbi_rows -db OPENERR {ROWS 1 1}
 } -returnCodes error -result {handle allocation failed}
 
 
-
 test prepare-1 {simulate driver prepare callback failure} -body {
     dbi_rows {PREPERR 1 1}
 } -returnCodes error -result {test: prepare failure}
 
-
+#
+# ------ dbi_dml
+#
 
 test dml-1 {dml} -body {
     dbi_dml {DML 0 0}
@@ -89,6 +103,9 @@ test dml-2 {dml3 error} -body {
 } -returnCodes error -result {dbi: bind variable "x" not found as local variable}
 
 
+#
+# ------ dbi_0or1row
+#
 
 test 0or1row-1 {found single column} -body {
     set n [dbi_0or1row {ROWS 1 1}]
@@ -138,7 +155,7 @@ test 0or1row-7 {single row with bind variable} -body {
     set n [dbi_0or1row {ROWS 1 1 :x}]
     list $n $0
 } -cleanup {
-    unset -nocomplain n 0
+    unset -nocomplain x n 0
 } -result {1 {1 0:x}}
 
 test 0or1row-8 {single row with bind variable not found} -body {
@@ -155,6 +172,10 @@ test 0or1row-9 {single row with bind variable autonull} -body {
     unset -nocomplain n 0
 } -result {1 {{} 0:xxxx}}
 
+
+#
+# ------ dbi_1row
+#
 
 test 1row-1 {found single column} -body {
     dbi_1row {ROWS 1 1 v}
@@ -199,7 +220,28 @@ test 1row-6 {query error} -body {
     dbi_1row {EXECERR 1 1}
 } -returnCodes error -result {driver error}
 
+#
+# ------ dbi_rows with output columns 
+#
 
+test columns-1 {1 column name} -body {
+    dbi_rows -columns cols {ROWS 1 1}
+    set cols
+} -cleanup {
+    unset -nocomplain cols
+} -result 0
+
+test columns-2 {multiple column names} -body {
+    dbi_rows -columns cols {ROWS 5 1}
+    set cols
+} -cleanup {
+    unset -nocomplain cols
+} -result {0 1 2 3 4}
+
+
+#
+# ------ dbi_rows with ouput template
+#
 
 test rows-1 {found 1 row, 1 column} -body {
     dbi_rows {ROWS 1 1 v}
@@ -249,7 +291,10 @@ test rows-12 {10 rows} -body {
     dbi_rows -max 10 {ROWS 1 10}
 } -result {0.0 1.0 2.0 3.0 4.0 5.0 6.0 7.0 8.0 9.0}
 
+#
 
+# ------ dbi_rows with ouput template
+#
 
 test template-1 {1 col, 1 row} -body {
     dbi_rows {ROWS 1 1} {$0}
@@ -316,22 +361,32 @@ test template-15 {-quote but no template} -body {
 
 test template-16 {template with locals} -body {
     set x <; set y '; dbi_rows -- {ROWS 2 2} {$x,$y $0 $1 }
+} -cleanup {
+    unset -nocomplain x y
 } -result {<,' 0.0 0.1 <,' 1.0 1.1 }
 
 test template-17 {template with locals} -body {
     set x <; set y '; dbi_rows -quote none -- {ROWS 2 2} {$x,$y $0 $1 }
+} -cleanup {
+    unset -nocomplain x y
 } -result {<,' 0.0 0.1 <,' 1.0 1.1 }
 
 test adp-template-18 {template with locals} -body {
     set x <; set y '; dbi_rows -quote html -- {ROWS 2 2} {$x,$y $0 $1 }
+} -cleanup {
+    unset -nocomplain x y
 } -result {&lt;,&#39; 0.0 0.1 &lt;,&#39; 1.0 1.1 }
 
 test adp-template-19 {template with locals} -body {
     set x <; set y '; dbi_rows -quote js -- {ROWS 2 2} {$x,$y $0 $1 }
+} -cleanup {
+    unset -nocomplain x y
 } -result {'<','\'' '0.0' '0.1' '<','\'' '1.0' '1.1' }
 
 
-
+#
+# ------ dbi_rows with ouput to ADP 
+#
 
 test adp-template-1 {append to adp} -body {
     ns_adp_eval {-<% dbi_rows -append -- {ROWS 2 2} {$0 $1 } %>-}
@@ -339,18 +394,26 @@ test adp-template-1 {append to adp} -body {
 
 test adp-template-2 {append to adp} -body {
     ns_adp_eval {-<% set x <;set y '; dbi_rows -append -- {ROWS 2 2} {$x,$y $0 $1 } %>-}
+} -cleanup {
+    unset -nocomplain x y
 } -result {-<,' 0.0 0.1 <,' 1.0 1.1 -}
 
 test adp-template-3 {append to adp} -body {
-    ns_adp_eval {-<% set x <; dbi_rows -append -quote none -- {ROWS 2 2} {$x,$y $0 $1 } %>-}
+    ns_adp_eval {-<% set x <;set y '; dbi_rows -append -quote none -- {ROWS 2 2} {$x,$y $0 $1 } %>-}
+} -cleanup {
+    unset -nocomplain x
 } -result {-<,' 0.0 0.1 <,' 1.0 1.1 -}
 
 test adp-template-4 {append to adp} -body {
-    ns_adp_eval {-<% set x <; dbi_rows -append -quote html -- {ROWS 2 2} {$x,$y $0 $1 } %>-}
+    ns_adp_eval {-<% set x <;set y '; dbi_rows -append -quote html -- {ROWS 2 2} {$x,$y $0 $1 } %>-}
+} -cleanup {
+    unset -nocomplain x
 } -result {-&lt;,&#39; 0.0 0.1 &lt;,&#39; 1.0 1.1 -}
 
 test adp-template-5 {append to adp} -body {
-    ns_adp_eval {-<% set x <; dbi_rows -append -quote js -- {ROWS 2 2} {$x,$y $0 $1 } %>-}
+    ns_adp_eval {-<% set x <;set y '; dbi_rows -append -quote js -- {ROWS 2 2} {$x,$y $0 $1 } %>-}
+} -cleanup {
+    unset -nocomplain x
 } -result {-'<','\'' '0.0' '0.1' '<','\'' '1.0' '1.1' -}
 
 test pool-global {query from non-default global pool} -body {
@@ -358,23 +421,33 @@ test pool-global {query from non-default global pool} -body {
 } -result v
 
 
+#
+# ------ dbi_foreach
+#
 
-test columns-1 {1 column name} -body {
-    dbi_rows -columns cols {ROWS 1 1}
-    set cols
+test foreach-1 {simple foreach} -body {
+    dbi_foreach {ROWS 5 3} {
+        lappend _ [list $0 $1 $2 $3 $4]
+    }
+    set _
 } -cleanup {
-    unset -nocomplain cols
-} -result 0
+    unset -nocomplain _ 0 1 2 3 4
+} -result {{0.0 0.1 0.2 0.3 0.4} {1.0 1.1 1.2 1.3 1.4} {2.0 2.1 2.2 2.3 2.4}}
 
-test columns-2 {multiple column names} -body {
-    dbi_rows -columns cols {ROWS 5 1}
-    set cols
+test foreach-2 {simple foreach with break} -body {
+    dbi_foreach {ROWS 5 3} {
+        lappend _ [list $0 $1 $2 $3 $4]
+        if {$0 > 1} break
+    }
+    set _
 } -cleanup {
-    unset -nocomplain cols
-} -result {0 1 2 3 4}
+    unset -nocomplain _ 0 1 2 3 4
+} -result {{0.0 0.1 0.2 0.3 0.4} {1.0 1.1 1.2 1.3 1.4} {2.0 2.1 2.2 2.3 2.4}}
 
 
-
+#
+# ------ threads and handles
+#
 
 test thread-handle-1.1 {maxhandles 0} -body {
     dbi_rows -db global2 {ROWS 1 1 v}
@@ -451,17 +524,22 @@ test thread-handle-1.7 {open error} -body {
     dbi_rows -db OPENERR0 {ROWS 1 1}
 } -returnCodes error -result {handle allocation failed}
 
-
-
+#
+# ------ poolhandles
+#
 
 test poolhandle-1 {cache pool pointer in pool name obj} -body {
     set db db1
     dbi_rows -db $db {ROWS 1 1}
     dbi_rows -db $db {ROWS 1 1}
     set db
+} -cleanup {
+    unset -nocomplain db
 } -result db1
 
-
+#
+# ------ bindvars
+#
 
 test bindvars-1 {local variable} -body {
     set x X
@@ -478,6 +556,8 @@ test bindvars-1.1b {missing local variable} -body {
     set xxxx 1
     set zzzz 3
     dbi_rows -autonull -- {ROWS 1 1 :xxxx :yyyy :zzzz}
+} -cleanup {
+    unset -nocomplain xxxx zzzz
 } -result {{1 {} 3 {0:xxxx 1:yyyy 2:zzzz}}}
 
 
@@ -518,24 +598,23 @@ test bindvars-8 {bound vars get reset} -body {
     set x 2
     lappend r [dbi_rows {ROWS 2 1 :x}]
 } -cleanup {
-    unset -nocomplain x
+    unset -nocomplain x r
 } -result {{1 0:x} 0.1 {{2 0:x} 0.1}}
 
 test bindvars-9 {null bind var} -body {
-	set xx ""
-	dbi_rows {ROWS 1 1 :xx}
+    set xx ""
+    dbi_rows {ROWS 1 1 :xx}
 } -cleanup {
-	unset -nocomplain xx
+    unset -nocomplain xx
 } -result {{{} 0:xx}}
 
 test bindvars-10 {multiple null bind vars} -body {
-    ns_log notice multiple-null-bind
-	set x ""
-	set y Y
-	set z ""
-	dbi_rows {ROWS 1 1 :x :y :z}
+    set x ""
+    set y Y
+    set z ""
+    dbi_rows {ROWS 1 1 :x :y :z}
 } -cleanup {
-	unset -nocomplain x y z
+    unset -nocomplain x y z
 } -result {{{} Y {} {0:x 1:y 2:z}}}
 
 
@@ -560,23 +639,33 @@ test bindarray-1 {bind array vars} -body {
     unset -nocomplain a
 } -result {{X Y {0:x 1:y}} 0.1}
 
-test bindarray-2a {bind missing value} -body {
+
+
+test bindarray-2a {bind missing value, no array} -body {
     dbi_rows -bind a -- {ROWS 2 1 :x}
+} -returnCodes error -result {dbi: array "a" with bind values does not exist}
+
+test bindarray-2b {bind missing value, array exists} -body {
+    set a(y) 1
+    dbi_rows -bind a -- {ROWS 2 1 :x}
+} -cleanup {
+    unset -nocomplain a
 } -returnCodes error -result {dbi: bind variable "x" not found in array}
 
-test bindarray-2b {bind missing value} -body {
+test bindarray-2c {bind missing value, array exists, autonull} -body {
+    set a(y) 1
     dbi_rows -autonull -bind a -- {ROWS 2 1 :x}
+} -cleanup {
+    unset -nocomplain a
 } -result {{{} 0:x} 0.1}
 
-test bindarray-3a {bind non-array} -body {
+test bindarray-2d {bind non-array, var exists but is no array} -body {
     set a b
     dbi_rows -bind a -- {ROWS 2 1 :x}
-} -returnCodes error -result {dbi: bind variable "x" not found in array}
+} -cleanup {
+    unset -nocomplain a
+} -returnCodes error -result {dbi: array "a" with bind values does not exist}
 
-test bindarray-3b {bind non-array} -body {
-    set a b
-    dbi_rows -bind a -autonull -- {ROWS 2 1 :x}
-} -result {{{} 0:x} 0.1}
 
 
 test bindset-1 {bind ns_set} -body {
@@ -586,8 +675,8 @@ test bindset-1 {bind ns_set} -body {
     dbi_rows -bind $s -- {ROWS 2 1 :x :y}
 } -cleanup {
     ns_set free $s
+    unset -nocomplain s
 } -result {{X Y {0:x 1:y}} 0.1}
-
 
 
 test binddict-1 {bind dict} -body {
@@ -598,13 +687,22 @@ test binddict-2 {bind dict with unknown variable} -body {
     dbi_rows -bind {x X y Y} -- {ROWS 2 1 :x :z}
 } -returnCodes error -result {dbi: bind variable "z" not found in dict}
 
+test binddict-3 {bind dict, empty dict} -body {
+    dbi_rows -bind {} -- {ROWS 2 1 :x :y}
+} -returnCodes error -result {dbi: bind variable "x" not found in dict}
+
+test binddict-4 {bind dict, empty dict, autonull} -body {
+    dbi_rows -autonull -bind {} -- {ROWS 2 1 :x :y}
+} -result {{{} {} {0:x 1:y}} 0.1}
+
+test binddict-5 {bind dict, invalid dict} -body {
+    dbi_rows -autonull -bind {a b c} -- {ROWS 2 1 :x :y}
+} -returnCodes error -result {dbi: "a b c" is not a valid dict with bind variables}
 
 
-test bounce-1 {bounce pool} -body {
-    dbi_ctl bounce db1
-} -result {}
-
-
+#
+# ------ dbi_eval
+#
 
 test withhandle-1 {two queries, same handle} -body {
     dbi_eval {
@@ -659,6 +757,9 @@ test transaction-2 {transaction error, rollback} -body {
 } -returnCodes error -result {some transaction error}
 
 
+#
+# ------ timeouts
+#
 
 test timeout-1 {timeout getting handle, relative time} -body {
     ns_thread begindetached {

@@ -72,6 +72,7 @@ static Tcl_ObjCmdProc
     ZeroOrOneRowObjCmd,
     OneRowObjCmd,
     EvalObjCmd,
+    ForeachObjCmd,
     CtlObjCmd;
 
 static InterpData *GetInterpData(Tcl_Interp *interp);
@@ -82,7 +83,7 @@ static int RowCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST o
 
 static int Exec(InterpData *idataPtr, Tcl_Obj *poolObj, Ns_Time *timeoutPtr,
                 Tcl_Obj *queryObj, Tcl_Obj *valuesObj, int maxRows, int dml, 
-		int missingIsNull, Dbi_Handle **handlePtrPtr);
+		int autoNull, Dbi_Handle **handlePtrPtr);
 
 static Dbi_Pool *GetPool(InterpData *, Tcl_Obj *poolObj);
 static Dbi_Handle *GetHandle(InterpData *, Dbi_Pool *, Ns_Time *);
@@ -127,7 +128,7 @@ static Ns_ObjvTable quotingTypeStrings[] = {
 
 /*	
  * The following are the values that can be passed to the
- * dbi_rows '-output' option.
+ * dbi_rows '-result' option.
  */
 
 static Ns_ObjvTable resultFormatStrings[] = {
@@ -180,6 +181,7 @@ DbiInitInterp(Tcl_Interp *interp, void *arg)
         {"dbi_1row",        OneRowObjCmd},
         {"dbi_dml",         DmlObjCmd},
         {"dbi_eval",        EvalObjCmd},
+        {"dbi_foreach",     ForeachObjCmd},
         {"dbi_ctl",         CtlObjCmd}
     };
 
@@ -408,6 +410,50 @@ PutHandle(InterpData *idataPtr, Dbi_Handle *handle)
 /*
  *----------------------------------------------------------------------
  *
+ * ArrayExists --
+ *
+ *      Test for the existence of an array with a given name.
+ *
+ * Results:
+ *      Boolean value indicating existence
+ *
+ * Side effects:
+ *      None.
+ *
+ *----------------------------------------------------------------------
+ */
+
+static int
+ArrayExists(Tcl_Interp *interp, Tcl_Obj *arrayNameObj) {
+    static Tcl_Obj *arrayObj = NULL, *existsObj = NULL;
+    Tcl_Obj *oldResultObj, *objv[3];
+    int arrayExists = 0;
+
+    if (arrayObj == NULL) {
+	arrayObj  = Tcl_NewStringObj("array", 5);
+	existsObj = Tcl_NewStringObj("exists", 6);
+    }
+    objv[0] = arrayObj;
+    objv[1] = existsObj;
+    objv[2] = arrayNameObj;
+
+    oldResultObj = Tcl_GetObjResult(interp);
+    Tcl_IncrRefCount(oldResultObj);
+
+    if (Tcl_EvalObjv(interp, 3, objv, 0) == TCL_OK) {
+	Tcl_GetIntFromObj(interp, Tcl_GetObjResult(interp), &arrayExists);
+    }
+
+    Tcl_SetObjResult(interp, oldResultObj);
+    Tcl_DecrRefCount(oldResultObj);
+
+    return arrayExists;
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
  * Dbi_TclBindVariables --
  *
  *      Bind values to the variables of a statement, looking at the keys
@@ -425,7 +471,7 @@ PutHandle(InterpData *idataPtr, Dbi_Handle *handle)
 int
 Dbi_TclBindVariables(Tcl_Interp *interp, Dbi_Handle *handle,
                      Dbi_Value *dbValues, Tcl_Obj *tclValues, 
-		     int missingIsNull)
+		     int autoNull)
 {
     Ns_Set         *set;
     Tcl_Obj        *valueObj, *dictObj = NULL;
@@ -445,6 +491,12 @@ Dbi_TclBindVariables(Tcl_Interp *interp, Dbi_Handle *handle,
     if (tclValues != NULL) {
 	int length = 0;
 
+	/*
+	 * If the provided value for bind has a length of 1, then it
+	 * is assumed that it is either a ns_set or the name of an
+	 * array.
+	 */
+
 	Tcl_ListObjLength(interp, tclValues, &length);
 
 	if (length == 1) {
@@ -458,7 +510,27 @@ Dbi_TclBindVariables(Tcl_Interp *interp, Dbi_Handle *handle,
 		return TCL_ERROR;
 	    }
 
+	    /*
+	     * If set == NULL then it must be an array or an error.
+	     */
+	    
+	    if (set == NULL && !ArrayExists(interp, tclValues)) {
+		Ns_TclPrintfResult(interp, "dbi: array \"%s\" with bind values does not exist", 
+				   name);
+		return TCL_ERROR;
+	    }
+
 	} else {
+	    /*
+	     * It must be a dict (or a list convertable to a dict);
+	     * therefore, it has to have an even length.
+	     */
+	    if ((length % 2) != 0) {
+		Ns_TclPrintfResult(interp, "dbi: \"%s\" is not a valid dict with bind variables", 
+				   Tcl_GetString(tclValues));
+		return TCL_ERROR;
+	    }
+
 	    dictObj = tclValues;
 	}
     } 
@@ -514,7 +586,7 @@ Dbi_TclBindVariables(Tcl_Interp *interp, Dbi_Handle *handle,
         if (data == NULL) {
 	    length = 0;
 	    
-	    if (!missingIsNull) {
+	    if (!autoNull) {
 		char *source;
 
 		if (set != NULL) {
@@ -592,13 +664,13 @@ RowsObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
     Tcl_Obj      *poolObj = NULL, *valuesObj = NULL, *colsNameObj = NULL;
     Tcl_Obj      *templateObj = NULL, *defaultObj = NULL, *dictObj = NULL;
     Ns_Time      *timeoutPtr = NULL;
-    int           end, status, maxRows = -1, adp = 0, missingIsNull = 0;
+    int           end, status, maxRows = -1, adp = 0, autoNull = 0;
     Dbi_quotingLevel quote = Dbi_QuoteNone;
     Dbi_resultFormat resultFormat = Dbi_ResultFlat;
 
     Ns_ObjvSpec opts[] = {
         {"-db",        Ns_ObjvObj,    &poolObj,       NULL},
-        {"-autonull",  Ns_ObjvBool,   &missingIsNull, (void *) NS_TRUE},
+        {"-autonull",  Ns_ObjvBool,   &autoNull,      (void *) NS_TRUE},
         {"-timeout",   Ns_ObjvTime,   &timeoutPtr,    NULL},
         {"-bind",      Ns_ObjvObj,    &valuesObj,     NULL},
         {"-columns",   Ns_ObjvObj,    &colsNameObj,   NULL},
@@ -633,7 +705,7 @@ RowsObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
      * Get a handle, prepare, bind, and run the query.
      */
 
-    if (Exec(idataPtr, poolObj, timeoutPtr, queryObj, valuesObj, maxRows, 0, missingIsNull,
+    if (Exec(idataPtr, poolObj, timeoutPtr, queryObj, valuesObj, maxRows, 0, autoNull,
              &handle) != TCL_OK) {
         return TCL_ERROR;
     }
@@ -756,6 +828,102 @@ RowsObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
 /*
  *----------------------------------------------------------------------
  *
+ * ForeachObjCmd --
+ *
+ *      Implements dbi_foreach.
+ *
+ * Results:
+ *      Standard Tcl result.
+ *
+ * Side effects:
+ *      See Exec().
+ *
+ *----------------------------------------------------------------------
+ */
+static int
+ForeachObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
+{
+    InterpData   *idataPtr = arg;
+    Dbi_Handle   *handle;
+    unsigned int  colIdx, numCols;
+    CONST char   *colName;
+    Tcl_Obj      *valueObj, *queryObj, *bodyObj;
+    Tcl_Obj      *poolObj = NULL, *valuesObj = NULL;
+    Ns_Time      *timeoutPtr = NULL;
+    int           end, status, maxRows = -1, autoNull = 0;
+
+    Ns_ObjvSpec opts[] = {
+        {"-db",        Ns_ObjvObj,    &poolObj,       NULL},
+        {"-autonull",  Ns_ObjvBool,   &autoNull,      (void *) NS_TRUE},
+        {"-timeout",   Ns_ObjvTime,   &timeoutPtr,    NULL},
+        {"-bind",      Ns_ObjvObj,    &valuesObj,     NULL},
+        {"-max",       Ns_ObjvInt,    &maxRows,       NULL},
+        {"--",         Ns_ObjvBreak,  NULL,           NULL},
+        {NULL, NULL, NULL, NULL}
+    };
+    Ns_ObjvSpec args[] = {
+        {"query",      Ns_ObjvObj, &queryObj,    NULL},
+        {"body",       Ns_ObjvObj, &bodyObj,    NULL},
+        {NULL, NULL, NULL, NULL}
+    };
+    if (Ns_ParseObjv(opts, args, interp, 1, objc, objv) != NS_OK) {
+        return TCL_ERROR;
+    }
+
+    /*
+     * Get a handle, prepare, bind, and run the query.
+     */
+    
+    if (Exec(idataPtr, poolObj, timeoutPtr, queryObj, valuesObj, maxRows, 0, autoNull,
+             &handle) != TCL_OK) {
+        return TCL_ERROR;
+    }
+
+    status = TCL_OK;
+    numCols = Dbi_NumColumns(handle);
+
+    while ((status = NextRow(interp, handle, &end)) == TCL_OK && !end) {
+
+	for (colIdx = 0; colIdx < numCols; colIdx++) {
+	    if (ColumnValue(interp, handle, colIdx, &valueObj) != TCL_OK) {
+		goto error;
+	    }
+
+	    if (Dbi_ColumnName(handle, colIdx, &colName) != NS_OK) {
+		Dbi_TclErrorResult(interp, handle);
+		Tcl_DecrRefCount(valueObj);
+		goto error;
+	    }
+
+	    Tcl_SetVar2Ex(interp, colName, NULL, valueObj, 0);
+	}
+
+	status = Tcl_EvalObjEx(interp, bodyObj, 0);
+
+	if (status != TCL_OK) {
+	    if (status == TCL_BREAK) {
+		status = TCL_OK;
+	    }
+	    break;
+	}
+    }
+    
+ done:
+    PutHandle(idataPtr, handle);
+
+    return status;
+
+ error:
+
+    status = TCL_ERROR;
+    goto done;
+}
+
+
+
+/*
+ *----------------------------------------------------------------------
+ *
  * DmlObjCmd --
  *
  *      Implements dbi_dml.
@@ -776,11 +944,11 @@ DmlObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
     Dbi_Handle   *handle;
     Tcl_Obj      *queryObj, *poolObj = NULL, *valuesObj = NULL;
     Ns_Time      *timeoutPtr = NULL;
-    int           missingIsNull = 0;
+    int           autoNull = 0;
 
     Ns_ObjvSpec opts[] = {
         {"-db",        Ns_ObjvObj,    &poolObj,       NULL},
-        {"-autonull",  Ns_ObjvBool,   &missingIsNull, (void *) NS_TRUE},
+        {"-autonull",  Ns_ObjvBool,   &autoNull,      (void *) NS_TRUE},
         {"-timeout",   Ns_ObjvTime,   &timeoutPtr,    NULL},
         {"-bind",      Ns_ObjvObj,    &valuesObj,     NULL},
         {"--",         Ns_ObjvBreak,  NULL,           NULL},
@@ -798,7 +966,7 @@ DmlObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
      * Get a handle, prepare, bind, and run the query.
      */
 
-    if (Exec(idataPtr, poolObj, timeoutPtr, queryObj, valuesObj, -1, 1, missingIsNull,
+    if (Exec(idataPtr, poolObj, timeoutPtr, queryObj, valuesObj, -1, 1, autoNull,
              &handle) != TCL_OK) {
         return TCL_ERROR;
     }
@@ -867,11 +1035,11 @@ RowCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[],
     Tcl_Obj      *poolObj = NULL, *valuesObj = NULL;
     Ns_Time      *timeoutPtr = NULL;
     CONST char   *column, *varName1, *varName2, *arrayName = NULL;
-    int           found, end, status, missingIsNull = 0;
+    int           found, end, status, autoNull = 0;
 
     Ns_ObjvSpec opts[] = {
         {"-db",        Ns_ObjvObj,    &poolObj,    NULL},
-        {"-autonull",  Ns_ObjvBool,   &missingIsNull, (void *) NS_TRUE},
+        {"-autonull",  Ns_ObjvBool,   &autoNull,   (void *) NS_TRUE},
         {"-timeout",   Ns_ObjvTime,   &timeoutPtr, NULL},
         {"-bind",      Ns_ObjvObj,    &valuesObj,  NULL},
         {"-array",     Ns_ObjvString, &arrayName,  NULL},
@@ -890,7 +1058,7 @@ RowCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[],
      * Get handle, then prepare, bind, and run the query.
      */
 
-    if (Exec(idataPtr, poolObj, timeoutPtr, queryObj, valuesObj, 1, 0, missingIsNull,
+    if (Exec(idataPtr, poolObj, timeoutPtr, queryObj, valuesObj, 1, 0, autoNull,
              &handle) != TCL_OK) {
         return TCL_ERROR;
     }
@@ -1228,7 +1396,7 @@ CtlObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
 static int
 Exec(InterpData *idataPtr, Tcl_Obj *poolObj, Ns_Time *timeoutPtr,
      Tcl_Obj *queryObj, Tcl_Obj *valuesObj, int maxRows, int dml, 
-     int missingIsNull, Dbi_Handle **handlePtrPtr)
+     int autoNull, Dbi_Handle **handlePtrPtr)
 {
     Tcl_Interp       *interp = idataPtr->interp;
     Dbi_Pool         *pool;
@@ -1276,7 +1444,7 @@ Exec(InterpData *idataPtr, Tcl_Obj *poolObj, Ns_Time *timeoutPtr,
      * Bind values to variable as required and execute the statement.
      */
 
-    if (Dbi_TclBindVariables(interp, handle, dbValues, valuesObj, missingIsNull) != TCL_OK) {
+    if (Dbi_TclBindVariables(interp, handle, dbValues, valuesObj, autoNull) != TCL_OK) {
         goto error;
     }
     if (Dbi_Exec(handle, dbValues, maxRows) != NS_OK) {
