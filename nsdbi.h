@@ -46,7 +46,7 @@
  */
 
 #define DBI_MAX_BIND 32
-
+#define DBI_NUM_ROWS_UNKNOWN -1
 
 /*
  * The following define SQL transaction isolation levels.
@@ -106,9 +106,10 @@ typedef struct _Dbi_Pool *Dbi_Pool;
  */
 
 typedef struct Dbi_Handle {
-    Dbi_Pool           *pool;       /* The pool this handle belongs to. */
-    unsigned int        rowIdx;     /* The current row of the result set. */
-    ClientData          driverData; /* Driver private handle context. */
+    Dbi_Pool           *pool;        /* The pool this handle belongs to. */
+    unsigned int        rowIdx;      /* The current row of the result set. */
+    ClientData          driverData;  /* Driver private handle context. */
+    int                 numRowsHint; /* Rows affected in a DBI_Exec() operation */
 } Dbi_Handle;
 
 /*

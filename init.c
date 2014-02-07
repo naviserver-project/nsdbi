@@ -133,6 +133,7 @@ typedef struct Handle {
     struct Pool       *poolPtr;      /* The pool this handle belongs to. */
     unsigned int       rowIdx;       /* The current row of the result set. */
     ClientData         driverData;   /* Driver private handle context. */
+    int                numRowsHint;  /* Rows affected in a DBI_Exec() operation */
 
     /*
      * Private to a Handle.
@@ -1005,10 +1006,11 @@ Dbi_Exec(Dbi_Handle *handle, Dbi_Value *values, int maxRows)
     assert(stmtPtr->numVars == 0
            || (stmtPtr->numVars > 0 && values != NULL));
 
-    Log(handle, Debug, "Dbi_ExecProc: id: %u, variables: %u sql: %s",
-        stmtPtr->id, stmtPtr->numVars, stmtPtr->sql);
+    Log(handle, Debug, "Dbi_ExecProc: id %u, variables %u, reuse %d",
+        stmtPtr->id, stmtPtr->numVars, stmtPtr->nqueries);
 
     handlePtr->maxRows = maxRows > -1 ? maxRows : poolPtr->maxRows;
+    handlePtr->numRowsHint = DBI_NUM_ROWS_UNKNOWN;
 
     if ((*poolPtr->execProc)(handle, (Dbi_Statement *) stmtPtr,
                              values, stmtPtr->numVars) != NS_OK) {

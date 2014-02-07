@@ -971,7 +971,14 @@ DmlObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
         return TCL_ERROR;
     }
 
-    /* FIXME: a clean way of returning the number of rows affected. */
+    /*
+     * Set the result to number of rows affected in case the driver
+     * reports it back.
+     */
+
+    if (handle->numRowsHint != DBI_NUM_ROWS_UNKNOWN) {
+	Tcl_SetObjResult(interp, Tcl_NewLongObj(handle->numRowsHint));
+    }
 
     PutHandle(idataPtr, handle);
 
