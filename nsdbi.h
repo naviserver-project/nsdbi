@@ -76,7 +76,10 @@ typedef enum {
 typedef enum {
     Dbi_ResultFlat = 0,
     Dbi_ResultSets,
-    Dbi_ResultDicts
+    Dbi_ResultDicts,
+    Dbi_ResultAvLists,
+    Dbi_ResultDict,
+    Dbi_ResultLists
 } Dbi_resultFormat;
 
 
