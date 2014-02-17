@@ -80,7 +80,7 @@ if {[lb][cmd dbi_0or1row] {select first, last from peeps where id = 1}[rb]} {
       [opt [option "-max [arg nrows]"]] \
       [opt [option -append]] \
       [opt [option "-quote [arg none|html|js]"]] \
-      [opt [option "-result [arg flat|sets|dicts]"]] \
+      [opt [option "-result [arg flatlist|lists|avlists|sets|dicts|dict]"]] \
       [opt [arg --]] \
       [arg query] \
       [opt [arg template]] \
@@ -218,41 +218,36 @@ template according to the quoting type. valid quoting types are
 [term js].  This option can be only specified, when a
 template is given.
 
-[opt_def [option "-result [arg flat|sets|dicts]"]] 
+[opt_def [option "-result [arg  flatlist|lists|avlists|sets|dicts|dict]"]] 
 
 This option can be used to specify alternate formats of the result of
-dbi_rows. Per default, the result list is flat. If the result type is
-set to [term sets] then the result list contains ns_sets. When 
-[term dicts] is used, every resulting tuple is of the form of a Tcl
-dict. Note that results of the type [term flat] or [term dicts] are cachable.
+dbi_rows. Per default, the result is a flat list.
+
+[list_begin itemized]
+
+[item] [term flatlist]: the result of the query is returned as a flat
+list. Use parameter [arg -columns] to obtain information the number of
+columns and column names, (Default)
+
+[item] [term lists]: every row of the result is returned as a list.
+
+[item] [term avlists]: every row of the result is returned as a
+attribute/value pair list, which can be used e.g. to set a tcl array.
+
+[item] [term sets]: every row of the result is returned as a
+ns-set. Note that this format is not well suited for caching.
+
+[item] [term dicts]: every row of the result is returned as a Tcl dict.
+
+[item] [term dict]: the whole result of the query is returned as a
+large dict with row numbers.
+
+[list_end]
+
 
 [list_end]
 [list_end]
 
-
-
-
-
-[call [cmd dbi_foreach] \
-      [vset standard_options] \
-      [opt [option "-max [arg nrows]"]] \
-      [opt [arg --]] \
-      [arg query] \
-      [opt [arg body]] ]
-
-Execute the SQL [arg query] which is expected to return zero or more
-rows. For every row the output variables of the query are set as Tcl variables
-and the provided [arg body] is evaluated (somwhat similar to the Tcl
-[term foreach] command). In case not all rows should be processed
-in the body, the Tcl command [term break] can be used to leave 
-the loop.
-
-[example_begin]
-[cmd dbi_foreach] {select first, last from peeps}[rb] {
-    ns_log notice "row: $first, $last"
-    if {$first > 100} { break }
-}
-[example_end]
 
 
 
@@ -632,11 +627,22 @@ it might be useful in some situations to treat every resulting tuple
 as a Tcl dict.
 
 [example_begin]
-foreach d [lb][cmd "dbi_rows -result dict"] {select a, b  from table}[rb] {
+foreach d [lb][cmd "dbi_rows -result dicts"] {select a, b  from table}[rb] {
    ns_log notice "a: [lb]dict get $d a[rb]"
 }
 [example_end]
 
+
+If the results of the query should be processed further in Tcl, 
+it might be useful in some situations to treat every resulting tuple
+as a Tcl dict.
+
+[example_begin]
+foreach row [lb][cmd "dbi_rows -result avlists"] {select a, b  from table}[rb] {
+   array set r $row
+   ns_log notice "b: $r(b)"
+}
+[example_end]
 
 The following example shows how to bind a Tcl variable in a query and also
 how to change the name of the result variable, which in this case is an array.

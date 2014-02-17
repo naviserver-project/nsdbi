@@ -240,7 +240,7 @@ test columns-2 {multiple column names} -body {
 
 
 #
-# ------ dbi_rows with ouput template
+# ------ dbi_rows without ouput template
 #
 
 test rows-1 {found 1 row, 1 column} -body {
@@ -292,7 +292,30 @@ test rows-12 {10 rows} -body {
 } -result {0.0 1.0 2.0 3.0 4.0 5.0 6.0 7.0 8.0 9.0}
 
 #
+# ------ dbi_rows with results formats
+#
+test rows-results.1 {usual flat list} -body {
+    dbi_rows -result flatlist {ROWS 3 2}
+} -result {0.0 0.1 0.2 1.0 1.1 1.2}
 
+test rows-results.2 {one list per row} -body {
+    dbi_rows -result lists {ROWS 3 2}
+} -result {{0.0 0.1 0.2} {1.0 1.1 1.2}}
+
+test rows-results.3 {attribute/value pairs per row} -body {
+    dbi_rows -result avlists {ROWS 3 2}
+} -result {{0 0.0 1 0.1 2 0.2} {0 1.0 1 1.1 2 1.2}}
+
+test rows-results.4 {one dict per row} -body {
+    dbi_rows -result dicts {ROWS 3 2}
+} -result {{0 0.0 1 0.1 2 0.2} {0 1.0 1 1.1 2 1.2}}
+
+test rows-results.5 {one dict for result (including rownums)} -body {
+    dbi_rows -result dict {ROWS 3 2}
+} -result {1 {0 0.0 1 0.1 2 0.2} 2 {0 1.0 1 1.1 2 1.2}}
+
+
+#
 # ------ dbi_rows with ouput template
 #
 
@@ -425,24 +448,34 @@ test pool-global {query from non-default global pool} -body {
 # ------ dbi_foreach
 #
 
-test foreach-1 {simple foreach} -body {
-    dbi_foreach {ROWS 5 3} {
-        lappend _ [list $0 $1 $2 $3 $4]
-    }
-    set _
-} -cleanup {
-    unset -nocomplain _ 0 1 2 3 4
-} -result {{0.0 0.1 0.2 0.3 0.4} {1.0 1.1 1.2 1.3 1.4} {2.0 2.1 2.2 2.3 2.4}}
+# test foreach-1 {simple foreach} -body {
+#     dbi_foreach {ROWS 5 3} {
+#         lappend _ [list $0 $1 $2 $3 $4]
+#     }
+#     set _
+# } -cleanup {
+#     unset -nocomplain _ 0 1 2 3 4
+# } -result {{0.0 0.1 0.2 0.3 0.4} {1.0 1.1 1.2 1.3 1.4} {2.0 2.1 2.2 2.3 2.4}}
 
-test foreach-2 {simple foreach with break} -body {
-    dbi_foreach {ROWS 5 3} {
-        lappend _ [list $0 $1 $2 $3 $4]
-        if {$0 > 1} break
-    }
-    set _
-} -cleanup {
-    unset -nocomplain _ 0 1 2 3 4
-} -result {{0.0 0.1 0.2 0.3 0.4} {1.0 1.1 1.2 1.3 1.4} {2.0 2.1 2.2 2.3 2.4}}
+# test foreach-2 {simple foreach with break} -body {
+#     dbi_foreach {ROWS 5 3} {
+#         lappend _ [list $0 $1 $2 $3 $4]
+#         if {$0 > 1} break
+#     }
+#     set _
+# } -cleanup {
+#     unset -nocomplain _ 0 1 2 3 4
+# } -result {{0.0 0.1 0.2 0.3 0.4} {1.0 1.1 1.2 1.3 1.4} {2.0 2.1 2.2 2.3 2.4}}
+
+# test foreach-3 {simple foreach with break} -body {
+#     set i 0
+#     dbi_foreach {ROWS 5 3} {
+#         lappend _ [list [incr i] $0 $1 $2 [dbi_rows {ROWS 1 1}]]
+#     }
+#     set _
+# } -cleanup {
+#     unset -nocomplain _ 0 1 2 3 4 i
+# } -result {{1 0.0 0.1 0.2 0.0} {2 1.0 1.1 1.2 0.0} {3 2.0 2.1 2.2 0.0}}
 
 
 #

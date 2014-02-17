@@ -74,7 +74,7 @@ typedef enum {
  */
 
 typedef enum {
-    Dbi_ResultFlat = 0,
+    Dbi_ResultFlatList = 0,
     Dbi_ResultSets,
     Dbi_ResultDicts,
     Dbi_ResultAvLists,

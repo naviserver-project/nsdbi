@@ -72,7 +72,7 @@ static Tcl_ObjCmdProc
     ZeroOrOneRowObjCmd,
     OneRowObjCmd,
     EvalObjCmd,
-    ForeachObjCmd,
+   /*ForeachObjCmd,*/
     CtlObjCmd,
     ConvertObjCmd;
 
@@ -133,12 +133,12 @@ static Ns_ObjvTable quotingTypeStrings[] = {
  */
 
 static Ns_ObjvTable resultFormatStrings[] = {
-    {"flat",    Dbi_ResultFlat}, 
-    {"sets",    Dbi_ResultSets}, 
-    {"dicts",   Dbi_ResultDicts}, 
-    {"avlists", Dbi_ResultAvLists}, 
-    {"dict",    Dbi_ResultDict}, 
-    {"lists",   Dbi_ResultLists}, 
+    {"flatlist", Dbi_ResultFlatList}, 
+    {"sets",     Dbi_ResultSets}, 
+    {"dicts",    Dbi_ResultDicts}, 
+    {"avlists",  Dbi_ResultAvLists}, 
+    {"dict",     Dbi_ResultDict}, 
+    {"lists",    Dbi_ResultLists}, 
     {NULL, 0}
 };
 
@@ -185,7 +185,7 @@ DbiInitInterp(Tcl_Interp *interp, void *arg)
         {"dbi_1row",        OneRowObjCmd},
         {"dbi_dml",         DmlObjCmd},
         {"dbi_eval",        EvalObjCmd},
-        {"dbi_foreach",     ForeachObjCmd},
+        /*{"dbi_foreach",     ForeachObjCmd},*/
         {"dbi_ctl",         CtlObjCmd},
         {"dbi_convert",     ConvertObjCmd}
     };
@@ -669,7 +669,7 @@ RowsObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
     Ns_Time      *timeoutPtr = NULL;
     int           end, status, maxRows = -1, adp = 0, autoNull = 0;
     Dbi_quotingLevel quote = Dbi_QuoteNone;
-    Dbi_resultFormat resultFormat = Dbi_ResultFlat;
+    Dbi_resultFormat resultFormat = Dbi_ResultFlatList;
 
     Ns_ObjvSpec opts[] = {
         {"-db",        Ns_ObjvObj,    &poolObj,       NULL},
@@ -699,7 +699,7 @@ RowsObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
 	return TCL_ERROR;
     }
 
-    if (templateObj != NULL && resultFormat != Dbi_ResultFlat) {
+    if (templateObj != NULL && resultFormat != Dbi_ResultFlatList) {
 	Tcl_SetResult(interp, "dbi: '-result' option is only allowed when no template is given", TCL_STATIC);
 	return TCL_ERROR;
     }
@@ -732,7 +732,7 @@ RowsObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
 	 */
 	
 	if (colsNameObj != NULL 
-	    || (resultFormat != Dbi_ResultFlat && resultFormat != Dbi_ResultLists )) {
+	    || (resultFormat != Dbi_ResultFlatList && resultFormat != Dbi_ResultLists )) {
 	    int nrElements;
 
 
@@ -784,7 +784,7 @@ RowsObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
 	     */
 
 	    switch (resultFormat) {
-	    case Dbi_ResultFlat: 
+	    case Dbi_ResultFlatList: 
 	    case Dbi_ResultAvLists: 
 		break;
 	    case Dbi_ResultLists:
@@ -807,7 +807,7 @@ RowsObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
                     goto error;
                 }
 
-		if (resultFormat == Dbi_ResultFlat) {
+		if (resultFormat == Dbi_ResultFlatList) {
 		    if (Tcl_ListObjAppendElement(interp, resObj, valueObj) != TCL_OK) {
 			Tcl_DecrRefCount(valueObj);
 			goto error;
@@ -841,7 +841,7 @@ RowsObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
 	     */
 
 	    switch (resultFormat) {
-	    case Dbi_ResultFlat: break;
+	    case Dbi_ResultFlatList: break;
 	    case Dbi_ResultSets: Ns_TclEnterSet(interp, set, 0); break;
 	    case Dbi_ResultDict:
 		{
@@ -1038,7 +1038,7 @@ ConvertObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[
 	    }
 	    break;
 
-	case Dbi_ResultFlat: break;
+	case Dbi_ResultFlatList: break;
 	}
 
     }
@@ -1058,6 +1058,7 @@ ConvertObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[
     goto done;
 }
 
+#if 0
 
 /*
  *----------------------------------------------------------------------
@@ -1137,8 +1138,11 @@ ForeachObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[
 	if (status != TCL_OK) {
 	    if (status == TCL_BREAK) {
 		status = TCL_OK;
+	    } else if (status == TCL_CONTINUE) {
+		continue;
+	    } else {
+		break;
 	    }
-	    break;
 	}
     }
     
@@ -1152,7 +1156,7 @@ ForeachObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[
     status = TCL_ERROR;
     goto done;
 }
-
+#endif
 
 
 /*
