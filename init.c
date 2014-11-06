@@ -328,7 +328,7 @@ Dbi_RegisterDriver(CONST char *server, CONST char *module,
     Pool                  *poolPtr;
     Tcl_HashEntry         *hPtr;
     Tcl_HashSearch         search;
-    char                  *path;
+    const char            *path;
     int                    nprocs, isdefault;
 
     poolPtr = ns_calloc(1, sizeof(Pool));
@@ -2001,7 +2001,7 @@ PoolCheckArgProc(Tcl_DString *dsPtr, void *arg)
  */
 
 static void
-AtShutdown(Ns_Time *toPtr, void *arg)
+AtShutdown(const Ns_Time *toPtr, void *arg)
 {
     Pool       *poolPtr = arg;
     Ns_DString  ds;
