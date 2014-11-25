@@ -276,8 +276,8 @@ Dbi_LibInit(void)
         Tcl_InitHashTable(&serversTable, TCL_STRING_KEYS);
         Ns_TlsAlloc(&tls, FreeThreadHandles);
 
-        Ns_RegisterProcInfo((void *)ScheduledPoolCheck, "dbi:idlecheck", PoolCheckArgProc);
-        Ns_RegisterProcInfo((void *)DbiInitInterp, "dbi:initinterp", NULL);
+        Ns_RegisterProcInfo((Ns_Callback *)ScheduledPoolCheck, "dbi:idlecheck", PoolCheckArgProc);
+        Ns_RegisterProcInfo((Ns_Callback *)DbiInitInterp, "dbi:initinterp", NULL);
 
         set = Ns_ConfigGetSection("ns/servers");
         for (i = 0; i < Ns_SetSize(set); i++) {
@@ -1976,9 +1976,9 @@ ScheduledPoolCheck(void *arg)
 }
 
 static void
-PoolCheckArgProc(Tcl_DString *dsPtr, void *arg)
+PoolCheckArgProc(Tcl_DString *dsPtr, const void *arg)
 {
-    Pool *poolPtr = arg;
+    const Pool *poolPtr = arg;
 
     Tcl_DStringAppendElement(dsPtr, poolPtr->module);
 }
@@ -2345,3 +2345,12 @@ DefineBindVar(Statement *stmtPtr, CONST char *name, Ns_DString *dsPtr)
 
     return NS_OK;
 }
+
+/*
+ * Local Variables:
+ * mode: c
+ * c-basic-offset: 4
+ * fill-column: 78
+ * indent-tabs-mode: nil
+ * End:
+ */
