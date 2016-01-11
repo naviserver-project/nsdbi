@@ -120,7 +120,7 @@ typedef struct Dbi_Handle {
  */
 
 typedef struct Dbi_Value {
-    CONST char   *data;  /* NULL for null SQL values. */
+    const char   *data;  /* NULL for null SQL values. */
     size_t        length;   /* Length of data in bytes. */
     int           binary;   /* 1 if data is binary, utf8 otherwise. */
 } Dbi_Value;
@@ -143,7 +143,7 @@ Dbi_DefaultPool(CONST char *server)
 
 NS_EXTERN Dbi_Pool *
 Dbi_GetPool(CONST char *server, CONST char *poolname)
-    NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
+    NS_GNUC_NONNULL(1);
 
 NS_EXTERN int
 Dbi_ListPools(Ns_DString *ds, CONST char *server)

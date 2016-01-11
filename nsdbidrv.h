@@ -59,10 +59,10 @@ typedef enum {
 
 typedef struct Dbi_Statement {
 
-    CONST char         *sql;        /* SQL to execute. */
-    CONST int           length;     /* Length of SQL. */
-    CONST unsigned int  id;         /* Unique (per handle) statement ID. */
-    CONST unsigned int  nqueries;   /* Total queries for this statement. */
+    const char         *sql;        /* SQL to execute. */
+    const int           length;     /* Length of SQL. */
+    const unsigned int  id;         /* Unique (per handle) statement ID. */
+    const unsigned int  nqueries;   /* Total queries for this statement. */
     ClientData          driverData; /* Driver private statement context. */
 
 } Dbi_Statement;
@@ -179,9 +179,7 @@ NS_EXTERN int
 Dbi_RegisterDriver(CONST char *server, CONST char *module,
                    CONST char *driver, CONST char *database,
                    CONST Dbi_DriverProc *procs, ClientData configData)
-     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2)
-     NS_GNUC_NONNULL(3) NS_GNUC_NONNULL(4)
-     NS_GNUC_NONNULL(5);
+     NS_GNUC_NONNULL(2) NS_GNUC_NONNULL(3) NS_GNUC_NONNULL(4) NS_GNUC_NONNULL(5);
 
 
 

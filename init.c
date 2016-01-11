@@ -330,6 +330,11 @@ Dbi_RegisterDriver(CONST char *server, CONST char *module,
     Tcl_HashSearch         search;
     const char            *path;
     int                    nprocs, isdefault;
+ 
+    NS_NONNULL_ASSERT(module != NULL);
+    NS_NONNULL_ASSERT(driver != NULL);
+    NS_NONNULL_ASSERT(database != NULL);
+    NS_NONNULL_ASSERT(procs != NULL);
 
     poolPtr = ns_calloc(1, sizeof(Pool));
     poolPtr->drivername = driver;
@@ -403,7 +408,7 @@ Dbi_RegisterDriver(CONST char *server, CONST char *module,
      * Configure this pool.
      */
 
-    path = Ns_ConfigGetPath(server, module, NULL);
+    path = Ns_ConfigGetPath(server, module, (char *)0);
     if (path == NULL) {
         Ns_Log(Error, "dbi[%s]: no configuration for db", module);
         return NS_ERROR;
@@ -499,6 +504,8 @@ Dbi_GetPool(CONST char *server, CONST char *poolname)
     Tcl_HashEntry  *hPtr;
     Dbi_Pool       *pool;
 
+    NS_NONNULL_ASSERT(server != NULL);
+
     if ((sdataPtr = GetServer(server)) == NULL) {
         Ns_Log(Error, "dbi: invalid server '%s' while getting db '%s'", server, poolname);
         return NULL;
@@ -567,7 +574,6 @@ int
 Dbi_ListPools(Ns_DString *ds, CONST char *server)
 {
     ServerData     *sdataPtr;
-    Pool           *poolPtr;
     Tcl_HashEntry  *hPtr;
     Tcl_HashSearch  search;
 
@@ -576,7 +582,8 @@ Dbi_ListPools(Ns_DString *ds, CONST char *server)
     }
     hPtr = Tcl_FirstHashEntry(&sdataPtr->poolsTable, &search);
     while (hPtr != NULL) {
-        poolPtr = Tcl_GetHashValue(hPtr);
+        Pool *poolPtr = Tcl_GetHashValue(hPtr);
+        
         Ns_DStringAppendElement(ds, poolPtr->module);
         hPtr = Tcl_NextHashEntry(&search);
     }
@@ -1607,24 +1614,28 @@ Dbi_Config(Dbi_Pool *pool, DBI_CONFIG_OPTION opt, int newValue)
 void
 Dbi_SetException(Dbi_Handle *handle, CONST char *sqlstate, CONST char *fmt, ...)
 {
-    Handle      *handlePtr = (Handle *) handle;
-    Ns_DString  *ds = &handlePtr->dsExceptionMsg;
+    Handle      *handlePtr;
+    Ns_DString  *ds;
     va_list      ap;
+    int          len;
 
+    NS_NONNULL_ASSERT(handle != NULL);
+    NS_NONNULL_ASSERT(sqlstate != NULL);
+    NS_NONNULL_ASSERT(fmt != NULL);
+
+    handlePtr = (Handle *) handle;
+    ds = &handlePtr->dsExceptionMsg;
+    
     strncpy(handlePtr->cExceptionCode, sqlstate, 6);
     handlePtr->cExceptionCode[5] = '\0';
 
-    if (fmt != NULL) {
-	int len;
-
-        Ns_DStringTrunc(ds, 0);
-        va_start(ap, fmt);
-        Ns_DStringVPrintf(ds, (char *) fmt, ap);
-        va_end(ap);
-        len = Ns_DStringLength(ds);
-        while (ds->string[len - 1] == '\n') {
-            Ns_DStringTrunc(ds, len - 1);
-        }
+    Ns_DStringTrunc(ds, 0);
+    va_start(ap, fmt);
+    Ns_DStringVPrintf(ds, (char *) fmt, ap);
+    va_end(ap);
+    len = Ns_DStringLength(ds);
+    while (ds->string[len - 1] == '\n') {
+        Ns_DStringTrunc(ds, len - 1);
     }
 }
 
@@ -2169,12 +2180,10 @@ static void
 FreeStatement(void *arg)
 {
     Statement  *stmtPtr = arg;
-    Pool       *poolPtr;
 
     if (stmtPtr->driverData != NULL) {
-	Dbi_Handle *handle = (Dbi_Handle *) stmtPtr->handlePtr;
-
-        poolPtr = stmtPtr->handlePtr->poolPtr;
+	Dbi_Handle *handle  = (Dbi_Handle *) stmtPtr->handlePtr;
+        Pool       *poolPtr = stmtPtr->handlePtr->poolPtr;
 
         Log(stmtPtr->handlePtr, Debug,
             "Dbi_PrepareCloseProc(FreeStatement): nqueries: %u",

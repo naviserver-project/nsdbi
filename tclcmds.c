@@ -480,7 +480,7 @@ Dbi_TclBindVariables(Tcl_Interp *interp, Dbi_Handle *handle,
 {
     Ns_Set         *set;
     Tcl_Obj        *valueObj, *dictObj = NULL;
-    CONST char     *key, *data;
+    const char     *key;
     char           *name;
     unsigned int    numVars, i;
     int             length;
@@ -541,7 +541,8 @@ Dbi_TclBindVariables(Tcl_Interp *interp, Dbi_Handle *handle,
     } 
 
     for (i = 0; i < numVars; i++) {
-	int binary = 0;
+	int         binary = 0;
+	const char *data;
 
         if (Dbi_VariableName(handle, i, &key) != NS_OK) {
             Dbi_TclErrorResult(interp, handle);
