@@ -1629,13 +1629,13 @@ Dbi_SetException(Dbi_Handle *handle, CONST char *sqlstate, CONST char *fmt, ...)
     strncpy(handlePtr->cExceptionCode, sqlstate, 6);
     handlePtr->cExceptionCode[5] = '\0';
 
-    Ns_DStringTrunc(ds, 0);
+    Ns_DStringSetLength(ds, 0);
     va_start(ap, fmt);
     Ns_DStringVPrintf(ds, (char *) fmt, ap);
     va_end(ap);
     len = Ns_DStringLength(ds);
     while (ds->string[len - 1] == '\n') {
-        Ns_DStringTrunc(ds, len - 1);
+        Ns_DStringSetLength(ds, len - 1);
     }
 }
 
@@ -1663,7 +1663,7 @@ Dbi_ResetException(Dbi_Handle *handle)
     Handle *handlePtr = (Handle *) handle;
 
     handlePtr->cExceptionCode[0] = '\0';
-    Ns_DStringTrunc(&handlePtr->dsExceptionMsg, 0);
+    Ns_DStringSetLength(&handlePtr->dsExceptionMsg, 0);
 }
 
 

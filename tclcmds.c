@@ -99,7 +99,7 @@ static int ColumnValue(Tcl_Interp *interp, Dbi_Handle *handle, unsigned int inde
  * Static variables defined in this file.
  */
 
-static Tcl_ObjType    *bytearrayTypePtr;
+static const Tcl_ObjType    *bytearrayTypePtr;
 
 /*
  * The following are the values that can be passed to the

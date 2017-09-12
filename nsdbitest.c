@@ -641,7 +641,7 @@ ColumnLength(Dbi_Handle *handle, Dbi_Statement *stmt, unsigned int index,
         *binaryPtr = 1;
 
     } else {
-        Ns_DStringTrunc(&conn->ds, 0);
+        Ns_DStringSetLength(&conn->ds, 0);
         Ns_DStringPrintf(&conn->ds, "%u.%u",
                          handle->rowIdx, index);
         *lengthPtr = Ns_DStringLength(&conn->ds);
@@ -709,7 +709,7 @@ ColumnValue(Dbi_Handle *handle, Dbi_Statement *stmt, unsigned int index,
         memcpy(value, binaryValue, length);
 
     } else {
-        Ns_DStringTrunc(&conn->ds, 0);
+        Ns_DStringSetLength(&conn->ds, 0);
         Ns_DStringPrintf(&conn->ds, "%u.%u",
                          handle->rowIdx, index);
 
@@ -812,7 +812,7 @@ Flush(Dbi_Handle *handle, Dbi_Statement *stmt)
     assert(STREQ(conn->configData, "driver config data"));
 
 
-    Ns_DStringTrunc(&conn->ds, 0);
+    Ns_DStringSetLength(&conn->ds, 0);
     conn->exec = 0;
     conn->numCols = conn->numRows = 0;
     conn->exec = conn->nextrow = 0;
