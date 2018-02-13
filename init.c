@@ -47,7 +47,7 @@ extern Ns_TclInterpInitProc DbiInitInterp;
  */
 
 typedef struct ServerData {
-    CONST char        *server;
+    const char        *server;
     Dbi_Pool          *defpoolPtr;  /* The default pool. */
     Tcl_HashTable      poolsTable;  /* All available pools. */
 } ServerData;
@@ -100,8 +100,8 @@ typedef struct Pool {
 
     ClientData           configData;    /* Driver private config context. */
 
-    CONST char           *drivername;   /* Driver identifier. */
-    CONST char           *database;     /* Database identifier. */
+    const char           *drivername;   /* Driver identifier. */
+    const char           *database;     /* Database identifier. */
 
     Dbi_OpenProc         *openProc;
     Dbi_CloseProc        *closeProc;
@@ -199,7 +199,7 @@ typedef struct Statement {
 
     Tcl_HashTable     bindTable;    /* Bind variables by name. */
     struct {
-        CONST char   *name;         /* (Hash table key) */
+        const char   *name;         /* (Hash table key) */
     } vars[DBI_MAX_BIND];           /* Bind variables by index. */
 
     char              driverSql[1]; /* Driver specific SQL. */
@@ -217,14 +217,14 @@ typedef struct Statement {
 
 
 static void MapPool(ServerData *sdataPtr, Pool *poolPtr, int isdefault);
-static ServerData *GetServer(CONST char *server);
+static ServerData *GetServer(const char *server);
 static void ReturnHandle(Handle * handle) NS_GNUC_NONNULL(1);
 static int CloseIfStale(Handle *, time_t now) NS_GNUC_NONNULL(1);
 static int Connect(Handle *) NS_GNUC_NONNULL(1);
 static int Connected(Handle *handlePtr) NS_GNUC_NONNULL(1);
 static void CheckPool(Pool *poolPtr, int stale) NS_GNUC_NONNULL(1);
-static Statement *ParseBindVars(Handle *handlePtr, CONST char *sql, int length);
-static int DefineBindVar(Statement *stmtPtr, CONST char *name, Ns_DString *dsPtr);
+static Statement *ParseBindVars(Handle *handlePtr, const char *sql, int length);
+static int DefineBindVar(Statement *stmtPtr, const char *name, Ns_DString *dsPtr);
 
 static Ns_Callback FreeStatement;
 static Ns_Callback FreeThreadHandles;
@@ -319,12 +319,12 @@ Dbi_LibInit(void)
  */
 
 int
-Dbi_RegisterDriver(CONST char *server, CONST char *module,
-                   CONST char *driver, CONST char *database,
-                   CONST Dbi_DriverProc *procs, ClientData configData)
+Dbi_RegisterDriver(const char *server, const char *module,
+                   const char *driver, const char *database,
+                   const Dbi_DriverProc *procs, ClientData configData)
 {
     ServerData            *sdataPtr;
-    CONST Dbi_DriverProc  *procPtr;
+    const Dbi_DriverProc  *procPtr;
     Pool                  *poolPtr;
     Tcl_HashEntry         *hPtr;
     Tcl_HashSearch         search;
@@ -498,7 +498,7 @@ MapPool(ServerData *sdataPtr, Pool *poolPtr, int isdefault)
  */
 
 Dbi_Pool *
-Dbi_GetPool(CONST char *server, CONST char *poolname)
+Dbi_GetPool(const char *server, const char *poolname)
 {
     ServerData     *sdataPtr;
     Tcl_HashEntry  *hPtr;
@@ -544,7 +544,7 @@ Dbi_GetPool(CONST char *server, CONST char *poolname)
  */
 
 Dbi_Pool *
-Dbi_DefaultPool(CONST char *server)
+Dbi_DefaultPool(const char *server)
 {
     ServerData *sdataPtr;
 
@@ -571,7 +571,7 @@ Dbi_DefaultPool(CONST char *server)
  */
 
 int
-Dbi_ListPools(Ns_DString *ds, CONST char *server)
+Dbi_ListPools(Ns_DString *ds, const char *server)
 {
     ServerData     *sdataPtr;
     Tcl_HashEntry  *hPtr;
@@ -806,7 +806,7 @@ Dbi_PutHandle(Dbi_Handle *handle)
  */
 
 int
-Dbi_Prepare(Dbi_Handle *handle, CONST char *sql, int length)
+Dbi_Prepare(Dbi_Handle *handle, const char *sql, int length)
 {
     Handle          *handlePtr = (Handle *) handle;
     Pool            *poolPtr = handlePtr->poolPtr;
@@ -905,7 +905,7 @@ Dbi_NumVariables(Dbi_Handle *handle)
  */
 
 int
-Dbi_VariableName(Dbi_Handle *handle, unsigned int index, CONST char **namePtr)
+Dbi_VariableName(Dbi_Handle *handle, unsigned int index, const char **namePtr)
 {
     Statement *stmtPtr = ((Handle *) handle)->stmtPtr;
 
@@ -970,7 +970,7 @@ Dbi_NumColumns(Dbi_Handle *handle)
  */
 
 int
-Dbi_ColumnName(Dbi_Handle *handle, unsigned int index, CONST char **namePtr)
+Dbi_ColumnName(Dbi_Handle *handle, unsigned int index, const char **namePtr)
 {
     Handle        *handlePtr = (Handle *) handle;
     Pool          *poolPtr   = handlePtr->poolPtr;
@@ -1048,7 +1048,7 @@ Dbi_Exec(Dbi_Handle *handle, Dbi_Value *values, int maxRows)
  */
 
 int
-Dbi_ExecDirect(Dbi_Handle *handle, CONST char *sql)
+Dbi_ExecDirect(Dbi_Handle *handle, const char *sql)
 {
     if (Dbi_Prepare(handle, sql, -1) != NS_OK) {
         return NS_ERROR;
@@ -1506,19 +1506,19 @@ Dbi_Stats(Ns_DString *dest, Dbi_Pool *pool)
  *----------------------------------------------------------------------
  */
 
-CONST char *
+const char *
 Dbi_PoolName(Dbi_Pool *pool)
 {
     return ((Pool *) pool)->module;
 }
 
-CONST char *
+const char *
 Dbi_DriverName(Dbi_Pool *pool)
 {
     return ((Pool *) pool)->drivername;
 }
 
-CONST char *
+const char *
 Dbi_DatabaseName(Dbi_Pool *pool)
 {
     return ((Pool *) pool)->database;
@@ -1612,7 +1612,7 @@ Dbi_Config(Dbi_Pool *pool, DBI_CONFIG_OPTION opt, int newValue)
  */
 
 void
-Dbi_SetException(Dbi_Handle *handle, CONST char *sqlstate, CONST char *fmt, ...)
+Dbi_SetException(Dbi_Handle *handle, const char *sqlstate, const char *fmt, ...)
 {
     Handle      *handlePtr;
     Ns_DString  *ds;
@@ -1800,7 +1800,7 @@ Dbi_LogException(Dbi_Handle *handle, Ns_LogSeverity severity)
  */
 
 ServerData *
-GetServer(CONST char *server)
+GetServer(const char *server)
 {
     Tcl_HashEntry *hPtr;
 
@@ -2215,7 +2215,7 @@ FreeStatement(void *arg)
  */
 
 static Statement *
-ParseBindVars(Handle *handlePtr, CONST char *origSql, int origLength)
+ParseBindVars(Handle *handlePtr, const char *origSql, int origLength)
 {
     Statement  *stmtPtr = NULL;
     Ns_DString  ds, origDs;
@@ -2323,7 +2323,7 @@ ParseBindVars(Handle *handlePtr, CONST char *origSql, int origLength)
 }
 
 static int
-DefineBindVar(Statement *stmtPtr, CONST char *name, Ns_DString *dsPtr)
+DefineBindVar(Statement *stmtPtr, const char *name, Ns_DString *dsPtr)
 {
     Pool          *poolPtr = stmtPtr->handlePtr->poolPtr;
     Tcl_HashEntry *hPtr;

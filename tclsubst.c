@@ -671,7 +671,7 @@ MapVariablesToColumns(Dbi_Handle *handle, Template *templatePtr)
     Tcl_Parse     *parsePtr = &templatePtr->parse;
     int           *varColMap = templatePtr->varColMap;
     Tcl_Token     *tokenPtr;
-    CONST char    *tokenString, *colName;
+    const char    *tokenString, *colName;
     int            i, tokenSize, tokIdx, varIdx, colIdx, numCols;
 
     numCols = Dbi_NumColumns(handle);

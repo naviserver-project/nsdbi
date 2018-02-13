@@ -56,7 +56,7 @@ DbiTclSubstTemplate(Tcl_Interp *, Dbi_Handle *,
 
 typedef struct InterpData {
     Tcl_Interp *interp;
-    CONST char *server;
+    const char *server;
     int         depth;                      /* Nesting depth for dbi_eval */
     Dbi_Handle *handles[MAX_NESTING_DEPTH]; /* Handle cache, indexed by depth. */
 } InterpData;
@@ -79,7 +79,7 @@ static Tcl_ObjCmdProc
 static InterpData *GetInterpData(Tcl_Interp *interp);
 static Tcl_InterpDeleteProc FreeInterpData;
 
-static int RowCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[],
+static int RowCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[],
                   int *rowPtr);
 
 static int Exec(InterpData *idataPtr, Tcl_Obj *poolObj, Ns_Time *timeoutPtr,
@@ -177,7 +177,7 @@ DbiInitInterp(Tcl_Interp *interp, void *arg)
     }
 
     static struct {
-        CONST char     *name;
+        const char     *name;
         Tcl_ObjCmdProc *proc;
     } cmds[] = {
         {"dbi_rows",        RowsObjCmd},
@@ -660,7 +660,7 @@ Dbi_TclErrorResult(Tcl_Interp *interp, Dbi_Handle *handle)
  */
 
 static int
-RowsObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
+RowsObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[])
 {
     InterpData   *idataPtr = arg;
     Dbi_Handle   *handle;
@@ -722,7 +722,7 @@ RowsObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
                                      templateObj, defaultObj, adp, quote);
     } else {
 	long rowNum = 0;
-	CONST char   *colName;
+	const char   *colName;
 	unsigned int  colIdx, numCols;
 
         numCols = Dbi_NumColumns(handle);
@@ -914,7 +914,7 @@ RowsObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
  */
 
 static int
-ConvertObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
+ConvertObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[])
 {
     int              nrColumns, nrElements;
     Tcl_Obj         *resObj, *colsObj, *listObj, **colV, **elemV, **templateV = NULL;
@@ -1077,12 +1077,12 @@ ConvertObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[
  *----------------------------------------------------------------------
  */
 static int
-ForeachObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
+ForeachObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[])
 {
     InterpData   *idataPtr = arg;
     Dbi_Handle   *handle;
     unsigned int  colIdx, numCols;
-    CONST char   *colName;
+    const char   *colName;
     Tcl_Obj      *valueObj, *queryObj, *bodyObj;
     Tcl_Obj      *poolObj = NULL, *valuesObj = NULL;
     Ns_Time      *timeoutPtr = NULL;
@@ -1177,7 +1177,7 @@ ForeachObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[
  */
 
 static int
-DmlObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
+DmlObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[])
 {
     InterpData   *idataPtr = arg;
     Dbi_Handle   *handle;
@@ -1242,7 +1242,7 @@ DmlObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
  */
 
 static int
-ZeroOrOneRowObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
+ZeroOrOneRowObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[])
 {
     int foundRow;
 
@@ -1255,7 +1255,7 @@ ZeroOrOneRowObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST 
 }
 
 static int
-OneRowObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
+OneRowObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[])
 {
     int foundRow;
 
@@ -1271,7 +1271,7 @@ OneRowObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[]
 }
 
 static int
-RowCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[],
+RowCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[],
        int *foundRowPtr)
 {
     InterpData   *idataPtr = arg;
@@ -1280,7 +1280,7 @@ RowCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[],
     Tcl_Obj      *valueObj, *queryObj;
     Tcl_Obj      *poolObj = NULL, *valuesObj = NULL;
     Ns_Time      *timeoutPtr = NULL;
-    CONST char   *column, *varName1, *varName2, *arrayName = NULL;
+    const char   *column, *varName1, *varName2, *arrayName = NULL;
     int           found, end, status, autoNull = 0;
 
     Ns_ObjvSpec opts[] = {
@@ -1393,7 +1393,7 @@ RowCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[],
  */
 
 static int
-EvalObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
+EvalObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[])
 {
     InterpData      *idataPtr = arg;
     Dbi_Pool        *pool;
@@ -1492,15 +1492,15 @@ EvalObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
  */
 
 static int
-CtlObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *CONST objv[])
+CtlObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[])
 {
     InterpData *idataPtr = arg;
-    CONST char *server = idataPtr->server;
+    const char *server = idataPtr->server;
     Dbi_Pool   *pool;
     Ns_DString  ds;
     int         cmd, oldValue, newValue;
 
-    static CONST char *cmds[] = {
+    static const char *cmds[] = {
         "bounce", "database", "dblist", "default", "driver",
         "maxhandles", "maxrows", "maxidle", "maxopen", "maxqueries",
         "stats", "timeout", NULL

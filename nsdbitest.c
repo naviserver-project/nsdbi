@@ -46,7 +46,7 @@ NS_EXPORT int Ns_ModuleVersion = 1;
 
 typedef struct Connection {
 
-    CONST char   *configData;     /* Pointer to per-pool config data. */
+    const char   *configData;     /* Pointer to per-pool config data. */
     int           connected;      /* Is the handle currently connected to the db? */
 
     unsigned int  numCols;        /* Total number of columns in statement/result. */
@@ -87,7 +87,7 @@ static Dbi_ResetProc        Reset;
  * Local variables defined in this file.
  */
 
-static CONST Dbi_DriverProc procs[] = {
+static const Dbi_DriverProc procs[] = {
   {Dbi_OpenProcId,           (Ns_Callback *)Open},
     {Dbi_CloseProcId,        (Ns_Callback *)Close},
     {Dbi_ConnectedProcId,    (Ns_Callback *)Connected},
@@ -124,10 +124,10 @@ static CONST Dbi_DriverProc procs[] = {
  */
 
 NS_EXPORT int
-Ns_ModuleInit(CONST char *server, CONST char *module)
+Ns_ModuleInit(const char *server, const char *module)
 {
-    CONST char *name      = "test";
-    CONST char *database  = "db";
+    const char *name      = "test";
+    const char *database  = "db";
     char *configData      = "driver config data";
 
     Dbi_LibInit();
@@ -267,7 +267,7 @@ Connected(Dbi_Handle *handle)
  */
 
 static void
-Bind(Ns_DString *ds, CONST char *name, int bindIdx)
+Bind(Ns_DString *ds, const char *name, int bindIdx)
 {
     assert(ds);
     assert(name);
@@ -677,7 +677,7 @@ ColumnValue(Dbi_Handle *handle, Dbi_Statement *stmt, unsigned int index,
             char *value, size_t length)
 {
     Connection        *conn = handle->driverData;
-    static CONST char  binaryValue[8];
+    static const char  binaryValue[8];
 
     assert(stmt);
     assert(value);
@@ -741,7 +741,7 @@ ColumnValue(Dbi_Handle *handle, Dbi_Statement *stmt, unsigned int index,
 
 static int
 ColumnName(Dbi_Handle *handle, Dbi_Statement *stmt,
-           unsigned int index, CONST char **columnPtr)
+           unsigned int index, const char **columnPtr)
 {
     Connection *conn = handle->driverData;
 

@@ -138,15 +138,15 @@ Dbi_LibInit(void);
  */
 
 NS_EXTERN Dbi_Pool *
-Dbi_DefaultPool(CONST char *server)
+Dbi_DefaultPool(const char *server)
     NS_GNUC_NONNULL(1);
 
 NS_EXTERN Dbi_Pool *
-Dbi_GetPool(CONST char *server, CONST char *poolname)
+Dbi_GetPool(const char *server, const char *poolname)
     NS_GNUC_NONNULL(1);
 
 NS_EXTERN int
-Dbi_ListPools(Ns_DString *ds, CONST char *server)
+Dbi_ListPools(Ns_DString *ds, const char *server)
     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
 
 NS_EXTERN int
@@ -166,7 +166,7 @@ Dbi_Reset(Dbi_Handle *)
  */
 
 NS_EXTERN int
-Dbi_Prepare(Dbi_Handle *, CONST char *query, int length)
+Dbi_Prepare(Dbi_Handle *, const char *query, int length)
     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
 
 NS_EXTERN unsigned int
@@ -174,7 +174,7 @@ Dbi_NumVariables(Dbi_Handle *)
     NS_GNUC_NONNULL(1);
 
 NS_EXTERN int
-Dbi_VariableName(Dbi_Handle *, unsigned int index, CONST char **namePtr)
+Dbi_VariableName(Dbi_Handle *, unsigned int index, const char **namePtr)
     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(3);
 
 NS_EXTERN unsigned int
@@ -182,7 +182,7 @@ Dbi_NumColumns(Dbi_Handle *)
     NS_GNUC_NONNULL(1);
 
 NS_EXTERN int
-Dbi_ColumnName(Dbi_Handle *, unsigned int index, CONST char **namePtr)
+Dbi_ColumnName(Dbi_Handle *, unsigned int index, const char **namePtr)
     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(3);
 
 
@@ -195,7 +195,7 @@ Dbi_Exec(Dbi_Handle *, Dbi_Value *values, int maxRows)
     NS_GNUC_NONNULL(1);
 
 NS_EXTERN int
-Dbi_ExecDirect(Dbi_Handle *, CONST char *query)
+Dbi_ExecDirect(Dbi_Handle *, const char *query)
     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
 
 NS_EXTERN int
@@ -244,15 +244,15 @@ NS_EXTERN char *
 Dbi_Stats(Ns_DString *ds, Dbi_Pool *poolPtr)
     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
 
-NS_EXTERN CONST char *
+NS_EXTERN const char *
 Dbi_PoolName(Dbi_Pool *)
     NS_GNUC_NONNULL(1);
 
-NS_EXTERN CONST char *
+NS_EXTERN const char *
 Dbi_DriverName(Dbi_Pool *)
     NS_GNUC_NONNULL(1);
 
-NS_EXTERN CONST char *
+NS_EXTERN const char *
 Dbi_DatabaseName(Dbi_Pool *)
     NS_GNUC_NONNULL(1);
 
@@ -265,7 +265,7 @@ Dbi_Config(Dbi_Pool *, DBI_CONFIG_OPTION opt, int newValue)
  */
 
 NS_EXTERN void
-Dbi_SetException(Dbi_Handle *, CONST char *sqlstate, CONST char *fmt, ...)
+Dbi_SetException(Dbi_Handle *, const char *sqlstate, const char *fmt, ...)
      NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2) NS_GNUC_PRINTF(3, 4);
 
 NS_EXTERN void

@@ -117,7 +117,7 @@ Dbi_ConnectedProc(Dbi_Handle *)
     NS_GNUC_NONNULL(1);
 
 typedef void
-Dbi_BindVarProc(Ns_DString *, CONST char *name, int bindIdx)
+Dbi_BindVarProc(Ns_DString *, const char *name, int bindIdx)
     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
 
 typedef int
@@ -153,7 +153,7 @@ Dbi_ColumnValueProc(Dbi_Handle *, Dbi_Statement *, unsigned int index,
 
 typedef int
 Dbi_ColumnNameProc(Dbi_Handle *, Dbi_Statement *, unsigned int index,
-                   CONST char **columnPtr)
+                   const char **columnPtr)
     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2) NS_GNUC_NONNULL(4);
 
 typedef int
@@ -176,9 +176,9 @@ Dbi_ResetProc(Dbi_Handle *)
  */
 
 NS_EXTERN int
-Dbi_RegisterDriver(CONST char *server, CONST char *module,
-                   CONST char *driver, CONST char *database,
-                   CONST Dbi_DriverProc *procs, ClientData configData)
+Dbi_RegisterDriver(const char *server, const char *module,
+                   const char *driver, const char *database,
+                   const Dbi_DriverProc *procs, ClientData configData)
      NS_GNUC_NONNULL(2) NS_GNUC_NONNULL(3) NS_GNUC_NONNULL(4) NS_GNUC_NONNULL(5);
 
 
