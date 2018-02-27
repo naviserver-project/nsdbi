@@ -216,14 +216,14 @@ typedef struct Statement {
            ((Handle *) handle)->poolPtr->module, __VA_ARGS__)
 
 
-static void MapPool(ServerData *sdataPtr, Pool *poolPtr, int isdefault);
+static void MapPool(ServerData *sdataPtr, const Pool *poolPtr, int isdefault);
 static ServerData *GetServer(const char *server);
-static void ReturnHandle(Handle * handle) NS_GNUC_NONNULL(1);
-static int CloseIfStale(Handle *, time_t now) NS_GNUC_NONNULL(1);
+static void ReturnHandle(Handle *handle) NS_GNUC_NONNULL(1);
+static int CloseIfStale(Handle *handlePtr, time_t now) NS_GNUC_NONNULL(1);
 static int Connect(Handle *) NS_GNUC_NONNULL(1);
 static int Connected(Handle *handlePtr) NS_GNUC_NONNULL(1);
 static void CheckPool(Pool *poolPtr, int stale) NS_GNUC_NONNULL(1);
-static Statement *ParseBindVars(Handle *handlePtr, const char *sql, int length);
+static Statement *ParseBindVars(Handle *handlePtr, const char *sql, int sqlLength);
 static int DefineBindVar(Statement *stmtPtr, const char *name, Ns_DString *dsPtr);
 
 static Ns_Callback FreeStatement;
@@ -279,7 +279,7 @@ Dbi_LibInit(void)
         set = Ns_ConfigGetSection("ns/servers");
         for (i = 0; i < Ns_SetSize(set); i++) {
             Tcl_HashEntry *hPtr;
-            char          *server;
+            const char    *server;
             int            new;
             ServerData    *sdataPtr;
 
@@ -320,7 +320,7 @@ Dbi_RegisterDriver(const char *server, const char *module,
     ServerData            *sdataPtr;
     const Dbi_DriverProc  *procPtr;
     Pool                  *poolPtr;
-    Tcl_HashEntry         *hPtr;
+    const Tcl_HashEntry   *hPtr;
     Tcl_HashSearch         search;
     const char            *path;
     int                    nprocs, isdefault;
@@ -486,7 +486,7 @@ Dbi_RegisterDriver(const char *server, const char *module,
 }
 
 static void
-MapPool(ServerData *sdataPtr, Pool *poolPtr, int isdefault)
+MapPool(ServerData *sdataPtr, const Pool *poolPtr, int isdefault)
 {
     Tcl_HashEntry *hPtr;
     int            new;
@@ -520,9 +520,9 @@ MapPool(ServerData *sdataPtr, Pool *poolPtr, int isdefault)
 Dbi_Pool *
 Dbi_GetPool(const char *server, const char *poolname)
 {
-    ServerData     *sdataPtr;
-    Tcl_HashEntry  *hPtr;
-    Dbi_Pool       *pool;
+    ServerData          *sdataPtr;
+    const Tcl_HashEntry *hPtr;
+    Dbi_Pool            *pool;
 
     NS_NONNULL_ASSERT(server != NULL);
 
@@ -593,16 +593,16 @@ Dbi_DefaultPool(const char *server)
 int
 Dbi_ListPools(Ns_DString *ds, const char *server)
 {
-    ServerData     *sdataPtr;
-    Tcl_HashEntry  *hPtr;
-    Tcl_HashSearch  search;
+    ServerData          *sdataPtr;
+    const Tcl_HashEntry *hPtr;
+    Tcl_HashSearch       search;
 
     if ((sdataPtr = GetServer(server)) == NULL) {
         return NS_ERROR;
     }
     hPtr = Tcl_FirstHashEntry(&sdataPtr->poolsTable, &search);
     while (hPtr != NULL) {
-        Pool *poolPtr = Tcl_GetHashValue(hPtr);
+        const Pool *poolPtr = Tcl_GetHashValue(hPtr);
 
         Ns_DStringAppendElement(ds, poolPtr->module);
         hPtr = Tcl_NextHashEntry(&search);
@@ -829,7 +829,7 @@ int
 Dbi_Prepare(Dbi_Handle *handle, const char *sql, int length)
 {
     Handle          *handlePtr = (Handle *) handle;
-    Pool            *poolPtr = handlePtr->poolPtr;
+    const Pool      *poolPtr = handlePtr->poolPtr;
     Statement       *stmtPtr;
     Ns_Entry        *entry;
     unsigned int     numVars;
@@ -993,7 +993,7 @@ int
 Dbi_ColumnName(Dbi_Handle *handle, unsigned int index, const char **namePtr)
 {
     Handle        *handlePtr = (Handle *) handle;
-    Pool          *poolPtr   = handlePtr->poolPtr;
+    const Pool    *poolPtr   = handlePtr->poolPtr;
     Dbi_Statement *stmt      = (Dbi_Statement *) handlePtr->stmtPtr;
 
     assert(stmt);
@@ -1027,7 +1027,7 @@ Dbi_Exec(Dbi_Handle *handle, Dbi_Value *values, int maxRows)
 {
     Handle     *handlePtr = (Handle *) handle;
     Statement  *stmtPtr   = handlePtr->stmtPtr;
-    Pool       *poolPtr   = handlePtr->poolPtr;
+    const Pool *poolPtr   = handlePtr->poolPtr;
 
     assert(stmtPtr);
     assert(stmtPtr->numVars == 0
@@ -1105,7 +1105,7 @@ int
 Dbi_NextRow(Dbi_Handle *handle, int *endPtr)
 {
     Handle        *handlePtr = (Handle *) handle;
-    Pool          *poolPtr   = handlePtr->poolPtr;
+    const Pool    *poolPtr   = handlePtr->poolPtr;
     Dbi_Statement *stmt      = (Dbi_Statement *) handlePtr->stmtPtr;
     int            end, maxRows, status;
 
@@ -1165,7 +1165,7 @@ Dbi_ColumnLength(Dbi_Handle *handle, unsigned int index,
                  size_t *lengthPtr, int *binaryPtr)
 {
     Handle        *handlePtr = (Handle *) handle;
-    Pool          *poolPtr   = handlePtr->poolPtr;
+    const Pool    *poolPtr   = handlePtr->poolPtr;
     Dbi_Statement *stmt      = (Dbi_Statement *) handlePtr->stmtPtr;
 
     if (!handlePtr->fetchingRows) {
@@ -1208,10 +1208,10 @@ Dbi_ColumnLength(Dbi_Handle *handle, unsigned int index,
 
 int
 Dbi_ColumnValue(Dbi_Handle *handle, unsigned int index,
-                char *value, size_t length)
+                char *value, size_t size)
 {
     Handle        *handlePtr = (Handle *) handle;
-    Pool          *poolPtr   = handlePtr->poolPtr;
+    const Pool    *poolPtr   = handlePtr->poolPtr;
     Dbi_Statement *stmt      = (Dbi_Statement *) handlePtr->stmtPtr;
 
     if (!handlePtr->fetchingRows) {
@@ -1227,9 +1227,9 @@ Dbi_ColumnValue(Dbi_Handle *handle, unsigned int index,
     }
 
     Log(handle, Debug, "Dbi_ColumnValueProc: id: %u, column: %u, row: %u, length: %u",
-        stmt->id, index, handlePtr->rowIdx, (unsigned int) length);
+        stmt->id, index, handlePtr->rowIdx, (unsigned int) size);
 
-    return (*poolPtr->columnValueProc)(handle, stmt, index, value, length);
+    return (*poolPtr->columnValueProc)(handle, stmt, index, value, size);
 }
 
 
@@ -1253,9 +1253,9 @@ Dbi_ColumnValue(Dbi_Handle *handle, unsigned int index,
 int
 Dbi_Begin(Dbi_Handle *handle, Dbi_Isolation isolation)
 {
-    Handle *handlePtr = (Handle *) handle;
-    Pool   *poolPtr   = handlePtr->poolPtr;
-    int     status;
+    Handle     *handlePtr = (Handle *) handle;
+    const Pool *poolPtr   = handlePtr->poolPtr;
+    int         status;
 
     if (handlePtr->transDepth++ == 0) {
         handlePtr->isolation = isolation;
@@ -1300,9 +1300,9 @@ Dbi_Begin(Dbi_Handle *handle, Dbi_Isolation isolation)
 int
 Dbi_Commit(Dbi_Handle *handle)
 {
-    Handle *handlePtr = (Handle *) handle;
-    Pool   *poolPtr   = handlePtr->poolPtr;
-    int     status;
+    Handle     *handlePtr = (Handle *) handle;
+    const Pool *poolPtr   = handlePtr->poolPtr;
+    int         status;
 
     if (handlePtr->transDepth == -1) {
         Dbi_SetException(handle, "HY000",
@@ -1342,9 +1342,9 @@ Dbi_Commit(Dbi_Handle *handle)
 int
 Dbi_Rollback(Dbi_Handle *handle)
 {
-    Handle *handlePtr = (Handle *) handle;
-    Pool   *poolPtr   = handlePtr->poolPtr;
-    int     status;
+    Handle     *handlePtr = (Handle *) handle;
+    const Pool *poolPtr   = handlePtr->poolPtr;
+    int         status;
 
     if (handlePtr->transDepth == -1) {
         Dbi_SetException(handle, "HY000",
@@ -1386,7 +1386,7 @@ void
 Dbi_Flush(Dbi_Handle  *handle)
 {
     Handle        *handlePtr = (Handle *) handle;
-    Pool          *poolPtr   = handlePtr->poolPtr;
+    const Pool    *poolPtr   = handlePtr->poolPtr;
     Dbi_Statement *stmt      = (Dbi_Statement *) handlePtr->stmtPtr;
 
     if (stmt != NULL) {
@@ -1423,9 +1423,9 @@ Dbi_Flush(Dbi_Handle  *handle)
 int
 Dbi_Reset(Dbi_Handle *handle)
 {
-    Handle *handlePtr = (Handle *) handle;
-    Pool   *poolPtr   = handlePtr->poolPtr;
-    int     status;
+    Handle     *handlePtr = (Handle *) handle;
+    const Pool *poolPtr   = handlePtr->poolPtr;
+    int         status;
 
     Dbi_Flush(handle);
 
@@ -1490,23 +1490,23 @@ Dbi_BouncePool(Dbi_Pool *pool)
  */
 
 char *
-Dbi_Stats(Ns_DString *dest, Dbi_Pool *pool)
+Dbi_Stats(Ns_DString *ds, Dbi_Pool *poolPtr)
 {
-    Pool *poolPtr = (Pool *) pool;
+    Pool *pPtr = (Pool *) poolPtr;
 
-    Ns_MutexLock(&poolPtr->lock);
-    Ns_DStringPrintf(dest, "handlegets %d handlemisses %d "
+    Ns_MutexLock(&pPtr->lock);
+    Ns_DStringPrintf(ds, "handlegets %d handlemisses %d "
                      "handleopens %d handlefailures %d queries %d "
                      "agedcloses %d idlecloses %d "
                      "oppscloses %d bounces %d",
-                     poolPtr->stats.handlegets,  poolPtr->stats.handlemisses,
-                     poolPtr->stats.handleopens, poolPtr->stats.handlefailures,
-                     poolPtr->stats.queries,
-                     poolPtr->stats.otimecloses, poolPtr->stats.atimecloses,
-                     poolPtr->stats.querycloses, poolPtr->epoch);
-    Ns_MutexUnlock(&poolPtr->lock);
+                     pPtr->stats.handlegets,  pPtr->stats.handlemisses,
+                     pPtr->stats.handleopens, pPtr->stats.handlefailures,
+                     pPtr->stats.queries,
+                     pPtr->stats.otimecloses, pPtr->stats.atimecloses,
+                     pPtr->stats.querycloses, pPtr->epoch);
+    Ns_MutexUnlock(&pPtr->lock);
 
-    return Ns_DStringValue(dest);
+    return Ns_DStringValue(ds);
 }
 
 
@@ -1822,10 +1822,10 @@ Dbi_LogException(Dbi_Handle *handle, Ns_LogSeverity severity)
 ServerData *
 GetServer(const char *server)
 {
-    Tcl_HashEntry *hPtr;
+    const Tcl_HashEntry *hPtr;
 
     hPtr = Tcl_FindHashEntry(&serversTable, server);
-    return hPtr ? Tcl_GetHashValue(hPtr) : NULL;
+    return hPtr != NULL ? Tcl_GetHashValue(hPtr) : NULL;
 }
 
 
@@ -1849,31 +1849,31 @@ GetServer(const char *server)
  */
 
 static void
-ReturnHandle(Handle *handlePtr)
+ReturnHandle(Handle *handle)
 {
-    Pool *poolPtr = (Pool *) handlePtr->poolPtr;
+    Pool *poolPtr = (Pool *) handle->poolPtr;
 
     if (poolPtr->stopping
         || poolPtr->nhandles > poolPtr->maxhandles) {
 
-        Ns_CacheDestroy(handlePtr->cache);
-        Ns_DStringFree(&handlePtr->dsExceptionMsg);
-        ns_free(handlePtr);
+        Ns_CacheDestroy(handle->cache);
+        Ns_DStringFree(&handle->dsExceptionMsg);
+        ns_free(handle);
         poolPtr->nhandles--;
 
         return;
     }
 
     if (poolPtr->firstPtr == NULL) {
-        poolPtr->firstPtr = poolPtr->lastPtr = handlePtr;
-        handlePtr->nextPtr = NULL;
-    } else if (Connected(handlePtr)) {
-        handlePtr->nextPtr = poolPtr->firstPtr;
-        poolPtr->firstPtr = handlePtr;
+        poolPtr->firstPtr = poolPtr->lastPtr = handle;
+        handle->nextPtr = NULL;
+    } else if (Connected(handle)) {
+        handle->nextPtr = poolPtr->firstPtr;
+        poolPtr->firstPtr = handle;
     } else {
-        poolPtr->lastPtr->nextPtr = handlePtr;
-        poolPtr->lastPtr = handlePtr;
-        handlePtr->nextPtr = NULL;
+        poolPtr->lastPtr->nextPtr = handle;
+        poolPtr->lastPtr = handle;
+        handle->nextPtr = NULL;
     }
     poolPtr->idlehandles++;
 }
@@ -1902,7 +1902,7 @@ CloseIfStale(Handle *handlePtr, time_t now)
     Pool       *poolPtr = handlePtr->poolPtr;
 
     if (Connected(handlePtr)) {
-        char *reason  = NULL;
+        const char *reason  = NULL;
 
         if (poolPtr->stopping) {
             reason = "stopped";
@@ -2103,7 +2103,7 @@ Connect(Handle *handlePtr)
             poolPtr->stats.handlefailures++;
             Dbi_LogException(handle, Error);
         } else {
-            char  *msg;
+            const char *msg;
 
             handlePtr->atime = handlePtr->otime = time(NULL);
             msg = Dbi_ExceptionMsg(handle);
@@ -2138,7 +2138,7 @@ static int
 Connected(Handle *handlePtr)
 {
     Dbi_Handle *handle  = (Dbi_Handle *) handlePtr;
-    Pool       *poolPtr = handlePtr->poolPtr;
+    const Pool *poolPtr = handlePtr->poolPtr;
 
     return (*poolPtr->connectedProc)(handle);
 }
@@ -2203,7 +2203,7 @@ FreeStatement(void *arg)
 
     if (stmtPtr->driverData != NULL) {
         Dbi_Handle *handle  = (Dbi_Handle *) stmtPtr->handlePtr;
-        Pool       *poolPtr = stmtPtr->handlePtr->poolPtr;
+        const Pool *poolPtr = stmtPtr->handlePtr->poolPtr;
 
         Log(stmtPtr->handlePtr, Debug,
             "Dbi_PrepareCloseProc(FreeStatement): nqueries: %u",
@@ -2235,14 +2235,14 @@ FreeStatement(void *arg)
  */
 
 static Statement *
-ParseBindVars(Handle *handlePtr, const char *origSql, int origLength)
+ParseBindVars(Handle *handlePtr, const char *sql, int sqlLength)
 {
     Statement  *stmtPtr = NULL;
     Ns_DString  ds, origDs;
-    char        save, *sql, *p, *chunk, *bind;
+    char        save, *currentSql, *p, *chunk, *bind;
     int         len, isQuoted, status = NS_OK;
 
-#define preveq(c) (p != sql && *(p-1) == (c))
+#define preveq(c) (p != currentSql && *(p-1) == (c))
 #define nexteq(c) (*(p+1) == (c))
 
     /*
@@ -2251,10 +2251,10 @@ ParseBindVars(Handle *handlePtr, const char *origSql, int origLength)
      * larger than the original. Check for overrun at the end.
      */
 
-    if (origLength < 0) {
-        origLength = strlen(origSql);
+    if (sqlLength < 0) {
+        sqlLength = strlen(sql);
     }
-    stmtPtr = ns_calloc(1, sizeof(Statement) + origLength + 32);
+    stmtPtr = ns_calloc(1, sizeof(Statement) + sqlLength + 32);
     stmtPtr->handlePtr = handlePtr;
     Tcl_InitHashTable(&stmtPtr->bindTable, TCL_STRING_KEYS);
 
@@ -2264,13 +2264,13 @@ ParseBindVars(Handle *handlePtr, const char *origSql, int origLength)
 
     Ns_DStringInit(&ds);
     Ns_DStringInit(&origDs);
-    Ns_DStringNAppend(&origDs, origSql, origLength);
+    Ns_DStringNAppend(&origDs, sql, sqlLength);
 
-    sql = Ns_DStringValue(&origDs);
+    currentSql = Ns_DStringValue(&origDs);
     len = Ns_DStringLength(&origDs);
 
-    p = sql;
-    chunk = sql;
+    p = currentSql;
+    chunk = currentSql;
     bind = NULL;
     isQuoted = 0;
 
@@ -2280,7 +2280,7 @@ ParseBindVars(Handle *handlePtr, const char *origSql, int origLength)
             /* found the start of what looks like a bind variable */
             bind = p;
         } else if (*p == '\'' && bind == NULL) {
-            if (p == sql || !preveq('\\')) {
+            if (p == currentSql || !preveq('\\')) {
                 isQuoted = !isQuoted;
             }
         } else if (bind != NULL) {
@@ -2318,7 +2318,7 @@ ParseBindVars(Handle *handlePtr, const char *origSql, int origLength)
      * Check for overrun.
      */
 
-    if (Ns_DStringLength(&ds) > origLength + 32) {
+    if (Ns_DStringLength(&ds) > sqlLength + 32) {
         Dbi_SetException((Dbi_Handle *) handlePtr, "HY000",
                          "bug: not enough memory for bound sql");
         status = NS_ERROR;
@@ -2345,7 +2345,7 @@ ParseBindVars(Handle *handlePtr, const char *origSql, int origLength)
 static int
 DefineBindVar(Statement *stmtPtr, const char *name, Ns_DString *dsPtr)
 {
-    Pool          *poolPtr = stmtPtr->handlePtr->poolPtr;
+    const Pool    *poolPtr = stmtPtr->handlePtr->poolPtr;
     Tcl_HashEntry *hPtr;
     int            new, index;
 

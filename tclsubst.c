@@ -54,7 +54,7 @@ int DbiTclSubstTemplate(Tcl_Interp *, Dbi_Handle *,
 
 static int GetTemplateFromObj(Tcl_Interp *interp, Dbi_Handle *,
                               Tcl_Obj *templateObj, Template **templatePtrPtr);
-static int AppendValue(Tcl_Interp *interp, Dbi_Handle *handle, unsigned int colIdx,
+static int AppendValue(Tcl_Interp *interp, Dbi_Handle *handle, unsigned int index,
                        Tcl_Obj *resObj, Ns_DString *dsPtr, Dbi_quotingLevel quote);
 static int AppendTokenVariable(Tcl_Interp *interp, Tcl_Token *tokenPtr,
                                Tcl_Obj *resObj, Ns_DString *dsPtr, Dbi_quotingLevel quote);
@@ -452,7 +452,7 @@ AppendTokenVariable(Tcl_Interp *interp, Tcl_Token *tokenPtr,
     if (objPtr == NULL) {
         Tcl_ResetResult(interp);
         Tcl_AppendResult(interp, "can't read \"", name,
-                         "\": no such column or variable", NULL);
+                         "\": no such column or variable", (char *)0L);
         name[size] = save;
 
         return TCL_ERROR;

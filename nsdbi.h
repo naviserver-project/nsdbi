@@ -166,23 +166,23 @@ Dbi_Reset(Dbi_Handle *)
  */
 
 NS_EXTERN int
-Dbi_Prepare(Dbi_Handle *, const char *query, int length)
+Dbi_Prepare(Dbi_Handle *handle, const char *sql, int length)
     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
 
 NS_EXTERN unsigned int
-Dbi_NumVariables(Dbi_Handle *)
+Dbi_NumVariables(Dbi_Handle *handle)
     NS_GNUC_NONNULL(1);
 
 NS_EXTERN int
-Dbi_VariableName(Dbi_Handle *, unsigned int index, const char **namePtr)
+Dbi_VariableName(Dbi_Handle *handle, unsigned int index, const char **namePtr)
     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(3);
 
 NS_EXTERN unsigned int
-Dbi_NumColumns(Dbi_Handle *)
+Dbi_NumColumns(Dbi_Handle *handle)
     NS_GNUC_NONNULL(1);
 
 NS_EXTERN int
-Dbi_ColumnName(Dbi_Handle *, unsigned int index, const char **namePtr)
+Dbi_ColumnName(Dbi_Handle *handle, unsigned int index, const char **namePtr)
     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(3);
 
 
@@ -191,29 +191,29 @@ Dbi_ColumnName(Dbi_Handle *, unsigned int index, const char **namePtr)
  */
 
 NS_EXTERN int
-Dbi_Exec(Dbi_Handle *, Dbi_Value *values, int maxRows)
+Dbi_Exec(Dbi_Handle *handle, Dbi_Value *values, int maxRows)
     NS_GNUC_NONNULL(1);
 
 NS_EXTERN int
-Dbi_ExecDirect(Dbi_Handle *, const char *query)
+Dbi_ExecDirect(Dbi_Handle *handle, const char *sql)
     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
 
 NS_EXTERN int
-Dbi_NextRow(Dbi_Handle *, int *endPtr)
+Dbi_NextRow(Dbi_Handle *handle, int *endPtr)
     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
 
 NS_EXTERN int
-Dbi_ColumnLength(Dbi_Handle *, unsigned int index,
+Dbi_ColumnLength(Dbi_Handle *handle, unsigned int index,
                  size_t *lengthPtr, int *binaryPtr)
     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(3) NS_GNUC_NONNULL(4);
 
 NS_EXTERN int
-Dbi_ColumnValue(Dbi_Handle *, unsigned int index,
+Dbi_ColumnValue(Dbi_Handle *handle, unsigned int index,
                 char *value, size_t size)
     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(3);
 
 NS_EXTERN void
-Dbi_Flush(Dbi_Handle *)
+Dbi_Flush(Dbi_Handle *handle)
     NS_GNUC_NONNULL(1);
 
 /*
@@ -221,15 +221,15 @@ Dbi_Flush(Dbi_Handle *)
  */
 
 NS_EXTERN int
-Dbi_Begin(Dbi_Handle *, Dbi_Isolation isolation)
+Dbi_Begin(Dbi_Handle *handle, Dbi_Isolation isolation)
     NS_GNUC_NONNULL(1);
 
 NS_EXTERN int
-Dbi_Commit(Dbi_Handle *)
+Dbi_Commit(Dbi_Handle *handle)
     NS_GNUC_NONNULL(1);
 
 NS_EXTERN int
-Dbi_Rollback(Dbi_Handle *)
+Dbi_Rollback(Dbi_Handle *handle)
     NS_GNUC_NONNULL(1);
 
 /*

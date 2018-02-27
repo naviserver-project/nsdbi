@@ -80,7 +80,7 @@ static InterpData *GetInterpData(Tcl_Interp *interp);
 static Tcl_InterpDeleteProc FreeInterpData;
 
 static int RowCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[],
-                  int *rowPtr);
+                  int *foundRowPtr);
 
 static int Exec(InterpData *idataPtr, Tcl_Obj *poolObj, Ns_Time *timeoutPtr,
                 Tcl_Obj *queryObj, Tcl_Obj *valuesObj, int maxRows, int dml, 
@@ -363,7 +363,7 @@ GetHandle(InterpData *idataPtr, Dbi_Pool *pool, Ns_Time *timeoutPtr)
         return handle;
         break;
     case NS_TIMEOUT:
-        Tcl_SetErrorCode(interp, "NS_TIMEOUT", NULL);
+        Tcl_SetErrorCode(interp, "NS_TIMEOUT", (char *)0L);
         Tcl_SetResult(interp, "wait for database handle timed out", TCL_STATIC);
         break;
     default:
@@ -638,7 +638,7 @@ Dbi_TclBindVariables(Tcl_Interp *interp, Dbi_Handle *handle,
 void
 Dbi_TclErrorResult(Tcl_Interp *interp, Dbi_Handle *handle)
 {
-    Tcl_SetErrorCode(interp, Dbi_ExceptionCode(handle), NULL);
+    Tcl_SetErrorCode(interp, Dbi_ExceptionCode(handle), (char *)0L);
     Tcl_SetResult(interp, Dbi_ExceptionMsg(handle), TCL_VOLATILE);
 }
 
