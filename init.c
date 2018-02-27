@@ -11,7 +11,7 @@
  *
  * The Original Code is AOLserver Code and related documentation
  * distributed by AOL.
- * 
+ *
  * The Initial Developer of the Original Code is America Online,
  * Inc. Portions created by AOL are Copyright (C) 1999 America Online,
  * Inc. All Rights Reserved.
@@ -247,7 +247,7 @@ static Ns_Tls         tls;          /* Per-thread handle cache. */
  *
  * Dbi_LibInit --
  *
- *      Dbi library entry point. 
+ *      Dbi library entry point.
  *
  * Results:
  *      None.
@@ -261,16 +261,13 @@ static Ns_Tls         tls;          /* Per-thread handle cache. */
 void
 Dbi_LibInit(void)
 {
-    ServerData    *sdataPtr;
-    char          *server;
-    int            new;
-    static int     once = 0;
+    static bool    initialized = NS_FALSE;
 
-    if (!once) {
-	Ns_Set  *set;
-	int      i;
+    if (!initialized) {
+        Ns_Set  *set;
+        int      i;
 
-        once = 1;
+        initialized = NS_TRUE;
 
         Nsd_LibInit();
         Tcl_InitHashTable(&serversTable, TCL_STRING_KEYS);
@@ -281,7 +278,10 @@ Dbi_LibInit(void)
 
         set = Ns_ConfigGetSection("ns/servers");
         for (i = 0; i < Ns_SetSize(set); i++) {
-	    Tcl_HashEntry *hPtr;
+            Tcl_HashEntry *hPtr;
+            char          *server;
+            int            new;
+            ServerData    *sdataPtr;
 
             server = Ns_SetKey(set, i);
 
@@ -291,12 +291,6 @@ Dbi_LibInit(void)
 
             hPtr = Tcl_CreateHashEntry(&serversTable, server, &new);
             Tcl_SetHashValue(hPtr, sdataPtr);
-
-            if (Ns_TclRegisterTrace(server, DbiInitInterp, server,
-                                    NS_TCL_TRACE_CREATE) != NS_OK) {
-                Ns_Log(Error, "dbi: error registering tcl commands for server '%s'",
-                       server);
-            }
         }
     }
 }
@@ -330,7 +324,7 @@ Dbi_RegisterDriver(const char *server, const char *module,
     Tcl_HashSearch         search;
     const char            *path;
     int                    nprocs, isdefault;
- 
+
     NS_NONNULL_ASSERT(module != NULL);
     NS_NONNULL_ASSERT(driver != NULL);
     NS_NONNULL_ASSERT(database != NULL);
@@ -344,10 +338,10 @@ Dbi_RegisterDriver(const char *server, const char *module,
     for (procPtr = procs, nprocs = 0; procPtr->proc != NULL; procPtr++) {
         switch (procPtr->id) {
         case Dbi_OpenProcId:
-	    poolPtr->openProc = (Dbi_OpenProc *)procPtr->proc;
+            poolPtr->openProc = (Dbi_OpenProc *)procPtr->proc;
             break;
         case Dbi_CloseProcId:
-	  poolPtr->closeProc = (Dbi_CloseProc *)procPtr->proc;
+          poolPtr->closeProc = (Dbi_CloseProc *)procPtr->proc;
             break;
         case Dbi_ConnectedProcId:
             poolPtr->connectedProc = (Dbi_ConnectedProc *)procPtr->proc;
@@ -384,7 +378,7 @@ Dbi_RegisterDriver(const char *server, const char *module,
             break;
         case Dbi_ResetProcId:
             poolPtr->resetProc = (Dbi_ResetProc *)procPtr->proc;
-            break;        
+            break;
         default:
             Ns_Log(Error, "dbi: Dbi_RegisterDriver: invalid Dbi_ProcId: %d",
                    procPtr->id);
@@ -448,7 +442,7 @@ Dbi_RegisterDriver(const char *server, const char *module,
      * version, clang is as well ok.
      */
     if (server != NULL) {
-	assert(server != NULL);
+        assert(server != NULL);
         hPtr = Tcl_FindHashEntry(&serversTable, server);
         assert(hPtr != NULL);
         sdataPtr = Tcl_GetHashValue(hPtr);
@@ -459,6 +453,32 @@ Dbi_RegisterDriver(const char *server, const char *module,
             sdataPtr = Tcl_GetHashValue(hPtr);
             MapPool(sdataPtr, poolPtr, isdefault);
             hPtr = Tcl_NextHashEntry(&search);
+        }
+    }
+
+    /*
+     * When the server is given (per-server module, register the trace for the
+     * specified server. Otherwise we have a global installation, and the
+     * trace is registered for all servers.
+     */
+    if (server != NULL) {
+        if (Ns_TclRegisterTrace(server, DbiInitInterp, server,
+                                NS_TCL_TRACE_CREATE) != NS_OK) {
+            Ns_Log(Error, "dbi: error registering tcl commands for server '%s'",
+                   server);
+        }
+    } else {
+        const Ns_Set *set = Ns_ConfigGetSection("ns/servers");
+        int           i;
+
+        for (i = 0; i < Ns_SetSize(set); i++) {
+            const char *server = Ns_SetKey(set, i);
+
+            if (Ns_TclRegisterTrace(server, DbiInitInterp, server,
+                                    NS_TCL_TRACE_CREATE) != NS_OK) {
+                Ns_Log(Error, "dbi: error registering tcl commands for server '%s'",
+                       server);
+            }
         }
     }
 
@@ -518,7 +538,7 @@ Dbi_GetPool(const char *server, const char *poolname)
     }
     if (pool == NULL) {
         if (poolname == NULL) {
-            Ns_Log(Error, "dbi: no default db for server '%s'", server); 
+            Ns_Log(Error, "dbi: no default db for server '%s'", server);
         } else {
             Ns_Log(Error, "dbi: invalid db '%s' for server '%s'", poolname, server);
         }
@@ -583,7 +603,7 @@ Dbi_ListPools(Ns_DString *ds, const char *server)
     hPtr = Tcl_FirstHashEntry(&sdataPtr->poolsTable, &search);
     while (hPtr != NULL) {
         Pool *poolPtr = Tcl_GetHashValue(hPtr);
-        
+
         Ns_DStringAppendElement(ds, poolPtr->module);
         hPtr = Tcl_NextHashEntry(&search);
     }
@@ -662,7 +682,7 @@ Dbi_GetHandle(Dbi_Pool *pool, Ns_Time *timeoutPtr, Dbi_Handle **handlePtrPtr)
 
             if (poolPtr->maxhandles == 0
                 || poolPtr->nhandles < poolPtr->maxhandles) {
-		char buf[100];
+                char buf[100];
 
                 poolPtr->nhandles++;
 
@@ -764,7 +784,7 @@ Dbi_PutHandle(Dbi_Handle *handle)
     }
 
     if (handlePtr->n != -1) {
-	int  closed;
+        int  closed;
 
         /*
          * For non-thread handles which are going back to the pool
@@ -974,7 +994,7 @@ Dbi_ColumnName(Dbi_Handle *handle, unsigned int index, const char **namePtr)
 {
     Handle        *handlePtr = (Handle *) handle;
     Pool          *poolPtr   = handlePtr->poolPtr;
-    Dbi_Statement *stmt      = (Dbi_Statement *) handlePtr->stmtPtr;    
+    Dbi_Statement *stmt      = (Dbi_Statement *) handlePtr->stmtPtr;
 
     assert(stmt);
     assert(namePtr);
@@ -1587,7 +1607,7 @@ Dbi_Config(Dbi_Pool *pool, DBI_CONFIG_OPTION opt, int newValue)
         }
         break;
     default:
-	oldValue = -1;
+        oldValue = -1;
     }
     Ns_MutexUnlock(&poolPtr->lock);
 
@@ -1625,7 +1645,7 @@ Dbi_SetException(Dbi_Handle *handle, const char *sqlstate, const char *fmt, ...)
 
     handlePtr = (Handle *) handle;
     ds = &handlePtr->dsExceptionMsg;
-    
+
     strncpy(handlePtr->cExceptionCode, sqlstate, 6);
     handlePtr->cExceptionCode[5] = '\0';
 
@@ -1882,7 +1902,7 @@ CloseIfStale(Handle *handlePtr, time_t now)
     Pool       *poolPtr = handlePtr->poolPtr;
 
     if (Connected(handlePtr)) {
-	char *reason  = NULL;
+        char *reason  = NULL;
 
         if (poolPtr->stopping) {
             reason = "stopped";
@@ -2023,7 +2043,7 @@ AtShutdown(const Ns_Time *toPtr, void *arg)
         Ns_CondBroadcast(&poolPtr->cond);
         Ns_MutexUnlock(&poolPtr->lock);
     } else {
-	int status;
+        int status;
 
         Ns_DStringInit(&ds);
         Ns_Log(Notice, "dbi[%s:%s]: %s", poolPtr->drivername, poolPtr->module,
@@ -2083,7 +2103,7 @@ Connect(Handle *handlePtr)
             poolPtr->stats.handlefailures++;
             Dbi_LogException(handle, Error);
         } else {
-	    char  *msg;
+            char  *msg;
 
             handlePtr->atime = handlePtr->otime = time(NULL);
             msg = Dbi_ExceptionMsg(handle);
@@ -2182,7 +2202,7 @@ FreeStatement(void *arg)
     Statement  *stmtPtr = arg;
 
     if (stmtPtr->driverData != NULL) {
-	Dbi_Handle *handle  = (Dbi_Handle *) stmtPtr->handlePtr;
+        Dbi_Handle *handle  = (Dbi_Handle *) stmtPtr->handlePtr;
         Pool       *poolPtr = stmtPtr->handlePtr->poolPtr;
 
         Log(stmtPtr->handlePtr, Debug,
