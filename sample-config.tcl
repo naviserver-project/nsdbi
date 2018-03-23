@@ -4,7 +4,7 @@
 #     Unlike the old nsdb module you may be used to, drivers are loaded
 #     directly, once for each pool.
 #
-#     nsdbi drivers loaded globaly are available to all virtual
+#     nsdbi drivers loaded globally are available to all virtual
 #     servers. Otherwise only the server that loaded the driver
 #     can access that pool.
 #

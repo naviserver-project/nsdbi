@@ -91,9 +91,9 @@
    information_schema, or simulate it with views.
 
 
-** Array opperations (Oracle array DML etc.) with native driver support?
+** Array operations (Oracle array DML etc.) with native driver support?
 
-     # 3 inserts in single transation, efficiently:
+     # 3 inserts in single transaction, efficiently:
      dbi_dml {insert into tablex (x) values (:x)} a b c
 
 

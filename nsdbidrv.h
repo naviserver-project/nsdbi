@@ -68,7 +68,7 @@ typedef struct Dbi_Statement {
 } Dbi_Statement;
 
 /*
- * The following enum defines ids for calback functions
+ * The following enum defines ids for callback functions
  * which a driver must implement.
  */
 

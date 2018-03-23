@@ -1630,7 +1630,7 @@ CtlObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[])
  *
  * Results:
  *      TCL_OK or TCL_ERROR. handlePtrPtr updated with active db handle
- *      on successfull return.
+ *      on successful return.
  *
  * Side effects:
  *      Error message may be left in interp.

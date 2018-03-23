@@ -240,7 +240,7 @@ test columns-2 {multiple column names} -body {
 
 
 #
-# ------ dbi_rows without ouput template
+# ------ dbi_rows without output template
 #
 
 test rows-1 {found 1 row, 1 column} -body {
@@ -316,7 +316,7 @@ test rows-results.5 {one dict for result (including rownums)} -body {
 
 
 #
-# ------ dbi_rows with ouput template
+# ------ dbi_rows with output template
 #
 
 test template-1 {1 col, 1 row} -body {
@@ -408,7 +408,7 @@ test adp-template-19 {template with locals} -body {
 
 
 #
-# ------ dbi_rows with ouput to ADP 
+# ------ dbi_rows with output to ADP 
 #
 
 test adp-template-1 {append to adp} -body {

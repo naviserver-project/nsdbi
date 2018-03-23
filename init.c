@@ -2259,7 +2259,7 @@ ParseBindVars(Handle *handlePtr, const char *sql, int sqlLength)
     Tcl_InitHashTable(&stmtPtr->bindTable, TCL_STRING_KEYS);
 
     /*
-     * Save a copy of the orginal sql to chop up.
+     * Save a copy of the original sql to chop up.
      */
 
     Ns_DStringInit(&ds);
