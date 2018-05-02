@@ -344,7 +344,7 @@ may perform queries in parallel.
 
 [para]
 The default is 0 which means that each thread will open and cache a handle
-when first needed. The handle will be released when the the thread exits.
+when first needed. The handle will be released when the thread exits.
 This is ideal for an embedded database such as [term sqlite] or the embedded
 [term mysql] option, and is also appropriate if each thread which
 accesses the db, such as the conn threads, always query the database

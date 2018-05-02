@@ -106,7 +106,7 @@ static struct {
  *
  * QuoteJS --
  *
- *      Append valid javascript strings (between single quotes)
+ *      Append valid JavaScript strings (between single quotes)
  *      to first argument
  *
  * Results:
