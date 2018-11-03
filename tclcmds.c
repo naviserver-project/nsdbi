@@ -211,7 +211,7 @@ DbiInitInterp(Tcl_Interp *interp, void *arg)
  *      Pointer to InterpData.
  *
  * Side effects:
- *      Allocates and initialises on first use by DbiInitInterps.
+ *      Allocates and initializes on first use by DbiInitInterps.
  *
  *----------------------------------------------------------------------
  */
@@ -527,7 +527,7 @@ Dbi_TclBindVariables(Tcl_Interp *interp, Dbi_Handle *handle,
 
 	} else {
 	    /*
-	     * It must be a dict (or a list convertable to a dict);
+	     * It must be a dict (or a list convertible to a dict);
 	     * therefore, it has to have an even length.
 	     */
 	    if ((length % 2) != 0) {
