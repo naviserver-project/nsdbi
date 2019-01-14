@@ -11,21 +11,20 @@
 #     In this example, the nsdbipg Postgres module is being used.
 #
 
-
 #
 # Global dbs.
 #
 ns_section "ns/modules"
-ns_param   db1            $bindir/nsdbipg.so
-ns_param   db2            $bindir/nsdbipg.so
+ns_param   db1            nsdbipg.so
+ns_param   db2            nsdbipg.so
 
 
 #
 # Per-server dbs
 #
 ns_section "ns/server/server1/modules"
-ns_param   db3            $bindir/nsdbipg.so
-ns_param   db4            $bindir/nsdbipg.so
+ns_param   db3            nsdbipg.so
+ns_param   db4            nsdbipg.so
 
 
 #
