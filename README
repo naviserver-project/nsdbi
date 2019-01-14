@@ -6,6 +6,7 @@ to access your database.
 
 You will require a recent version of NaviServer (>= 2008-05-12).
 
+
     $ make NAVISERVER=/usr/local/ns
     $ make NAVISERVER=/usr/local/ns install
 
@@ -13,5 +14,3 @@ You will require a recent version of NaviServer (>= 2008-05-12).
 Configuration example: //sample-config.tcl
 
 Documentation: https://openacs.org/nsdbi/nsdbi.html
-
-Generic DBI driver: https://bitbucket.org/naviserver/nsdbi/
