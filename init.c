@@ -71,7 +71,7 @@ typedef struct Pool {
     int                   nhandles;        /* Current number of handles created. */
     int                   idlehandles;     /* Number of unused handles in pool. */
 
-    int                   cachesize;       /* Size of prepared statement cache. */
+    size_t                cachesize;       /* Size of prepared statement cache. */
 
     int                   maxRows;         /* Default max rows a query may return. */
     time_t                maxidle;         /* Seconds before unused handle is closed.  */
@@ -229,7 +229,7 @@ static int DefineBindVar(Statement *stmtPtr, const char *name, Ns_DString *dsPtr
 static Ns_Callback FreeStatement;
 static Ns_Callback FreeThreadHandles;
 
-static Ns_Callback     ScheduledPoolCheck;
+static Ns_SchedProc    ScheduledPoolCheck;
 static Ns_ArgProc      PoolCheckArgProc;
 static Ns_ShutdownProc AtShutdown;
 
@@ -265,7 +265,7 @@ Dbi_LibInit(void)
 
     if (!initialized) {
         Ns_Set  *set;
-        int      i;
+        size_t   i;
 
         initialized = NS_TRUE;
 
@@ -273,8 +273,8 @@ Dbi_LibInit(void)
         Tcl_InitHashTable(&serversTable, TCL_STRING_KEYS);
         Ns_TlsAlloc(&tls, FreeThreadHandles);
 
-        Ns_RegisterProcInfo((Ns_Callback *)ScheduledPoolCheck, "dbi:idlecheck", PoolCheckArgProc);
-        Ns_RegisterProcInfo((Ns_Callback *)DbiInitInterp, "dbi:initinterp", NULL);
+        Ns_RegisterProcInfo((ns_funcptr_t)ScheduledPoolCheck, "dbi:idlecheck", PoolCheckArgProc);
+        Ns_RegisterProcInfo((ns_funcptr_t)DbiInitInterp, "dbi:initinterp", NULL);
 
         set = Ns_ConfigGetSection("ns/servers");
         for (i = 0; i < Ns_SetSize(set); i++) {
@@ -379,11 +379,11 @@ Dbi_RegisterDriver(const char *server, const char *module,
         case Dbi_ResetProcId:
             poolPtr->resetProc = (Dbi_ResetProc *)procPtr->proc;
             break;
-        default:
+            /*default:
             Ns_Log(Error, "dbi: Dbi_RegisterDriver: invalid Dbi_ProcId: %d",
                    procPtr->id);
             ns_free(poolPtr);
-            return NS_ERROR;
+            return NS_ERROR;*/
         }
         nprocs++;
     }
@@ -412,7 +412,7 @@ Dbi_RegisterDriver(const char *server, const char *module,
     Ns_CondInit(&poolPtr->cond);
 
     poolPtr->module     = ns_strdup(module);
-    poolPtr->cachesize  = Ns_ConfigIntRange(path, "cachesize",  1024*1024,  0, INT_MAX);
+    poolPtr->cachesize  = (size_t)Ns_ConfigIntRange(path, "cachesize", 1024*1024, 0, INT_MAX);
     poolPtr->maxhandles = Ns_ConfigIntRange(path, "maxhandles", 0,          0, INT_MAX);
     poolPtr->maxRows    = Ns_ConfigIntRange(path, "maxrows",    1000,    1000, INT_MAX);
     poolPtr->maxidle    = Ns_ConfigIntRange(path, "maxidle",    0,          0, INT_MAX);
@@ -469,15 +469,15 @@ Dbi_RegisterDriver(const char *server, const char *module,
         }
     } else {
         const Ns_Set *set = Ns_ConfigGetSection("ns/servers");
-        int           i;
+        size_t        i;
 
         for (i = 0; i < Ns_SetSize(set); i++) {
-            const char *server = Ns_SetKey(set, i);
+            const char *serverString = Ns_SetKey(set, i);
 
-            if (Ns_TclRegisterTrace(server, DbiInitInterp, server,
+            if (Ns_TclRegisterTrace(serverString, DbiInitInterp, serverString,
                                     NS_TCL_TRACE_CREATE) != NS_OK) {
                 Ns_Log(Error, "dbi: error registering tcl commands for server '%s'",
-                       server);
+                       serverString);
             }
         }
     }
@@ -845,7 +845,7 @@ Dbi_Prepare(Dbi_Handle *handle, const char *sql, int length)
             Ns_CacheFlushEntry(entry);
             return NS_ERROR;
         }
-        Ns_CacheSetValueSz(entry, stmtPtr, sizeof(Statement) + stmtPtr->length);
+        Ns_CacheSetValueSz(entry, stmtPtr, sizeof(Statement) + (size_t)(stmtPtr->length));
     } else {
         stmtPtr = Ns_CacheGetValue(entry);
     }
@@ -1133,7 +1133,7 @@ Dbi_NextRow(Dbi_Handle *handle, int *endPtr)
     }
 
     maxRows = handlePtr->maxRows;
-    if (!end && handlePtr->rowIdx + 1 > maxRows) {
+    if (end != 0 && handlePtr->rowIdx + 1 > (unsigned int)maxRows) {
         Dbi_SetException(handle, "HY000",
             "query returned more than %d row%s",
             maxRows, maxRows > 1 ? "s" : "");
@@ -1583,13 +1583,13 @@ Dbi_Config(Dbi_Pool *pool, DBI_CONFIG_OPTION opt, int newValue)
         }
         break;
     case DBI_CONFIG_MAXIDLE:
-        oldValue = poolPtr->maxidle;
+        oldValue = (int)poolPtr->maxidle;
         if (newValue >= 0) {
             poolPtr->maxidle = newValue;
         }
         break;
     case DBI_CONFIG_MAXOPEN:
-        oldValue = poolPtr->maxopen;
+        oldValue = (int)poolPtr->maxopen;
         if (newValue >= 0) {
             poolPtr->maxopen = newValue;
         }
@@ -1606,8 +1606,8 @@ Dbi_Config(Dbi_Pool *pool, DBI_CONFIG_OPTION opt, int newValue)
             poolPtr->timeout = newValue;
         }
         break;
-    default:
-        oldValue = -1;
+        /*default:
+          oldValue = -1;*/
     }
     Ns_MutexUnlock(&poolPtr->lock);
 
@@ -1788,7 +1788,7 @@ Dbi_ExceptionPending(Dbi_Handle *handle)
 void
 Dbi_LogException(Dbi_Handle *handle, Ns_LogSeverity severity)
 {
-    char *code, *msg;
+    const char *code, *msg;
 
     code = Dbi_ExceptionCode(handle);
     if (code[0] == '\0') {
@@ -1913,7 +1913,7 @@ CloseIfStale(Handle *handlePtr, time_t now)
         } else if (poolPtr->maxidle && (handlePtr->atime < (now - poolPtr->maxidle))) {
             reason = "idle";
             poolPtr->stats.atimecloses++;
-        } else if (poolPtr->maxqueries && (handlePtr->stats.queries >= poolPtr->maxqueries)) {
+        } else if (poolPtr->maxqueries && ((int)handlePtr->stats.queries >= poolPtr->maxqueries)) {
             reason = "used";
             poolPtr->stats.querycloses++;
         }
@@ -1996,7 +1996,7 @@ CheckPool(Pool *poolPtr, int stale)
  */
 
 static void
-ScheduledPoolCheck(void *arg)
+ScheduledPoolCheck(void *arg, int UNUSED(id))
 {
     Pool *poolPtr = arg;
 
@@ -2252,9 +2252,9 @@ ParseBindVars(Handle *handlePtr, const char *sql, int sqlLength)
      */
 
     if (sqlLength < 0) {
-        sqlLength = strlen(sql);
+        sqlLength = (int)strlen(sql);
     }
-    stmtPtr = ns_calloc(1, sizeof(Statement) + sqlLength + 32);
+    stmtPtr = ns_calloc(1, sizeof(Statement) + (size_t)sqlLength + 32u);
     stmtPtr->handlePtr = handlePtr;
     Tcl_InitHashTable(&stmtPtr->bindTable, TCL_STRING_KEYS);
 
@@ -2287,7 +2287,7 @@ ParseBindVars(Handle *handlePtr, const char *sql, int sqlLength)
             if (!(isalnum((int)*p) || *p == '_') && p > bind) {
                 /* End of bind var. Append the preceding chunk. */
                 *bind = '\0';
-                Ns_DStringNAppend(&ds, chunk, bind - chunk);
+                Ns_DStringNAppend(&ds, chunk, (int)(bind - chunk));
                 chunk = p;
                 /* Now substitute the bind var. */
                 ++bind;     /* beginning of bind var */
@@ -2305,7 +2305,7 @@ ParseBindVars(Handle *handlePtr, const char *sql, int sqlLength)
         --len;
     }
     /* append remaining chunk */
-    Ns_DStringNAppend(&ds, chunk, bind ? bind - chunk : p - chunk);
+    Ns_DStringNAppend(&ds, chunk, (int)(bind ? bind - chunk : p - chunk));
     /* check for trailing bindvar */
     if (bind != NULL && p > bind) {
         if ((status = DefineBindVar(stmtPtr, ++bind, &ds))

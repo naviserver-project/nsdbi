@@ -36,6 +36,7 @@
 
 #include "nsdbidrv.h"
 
+NS_EXTERN int Ns_ModuleVersion;
 NS_EXPORT int Ns_ModuleVersion = 1;
 
 
@@ -62,6 +63,7 @@ typedef struct Connection {
 
 } Connection;
 
+Ns_ModuleInitProc Ns_ModuleInit;
 
 /*
  * Static functions defined in this file.
@@ -126,13 +128,13 @@ static const Dbi_DriverProc procs[] = {
 NS_EXPORT int
 Ns_ModuleInit(const char *server, const char *module)
 {
-    const char *name      = "test";
-    const char *database  = "db";
-    char *configData      = "driver config data";
+    const char *name       = "test";
+    const char *database   = "db";
+    const char *configData = "driver config data";
 
     Dbi_LibInit();
     return Dbi_RegisterDriver(server, module, name, database,
-                              procs, configData);
+                              procs, (char *)configData);
 }
 
 
@@ -299,8 +301,9 @@ static int
 Prepare(Dbi_Handle *handle, Dbi_Statement *stmt,
         unsigned int *numVarsPtr, unsigned int *numColsPtr)
 {
-    Connection *conn = handle->driverData;
-    int         n, numCols, numRows, rest = 0;
+    Connection  *conn = handle->driverData;
+    int          n, rest = 0;
+    unsigned int numRows, numCols; 
 
     assert(handle);
     assert(stmt);
@@ -427,7 +430,7 @@ Exec(Dbi_Handle *handle, Dbi_Statement *stmt,
      Dbi_Value *values, unsigned int numValues)
 {
     Connection *conn = handle->driverData;
-    int         i;
+    size_t      i;
 
     assert(stmt);
 
@@ -484,14 +487,14 @@ Exec(Dbi_Handle *handle, Dbi_Statement *stmt,
          */
 
         for (i = 0; i < numValues; i++) {
-	    int j;
+	    size_t j;
 
             if (!values[i].binary) {
-                Ns_Fatal("BINARY: values[%d].binary not 1", i);
+	        Ns_Fatal("BINARY: values[%d].binary not 1", (int)i);
             }
             for (j = 0; j < values[i].length; j++) {
                 if (values[i].data[j] != '\0') {
-                    Ns_Fatal("BINARY: values[%d].data[%d] not '\\0'", i, j);
+		    Ns_Fatal("BINARY: values[%d].data[%d] not '\\0'", (int)i, (int)j);
                 }
             }
         }
@@ -616,11 +619,11 @@ ColumnLength(Dbi_Handle *handle, Dbi_Statement *stmt, unsigned int index,
 {
     Connection *conn = handle->driverData;
 
-    assert(stmt);
-    assert(lengthPtr);
-    assert(binaryPtr);
+    assert(stmt != NULL);
+    assert(lengthPtr != NULL);
+    assert(binaryPtr != NULL);
 
-    assert(conn);
+    assert(conn != NULL);
     assert(STREQ(conn->configData, "driver config data"));
     assert(conn->connected == NS_TRUE);
 
@@ -629,10 +632,11 @@ ColumnLength(Dbi_Handle *handle, Dbi_Statement *stmt, unsigned int index,
 
     assert(index < conn->numCols);
 
-    if (handle->rowIdx == 0 && index == 0
-            && conn->rest) {
+    if (handle->rowIdx == 0
+	&& index == 0
+	&& conn->rest) {
 
-        *lengthPtr = Ns_DStringLength(&conn->ds);
+        *lengthPtr = (size_t)Ns_DStringLength(&conn->ds);
         *binaryPtr = 0;
 
     } else if (STREQ(conn->cmd, "BINARY")) {
@@ -644,7 +648,7 @@ ColumnLength(Dbi_Handle *handle, Dbi_Statement *stmt, unsigned int index,
         Ns_DStringSetLength(&conn->ds, 0);
         Ns_DStringPrintf(&conn->ds, "%u.%u",
                          handle->rowIdx, index);
-        *lengthPtr = Ns_DStringLength(&conn->ds);
+        *lengthPtr = (size_t)Ns_DStringLength(&conn->ds);
         *binaryPtr = 0;
     }
 
@@ -700,7 +704,7 @@ ColumnValue(Dbi_Handle *handle, Dbi_Statement *stmt, unsigned int index,
     if (handle->rowIdx == 0 && index == 0
             && conn->rest) {
 
-        assert(length <= Ns_DStringLength(&conn->ds));
+        assert(length <= (size_t)Ns_DStringLength(&conn->ds));
         memcpy(value, Ns_DStringValue(&conn->ds), length);
 
     } else if (STREQ(conn->cmd, "BINARY")) {
@@ -713,7 +717,7 @@ ColumnValue(Dbi_Handle *handle, Dbi_Statement *stmt, unsigned int index,
         Ns_DStringPrintf(&conn->ds, "%u.%u",
                          handle->rowIdx, index);
 
-        assert(length <= Ns_DStringLength(&conn->ds));
+        assert(length <= (size_t)Ns_DStringLength(&conn->ds));
         memcpy(value, Ns_DStringValue(&conn->ds), length);
     }
 
@@ -777,8 +781,8 @@ ColumnName(Dbi_Handle *handle, Dbi_Statement *stmt,
  */
 
 static int
-Transaction(Dbi_Handle *handle, unsigned int depth,
-            Dbi_TransactionCmd cmd, Dbi_Isolation isolation)
+Transaction(Dbi_Handle *UNUSED(handle), unsigned int UNUSED(depth),
+            Dbi_TransactionCmd UNUSED(cmd), Dbi_Isolation UNUSED(isolation))
 {
     return NS_OK;
 }

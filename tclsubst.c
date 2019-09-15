@@ -195,9 +195,9 @@ DbiTclSubstTemplate(Tcl_Interp *interp, Dbi_Handle *handle,
     Ns_DString    *dsPtr;
     const char    *parity;
     int           *varColMap, end, len;
-    int            stream;
-    size_t         maxBuffer;
-    unsigned int   tokIdx, varIdx, colIdx, numCols NS_GNUC_UNUSED, numRows;
+    int            stream = 0, colIdx;
+    size_t         maxBuffer = 0u;
+    unsigned int   tokIdx, varIdx, numCols, numRows;
 
     /*
      * Convert the template into a stream of text + variable tokens.
@@ -239,8 +239,8 @@ DbiTclSubstTemplate(Tcl_Interp *interp, Dbi_Handle *handle,
         numRows++;
 
         for (tokIdx = 0, varIdx = 0;
-             tokIdx < parsePtr->numTokens;
-             tokIdx += tokenPtr->numComponents + 1) {
+             tokIdx < (unsigned int)parsePtr->numTokens;
+             tokIdx += (unsigned int)(tokenPtr->numComponents + 1)) {
 
             tokenPtr = &parsePtr->tokenPtr[tokIdx];
 
@@ -287,7 +287,7 @@ DbiTclSubstTemplate(Tcl_Interp *interp, Dbi_Handle *handle,
                     break;
 
                 default:
-                    if (AppendValue(interp, handle, colIdx, resObj, dsPtr, quote)
+		    if (AppendValue(interp, handle, (unsigned int)colIdx, resObj, dsPtr, quote)
                             != TCL_OK) {
                         return TCL_ERROR;
                     }
@@ -298,7 +298,7 @@ DbiTclSubstTemplate(Tcl_Interp *interp, Dbi_Handle *handle,
             default:
                 Ns_Fatal("DbiTclSubstTemplate: unexpected token type: %d",
                          tokenPtr->type);
-                break;
+                /*break;*/
             }
         }
 
@@ -308,8 +308,8 @@ DbiTclSubstTemplate(Tcl_Interp *interp, Dbi_Handle *handle,
          */
 
         if (dsPtr != NULL
-                && (stream || Ns_DStringLength(dsPtr) > maxBuffer)
-                && Ns_AdpFlush(interp, 1) != TCL_OK) {
+	    && (stream != 0 || (Ns_DStringLength(dsPtr) > (int)maxBuffer))
+	    && Ns_AdpFlush(interp, 1) != TCL_OK) {
             return TCL_ERROR;
         }
 
@@ -327,8 +327,7 @@ DbiTclSubstTemplate(Tcl_Interp *interp, Dbi_Handle *handle,
                 Tcl_SetObjResult(interp, defaultObj);
             }
         } else {
-            Tcl_SetResult(interp, "query was not a statement returning rows",
-                          TCL_STATIC);
+ 	    Tcl_SetObjResult(interp, Tcl_NewStringObj("query was not a statement returning rows", -1));
             return TCL_ERROR;
         }
     }
@@ -367,18 +366,17 @@ AppendValue(Tcl_Interp *interp, Dbi_Handle *handle, unsigned int index,
         return TCL_ERROR;
     }
     if (binary) {
-        Tcl_SetResult(interp, "can't substitute binary value in template",
-                      TCL_STATIC);
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("can't substitute binary value in template", -1));
         return TCL_ERROR;
     }
 
     if (dsPtr) {
         resultLength = Ns_DStringLength(dsPtr);
-        Ns_DStringSetLength(dsPtr, resultLength + valueLength);
+        Ns_DStringSetLength(dsPtr, (resultLength + (int)valueLength));
         bytes = dsPtr->string + resultLength;
     } else {
         (void) Tcl_GetStringFromObj(resObj, &resultLength);
-        Tcl_SetObjLength(resObj, resultLength + valueLength);
+        Tcl_SetObjLength(resObj, (resultLength + (int)valueLength));
         bytes = resObj->bytes + resultLength;
     }
 
@@ -390,7 +388,7 @@ AppendValue(Tcl_Interp *interp, Dbi_Handle *handle, unsigned int index,
 
     if (quote != Dbi_QuoteNone) {
 	Tcl_DString ds, *dsPtr2 = &ds;
-	size_t      quotedLength;
+	int         quotedLength;
 	
 	Tcl_DStringInit(dsPtr2);
 	Quote(dsPtr2, bytes, quote);
@@ -401,12 +399,12 @@ AppendValue(Tcl_Interp *interp, Dbi_Handle *handle, unsigned int index,
 	 * need to copy result from quoteing
 	 */
 	
-	if (quotedLength != valueLength) {
+	if (quotedLength != (int)valueLength) {
 	    if (dsPtr) {
-		Ns_DStringSetLength(dsPtr, resultLength + quotedLength);
+	        Ns_DStringSetLength(dsPtr, (resultLength + quotedLength));
 		memcpy(dsPtr->string + resultLength, dsPtr2->string, quotedLength);
 	    } else {
-		Tcl_SetObjLength(resObj, resultLength + quotedLength);
+	        Tcl_SetObjLength(resObj, (resultLength + quotedLength));
 		memcpy(resObj->bytes + resultLength, dsPtr2->string, quotedLength);
 	    }
 	}
@@ -464,14 +462,14 @@ AppendTokenVariable(Tcl_Interp *interp, Tcl_Token *tokenPtr,
 	Quote(dsPtr, value, quote);
     } else {
 	if (quote != Dbi_QuoteNone) {
-	    Tcl_DString ds, *dsPtr = &ds;
+	    Tcl_DString ds1, *ds1Ptr = &ds1;
 
-	    Tcl_DStringInit(dsPtr);
-	    Quote(dsPtr, value, quote);
+	    Tcl_DStringInit(ds1Ptr);
+	    Quote(ds1Ptr, value, quote);
 	    Tcl_AppendToObj(resObj, 
-			    Tcl_DStringValue(dsPtr), 
-			    Tcl_DStringLength(dsPtr));
-	    Tcl_DStringFree(dsPtr);
+			    Tcl_DStringValue(ds1Ptr), 
+			    Tcl_DStringLength(ds1Ptr));
+	    Tcl_DStringFree(ds1Ptr);
 	} else {
 	    Tcl_AppendObjToObj(resObj, objPtr);
 	}
@@ -498,7 +496,7 @@ AppendTokenVariable(Tcl_Interp *interp, Tcl_Token *tokenPtr,
  */
 
 static void
-AppendInt(Tcl_Interp *interp, unsigned int rowint,
+AppendInt(Tcl_Interp *UNUSED(interp), unsigned int rowint,
           Tcl_Obj *resObj, Ns_DString *dsPtr)
 {
     char buf[TCL_INTEGER_SPACE];
@@ -580,7 +578,7 @@ GetTemplateFromObj(Tcl_Interp *interp, Dbi_Handle *handle, Tcl_Obj *templateObj,
              */
 
             if (p != string) {
-                NewTextToken(parsePtr, string, p-string);
+	        NewTextToken(parsePtr, string, (int)(p-string));
                 string = p;
             }
 
@@ -626,11 +624,11 @@ GetTemplateFromObj(Tcl_Interp *interp, Dbi_Handle *handle, Tcl_Obj *templateObj,
      */
 
     if (p != string) {
-        NewTextToken(parsePtr, string, p-string);
+        NewTextToken(parsePtr, string, (int)(p-string));
     }
 
     if (numVarTokens == 0) {
-        Tcl_SetResult(interp, "template contains no variables", TCL_STATIC);
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("template contains no variables", -1));
         FreeTemplate(templatePtr);
         return TCL_ERROR;
     }
@@ -672,7 +670,8 @@ MapVariablesToColumns(Dbi_Handle *handle, Template *templatePtr)
     int           *varColMap = templatePtr->varColMap;
     Tcl_Token     *tokenPtr;
     const char    *tokenString, *colName;
-    int            i, tokenSize, tokIdx, varIdx, colIdx, numCols;
+    int            tokenSize, tokIdx, varIdx;
+    size_t         i, colIdx, numCols;
 
     numCols = Dbi_NumColumns(handle);
 
@@ -693,10 +692,10 @@ MapVariablesToColumns(Dbi_Handle *handle, Template *templatePtr)
 
         for (colIdx = 0; colIdx < numCols; colIdx++) {
 
-            Dbi_ColumnName(handle, colIdx, &colName);
+	    Dbi_ColumnName(handle, (unsigned int)colIdx, &colName);
 
-            if (strncmp(colName, tokenString, tokenSize) == 0) {
-                varColMap[varIdx] = colIdx;
+            if (strncmp(colName, tokenString, (size_t)tokenSize) == 0) {
+	        varColMap[varIdx] = (int)colIdx;
                 break;
             }
         }
@@ -707,7 +706,7 @@ MapVariablesToColumns(Dbi_Handle *handle, Template *templatePtr)
 
         if (varColMap[varIdx] == VARTYPE_TCL) {
             for (i = 0; i < sizeof(specials) / sizeof(specials[0]); i++) {
-                if (strncmp(specials[i].varName, tokenString, tokenSize) == 0) {
+	        if (strncmp(specials[i].varName, tokenString, (size_t)tokenSize) == 0) {
                     varColMap[varIdx] = specials[i].type;
                 }
             }
@@ -779,9 +778,9 @@ NewTextToken(Tcl_Parse *parsePtr, char *string, int length)
          */
         int newCount = parsePtr->tokensAvailable * 2;
 
-        tokenPtr = (Tcl_Token *) ckalloc((unsigned) (newCount * sizeof(Tcl_Token)));
+        tokenPtr = (Tcl_Token *) ckalloc((unsigned) ((size_t)newCount * sizeof(Tcl_Token)));
         memcpy((void *) tokenPtr, (void *) parsePtr->tokenPtr,
-               (size_t) (parsePtr->tokensAvailable * sizeof(Tcl_Token)));
+	       ((size_t)parsePtr->tokensAvailable * sizeof(Tcl_Token)));
         if (parsePtr->tokenPtr != parsePtr->staticTokens) {
             ckfree((char *) parsePtr->tokenPtr);
         }

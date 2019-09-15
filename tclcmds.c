@@ -159,9 +159,8 @@ static Ns_ObjvTable resultFormatStrings[] = {
  *
  *----------------------------------------------------------------------
  */
-
 int
-DbiInitInterp(Tcl_Interp *interp, void *arg)
+DbiInitInterp(Tcl_Interp *interp, const void *UNUSED(arg))
 {
     InterpData  *idataPtr;
     int          i;
@@ -192,7 +191,7 @@ DbiInitInterp(Tcl_Interp *interp, void *arg)
 
     idataPtr = GetInterpData(interp);
 
-    for (i = 0; i < (sizeof(cmds) / sizeof(cmds[0])); i++) {
+    for (i = 0; i < (int)(sizeof(cmds) / sizeof(cmds[0])); i++) {
         Tcl_CreateObjCommand(interp, cmds[i].name, cmds[i].proc, idataPtr, NULL);
     }
 
@@ -234,7 +233,7 @@ GetInterpData(Tcl_Interp *interp)
 }
 
 static void
-FreeInterpData(ClientData arg, Tcl_Interp *interp)
+FreeInterpData(ClientData arg, Tcl_Interp *UNUSED(interp))
 {
     ns_free(arg);
 }
@@ -286,9 +285,9 @@ GetPool(InterpData *idataPtr, Tcl_Obj *poolObj)
             if (pool != NULL) {
                 Ns_TclSetOpaqueObj(poolObj, poolType, pool);
             } else {
-                Tcl_SetResult(interp,
-                    "invalid db name or db not available to virtual server",
-                    TCL_STATIC);
+                Tcl_SetObjResult(interp,
+				 Tcl_NewStringObj("invalid db name or db not available to virtual server",
+						  -1));
             }
         }
     } else if (idataPtr->depth != -1
@@ -297,9 +296,8 @@ GetPool(InterpData *idataPtr, Tcl_Obj *poolObj)
     } else {
         pool = Dbi_DefaultPool(idataPtr->server);
         if (pool == NULL) {
-            Tcl_SetResult(interp,
-                "no db specified and no default configured",
-                 TCL_STATIC);
+            Tcl_SetObjResult(interp,
+			     Tcl_NewStringObj("no db specified and no default configured", -1));
         }
     }
 
@@ -361,13 +359,13 @@ GetHandle(InterpData *idataPtr, Dbi_Pool *pool, Ns_Time *timeoutPtr)
     switch (Dbi_GetHandle(pool, timeoutPtr, &handle)) {
     case NS_OK:
         return handle;
-        break;
+        /*break;*/
     case NS_TIMEOUT:
         Tcl_SetErrorCode(interp, "NS_TIMEOUT", (char *)0L);
-        Tcl_SetResult(interp, "wait for database handle timed out", TCL_STATIC);
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("wait for database handle timed out", -1));
         break;
     default:
-        Tcl_SetResult(interp, "handle allocation failed", TCL_STATIC);
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("handle allocation failed", -1));
         break;
     }
     return NULL;
@@ -483,7 +481,7 @@ Dbi_TclBindVariables(Tcl_Interp *interp, Dbi_Handle *handle,
     const char     *key;
     char           *name;
     unsigned int    numVars, i;
-    int             length;
+    int             length = 0;
 
     numVars = Dbi_NumVariables(handle);
     if (numVars == 0) {
@@ -494,17 +492,17 @@ Dbi_TclBindVariables(Tcl_Interp *interp, Dbi_Handle *handle,
     name = NULL;
 
     if (tclValues != NULL) {
-	int length = 0;
+	int valuesLength = 0;
 
 	/*
-	 * If the provided value for bind has a length of 1, then it
+	 * If the provided value for bind has a valuesLength of 1, then it
 	 * is assumed that it is either a ns_set or the name of an
 	 * array.
 	 */
 
-	Tcl_ListObjLength(interp, tclValues, &length);
+	Tcl_ListObjLength(interp, tclValues, &valuesLength);
 
-	if (length == 1) {
+	if (valuesLength == 1) {
 	    name = Tcl_GetString(tclValues);
 
 	    if ((name[0] == 'd' || name[0] == 't')
@@ -530,7 +528,7 @@ Dbi_TclBindVariables(Tcl_Interp *interp, Dbi_Handle *handle,
 	     * It must be a dict (or a list convertible to a dict);
 	     * therefore, it has to have an even length.
 	     */
-	    if ((length % 2) != 0) {
+	    if ((valuesLength % 2) != 0) {
 		Ns_TclPrintfResult(interp, "dbi: \"%s\" is not a valid dict with bind variables", 
 				   Tcl_GetString(tclValues));
 		return TCL_ERROR;
@@ -553,7 +551,7 @@ Dbi_TclBindVariables(Tcl_Interp *interp, Dbi_Handle *handle,
 
         if (set != NULL) {
             if ((data = Ns_SetGet(set, key)) != NULL) {
-                length = strlen(data);
+	        length = (int)strlen(data);
             }
 
         } else {
@@ -593,7 +591,7 @@ Dbi_TclBindVariables(Tcl_Interp *interp, Dbi_Handle *handle,
 	    length = 0;
 	    
 	    if (!autoNull) {
-		char *source;
+		const char *source;
 
 		if (set != NULL) {
 		    source = "in ns set";
@@ -611,7 +609,7 @@ Dbi_TclBindVariables(Tcl_Interp *interp, Dbi_Handle *handle,
 	}
 	
         dbValues[i].data = length ? data : NULL; /* Coerce the empty string to null. */
-        dbValues[i].length = length;
+        dbValues[i].length = (size_t)length;
         dbValues[i].binary = binary;
     }
 
@@ -639,7 +637,7 @@ void
 Dbi_TclErrorResult(Tcl_Interp *interp, Dbi_Handle *handle)
 {
     Tcl_SetErrorCode(interp, Dbi_ExceptionCode(handle), (char *)0L);
-    Tcl_SetResult(interp, Dbi_ExceptionMsg(handle), TCL_VOLATILE);
+    Tcl_SetObjResult(interp, Tcl_NewStringObj(Dbi_ExceptionMsg(handle), -1));
 }
 
 
@@ -696,12 +694,15 @@ RowsObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[])
     }
 
     if (templateObj == NULL && quote != Dbi_QuoteNone) {
-	Tcl_SetResult(interp, "dbi: '-quote' is only allowed when template is given", TCL_STATIC);
+	Tcl_SetObjResult(interp,
+			 Tcl_NewStringObj("dbi: '-quote' is only allowed when template is given", -1));
 	return TCL_ERROR;
     }
 
     if (templateObj != NULL && resultFormat != Dbi_ResultFlatList) {
-	Tcl_SetResult(interp, "dbi: '-result' option is only allowed when no template is given", TCL_STATIC);
+	Tcl_SetObjResult(interp,
+			 Tcl_NewStringObj("dbi: '-result' option is only allowed when no template is given",
+					  -1));
 	return TCL_ERROR;
     }
 
@@ -737,7 +738,7 @@ RowsObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[])
 	    int nrElements;
 
 
-	    colListObj = Tcl_NewListObj(numCols, NULL);
+	    colListObj = Tcl_NewListObj((int)numCols, NULL);
 
 	    for (colIdx = 0; colIdx < numCols; colIdx++) {
 
@@ -789,7 +790,7 @@ RowsObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[])
 	    case Dbi_ResultAvLists: 
 		break;
 	    case Dbi_ResultLists:
-		rowObj = Tcl_NewListObj(numCols, NULL); 
+	        rowObj = Tcl_NewListObj((int)numCols, NULL); 
 		break;
 	    case Dbi_ResultDict: 
 	    case Dbi_ResultDicts: 
@@ -854,7 +855,7 @@ RowsObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[])
 		}
 		break;
 	    case Dbi_ResultAvLists: 
-		rowObj = Tcl_NewListObj(numCols * 2, templateV); 
+	        rowObj = Tcl_NewListObj((int)numCols * 2, templateV); 
 		if (Tcl_ListObjAppendElement(interp, resObj, rowObj) != TCL_OK) {
 		    Tcl_DecrRefCount(rowObj);
 		    goto error;
@@ -914,7 +915,7 @@ RowsObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[])
  */
 
 static int
-ConvertObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[])
+ConvertObjCmd(ClientData UNUSED(clientData), Tcl_Interp *interp, int objc, Tcl_Obj *const objv[])
 {
     int              nrColumns, nrElements;
     Tcl_Obj         *resObj, *colsObj, *listObj, **colV, **elemV, **templateV = NULL;
@@ -942,7 +943,8 @@ ConvertObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[
 	return TCL_ERROR;
     }
     if (nrColumns == 0 || nrColumns > nrElements || nrElements % nrColumns != 0) {
-	Tcl_SetResult(interp, "dbi: number of elements in the list must be a multiple of the columns", TCL_STATIC);
+	Tcl_SetObjResult(interp,
+			 Tcl_NewStringObj("dbi: number of elements in the list must be a multiple of the columns", -1));
 	return TCL_ERROR;
     }
 
@@ -950,7 +952,7 @@ ConvertObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[
     status = TCL_OK;
 
     if (resultFormat == Dbi_ResultAvLists) {
-	templateV = ns_calloc(nrColumns * 2, sizeof(Tcl_Obj*));
+        templateV = ns_calloc((size_t)(nrColumns * 2), sizeof(Tcl_Obj*));
 	for (colNum = 0; colNum < nrColumns; colNum++) {
 	    templateV[colNum * 2] = colV[colNum];
 	}
@@ -1017,9 +1019,9 @@ ConvertObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[
 
 	case Dbi_ResultLists:
 	    {
-		Tcl_Obj *listObj = Tcl_NewListObj(nrColumns, &elemV[rowNum * nrColumns]); 
-		if (Tcl_ListObjAppendElement(interp, resObj, listObj) != TCL_OK) {
-		    Tcl_DecrRefCount(listObj);
+		Tcl_Obj *rowsObj = Tcl_NewListObj(nrColumns, &elemV[rowNum * nrColumns]); 
+		if (Tcl_ListObjAppendElement(interp, resObj, rowsObj) != TCL_OK) {
+		    Tcl_DecrRefCount(rowsObj);
 		    goto error;
 		}
 	    }
@@ -1263,8 +1265,7 @@ OneRowObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[]
         return TCL_ERROR;
     }
     if (!foundRow) {
-        Tcl_SetResult(interp, "query was not a statement returning rows",
-                      TCL_STATIC);
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("query was not a statement returning rows",-1));
         return TCL_ERROR;
     }
     return TCL_OK;
@@ -1438,7 +1439,7 @@ EvalObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[])
      */
 
     if (isolation != -1
-            && Dbi_Begin(handle, isolation) != NS_OK) {
+	&& Dbi_Begin(handle, (Dbi_Isolation)isolation) != NS_OK) {
         Dbi_TclErrorResult(interp, handle);
         goto done;
     }
@@ -1535,7 +1536,7 @@ CtlObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[])
     case CDefaultCmd:
         pool = Dbi_DefaultPool(server);
         if (pool != NULL) {
-            Tcl_SetResult(interp, (char *) Dbi_PoolName(pool), TCL_VOLATILE);
+	    Tcl_SetObjResult(interp, Tcl_NewStringObj(Dbi_PoolName(pool), -1));
         }
         if (objc == 3) {
 
@@ -1561,11 +1562,11 @@ CtlObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[])
         return TCL_OK;
 
     case CDriverCmd:
-        Tcl_SetResult(interp, (char *) Dbi_DriverName(pool), TCL_VOLATILE);
+        Tcl_SetObjResult(interp, Tcl_NewStringObj(Dbi_DriverName(pool), -1));
         return TCL_OK;
 
     case CDatabaseCmd:
-        Tcl_SetResult(interp, (char *) Dbi_DatabaseName(pool), TCL_VOLATILE);
+        Tcl_SetObjResult(interp, Tcl_NewStringObj(Dbi_DatabaseName(pool), -1));
         return TCL_OK;
 
     case CStatsCmd:
@@ -1677,12 +1678,10 @@ Exec(InterpData *idataPtr, Tcl_Obj *poolObj, Ns_Time *timeoutPtr,
     numCols = Dbi_NumColumns(handle);
 
     if (dml && numCols > 0) {
-        Tcl_SetResult(interp, "query was not a DML or DDL command",
-                      TCL_STATIC);
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("query was not a DML or DDL command",-1));
         goto error;
     } else if (!dml && numCols == 0) {
-        Tcl_SetResult(interp, "query was not a statement returning rows",
-                      TCL_STATIC);
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("query was not a statement returning rows", -1));
         goto error;
     }
 

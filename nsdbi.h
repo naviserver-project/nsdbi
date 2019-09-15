@@ -133,6 +133,8 @@ typedef struct Dbi_Value {
 NS_EXTERN void
 Dbi_LibInit(void);
 
+NS_EXTERN Ns_TclTraceProc DbiInitInterp;
+
 /*
  * Functions for accquiring handles from pools.
  */
