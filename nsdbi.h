@@ -127,7 +127,7 @@ typedef struct Dbi_Value {
 
 
 /*
- * Library initialisation.
+ * Library initialization.
  */
 
 NS_EXTERN void

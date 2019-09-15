@@ -289,7 +289,7 @@ specific database for details.
 
 [list_begin options]
 
-[opt_def readuncommited]
+[opt_def readuncommitted]
 May be abbreviated [option uncommitted].
 
 [opt_def readcommited]
@@ -490,7 +490,7 @@ NULL values. Per default  missing bind variables raise an exception.
 Specifies the source for bind variables. When the query contains bind
 variables, the query uses per default variables from the current tcl
 frame. When the [arg bindSource] is provided, this value might be an
-[term ns_set], the name of an Tcl array, or a dict (list of name value
+[term ns_set], the name of a Tcl array, or a dict (list of name value
 pairs).  Note that all variables are taken always from the same bind
 source. A missing variable raises an error unless [option -autonull] 
 is given.
