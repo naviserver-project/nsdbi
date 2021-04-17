@@ -182,7 +182,7 @@ typedef struct Statement {
      */
 
     char             *sql;          /* Driver specific SQL: &driverSql */
-    int               length;       /* Length of sql. */
+    int               length;       /* Length of SQL. */
     unsigned int      id;           /* Unique (per handle) statement ID. */
     unsigned int      nqueries;     /* Total queries for this statement. */
     ClientData        driverData;   /* Statement context for driver. */
@@ -1867,7 +1867,7 @@ GetServer(const char *server)
  * ReturnHandle --
  *
  *      Return a handle to its pool. Connected handles are pushed on
- *      the front of the list, disconnected handles are appened to
+ *      the front of the list, disconnected handles are appended to
  *      the end.
  *
  * Results:

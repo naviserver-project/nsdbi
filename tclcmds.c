@@ -496,7 +496,7 @@ Dbi_TclBindVariables(Tcl_Interp *interp, Dbi_Handle *handle,
 
         /*
          * If the provided value for bind has a valuesLength of 1, then it
-         * is assumed that it is either a ns_set or the name of an
+         * is assumed that it is either an ns_set or the name of an
          * array.
          */
 
