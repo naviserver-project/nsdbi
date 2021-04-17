@@ -74,10 +74,10 @@ typedef struct Pool {
     size_t                cachesize;       /* Size of prepared statement cache. */
 
     int                   maxRows;         /* Default max rows a query may return. */
-    time_t                maxidle;         /* Seconds before unused handle is closed.  */
-    time_t                maxopen;         /* Seconds before active handle is closed. */
+    Ns_Time               maxidle;         /* Time interval before unused handle is closed.  */
+    Ns_Time               maxopen;         /* Time interval before active handle is closed. */
     int                   maxqueries;      /* Close active handle after maxqueries. */
-    int                   timeout;         /* Default seconds to wait for handle. */
+    Ns_Time               timeout;         /* Default Time interval to wait for handle. */
 
     int                   epoch;           /* Epoch for bouncing handles. */
     int                   stopping;        /* Server is shutting down. */
@@ -324,6 +324,7 @@ Dbi_RegisterDriver(const char *server, const char *module,
     Tcl_HashSearch         search;
     const char            *path;
     int                    nprocs, isdefault;
+    Ns_Time                interval;
 
     NS_NONNULL_ASSERT(module != NULL);
     NS_NONNULL_ASSERT(driver != NULL);
@@ -412,17 +413,20 @@ Dbi_RegisterDriver(const char *server, const char *module,
     Ns_CondInit(&poolPtr->cond);
 
     poolPtr->module     = ns_strdup(module);
-    poolPtr->cachesize  = (size_t)Ns_ConfigIntRange(path, "cachesize", 1024*1024, 0, INT_MAX);
+    poolPtr->cachesize  = (size_t)Ns_ConfigMemUnitRange(path, "cachesize", 1024*1024, 0, INT_MAX);
     poolPtr->maxhandles = Ns_ConfigIntRange(path, "maxhandles", 0,          0, INT_MAX);
     poolPtr->maxRows    = Ns_ConfigIntRange(path, "maxrows",    1000,    1000, INT_MAX);
-    poolPtr->maxidle    = Ns_ConfigIntRange(path, "maxidle",    0,          0, INT_MAX);
-    poolPtr->maxopen    = Ns_ConfigIntRange(path, "maxopen",    0,          0, INT_MAX);
     poolPtr->maxqueries = Ns_ConfigIntRange(path, "maxqueries", 0,          0, INT_MAX);
-    poolPtr->timeout    = Ns_ConfigIntRange(path, "timeout",    10,         0, INT_MAX);
 
-    if (poolPtr->maxidle || poolPtr->maxopen) {
-        Ns_ScheduleProc(ScheduledPoolCheck, poolPtr, 0,
-                        Ns_ConfigIntRange(path, "checkinterval", 600, 30, INT_MAX));
+    Ns_ConfigTimeUnitRange(path, "timeout", "10s", 0, 0, INT_MAX, 0, &poolPtr->timeout);
+    Ns_ConfigTimeUnitRange(path, "maxidle", "0s", 0, 0, INT_MAX, 0, &poolPtr->maxidle);
+    Ns_ConfigTimeUnitRange(path, "maxopen", "0s", 0, 0, INT_MAX, 0, &poolPtr->maxopen);
+
+    if (   (poolPtr->maxidle.sec != 0 && poolPtr->maxidle.usec != 0)
+        || (poolPtr->maxopen.sec != 0 && poolPtr->maxopen.usec != 0)
+        ) {
+        Ns_ConfigTimeUnitRange(path, "checkinterval", "5m", 30, 0, INT_MAX, 0, &interval);
+        Ns_ScheduleProcEx(ScheduledPoolCheck, poolPtr, NS_SCHED_THREAD, &interval, NULL);
     }
     Ns_RegisterAtShutdown(AtShutdown, poolPtr);
 
@@ -658,7 +662,7 @@ Dbi_GetHandle(Dbi_Pool *pool, Ns_Time *timeoutPtr, Dbi_Handle **handlePtrPtr)
 
         if (timeoutPtr == NULL) {
             Ns_GetTime(&time);
-            Ns_IncrTime(&time, poolPtr->timeout, 0);
+            Ns_IncrTime(&time, poolPtr->timeout.sec, poolPtr->timeout.usec);
             timeoutPtr = &time;
         }
 
@@ -1133,7 +1137,7 @@ Dbi_NextRow(Dbi_Handle *handle, int *endPtr)
     }
 
     maxRows = handlePtr->maxRows;
-    if (end != 0 && handlePtr->rowIdx + 1 > (unsigned int)maxRows) {
+    if (end == 0 && handlePtr->rowIdx + 1 > (unsigned int)maxRows) {
         Dbi_SetException(handle, "HY000",
             "query returned more than %d row%s",
             maxRows, maxRows > 1 ? "s" : "");
@@ -1563,55 +1567,83 @@ Dbi_DatabaseName(Dbi_Pool *pool)
  */
 
 int
-Dbi_Config(Dbi_Pool *pool, DBI_CONFIG_OPTION opt, int newValue)
+Dbi_ConfigInt(Dbi_Pool *pool, DBI_CONFIG_OPTION opt, int newValue)
 {
-    Pool *poolPtr = (Pool *) pool;
-    int   oldValue;
+    Pool *poolPtr = (Pool *)pool;
+    int   oldValue = 0;
 
     Ns_MutexLock(&poolPtr->lock);
+
     switch (opt) {
-    case DBI_CONFIG_MAXHANDLES:
-        oldValue = poolPtr->maxhandles;
-        if (newValue >= 0) {
-            poolPtr->maxhandles = newValue;
-        }
-        break;
     case DBI_CONFIG_MAXROWS:
         oldValue = poolPtr->maxRows;
         if (newValue >= 0) {
             poolPtr->maxRows = newValue;
         }
         break;
-    case DBI_CONFIG_MAXIDLE:
-        oldValue = (int)poolPtr->maxidle;
-        if (newValue >= 0) {
-            poolPtr->maxidle = newValue;
-        }
-        break;
-    case DBI_CONFIG_MAXOPEN:
-        oldValue = (int)poolPtr->maxopen;
-        if (newValue >= 0) {
-            poolPtr->maxopen = newValue;
-        }
-        break;
+
     case DBI_CONFIG_MAXQUERIES:
         oldValue = poolPtr->maxqueries;
         if (newValue >= 0) {
             poolPtr->maxqueries = newValue;
         }
         break;
-    case DBI_CONFIG_TIMEOUT:
-        oldValue = poolPtr->timeout;
+
+    case DBI_CONFIG_MAXHANDLES:
+        oldValue = poolPtr->maxhandles;
         if (newValue >= 0) {
-            poolPtr->timeout = newValue;
+            poolPtr->maxhandles = newValue;
         }
         break;
-        /*default:
-          oldValue = -1;*/
+    case DBI_CONFIG_MAXIDLE:
+    case DBI_CONFIG_MAXOPEN:
+    case DBI_CONFIG_TIMEOUT:
+        Ns_Log(Error, "Dbi_ConfigInt called with invalid parameter");
+        break;
+
     }
     Ns_MutexUnlock(&poolPtr->lock);
 
     return oldValue;
+}
+
+void
+Dbi_ConfigTime(Dbi_Pool *pool, DBI_CONFIG_OPTION opt, Ns_Time *newValue, Ns_Time *oldValuePtr)
+{
+    Pool    *poolPtr = (Pool *)pool;
+
+    Ns_MutexLock(&poolPtr->lock);
+
+    switch (opt) {
+    case DBI_CONFIG_MAXROWS:
+    case DBI_CONFIG_MAXQUERIES:
+    case DBI_CONFIG_MAXHANDLES:
+        Ns_Log(Error, "Dbi_ConfigInt called with invalid parameter");
+        break;
+
+    case DBI_CONFIG_MAXIDLE:
+        *oldValuePtr = poolPtr->maxidle;
+        if (newValue != NULL) {
+            poolPtr->maxidle = *newValue;
+        }
+        break;
+    case DBI_CONFIG_MAXOPEN:
+        *oldValuePtr = poolPtr->maxopen;
+        if (newValue != NULL) {
+            poolPtr->maxopen = *newValue;
+        }
+        break;
+    case DBI_CONFIG_TIMEOUT:
+        *oldValuePtr = poolPtr->timeout;
+        if (newValue != NULL) {
+            poolPtr->timeout = *newValue;
+        }
+        break;
+
+    }
+    Ns_MutexUnlock(&poolPtr->lock);
+
+    return;
 }
 
 
@@ -1908,9 +1940,19 @@ CloseIfStale(Handle *handlePtr, time_t now)
             reason = "stopped";
         } else if (poolPtr->epoch > handlePtr->epoch) {
             reason = "bounced";
-        } else if (poolPtr->maxopen && (handlePtr->otime < (now - poolPtr->maxopen))) {
+        } else if (poolPtr->maxopen.sec != 0
+                   && poolPtr->maxopen.usec != 0
+                   && (handlePtr->otime < (now - poolPtr->maxopen.sec))) {
+            /*
+             * Time granularity is still on the seconds level
+             */
             reason = "aged";
-        } else if (poolPtr->maxidle && (handlePtr->atime < (now - poolPtr->maxidle))) {
+        } else if (poolPtr->maxidle.sec != 0
+                   && poolPtr->maxidle.usec != 0
+                   && (handlePtr->atime < (now - poolPtr->maxidle.sec))) {
+            /*
+             * Time granularity is still on the seconds level
+             */
             reason = "idle";
             poolPtr->stats.atimecloses++;
         } else if (poolPtr->maxqueries && ((int)handlePtr->stats.queries >= poolPtr->maxqueries)) {

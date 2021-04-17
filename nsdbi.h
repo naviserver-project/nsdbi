@@ -247,20 +247,24 @@ Dbi_Stats(Ns_DString *ds, Dbi_Pool *poolPtr)
     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
 
 NS_EXTERN const char *
-Dbi_PoolName(Dbi_Pool *)
+Dbi_PoolName(Dbi_Pool *pool)
     NS_GNUC_NONNULL(1);
 
 NS_EXTERN const char *
-Dbi_DriverName(Dbi_Pool *)
+Dbi_DriverName(Dbi_Pool *pool)
     NS_GNUC_NONNULL(1);
 
 NS_EXTERN const char *
-Dbi_DatabaseName(Dbi_Pool *)
+Dbi_DatabaseName(Dbi_Pool *pool)
     NS_GNUC_NONNULL(1);
 
 NS_EXTERN int
-Dbi_Config(Dbi_Pool *, DBI_CONFIG_OPTION opt, int newValue)
+Dbi_ConfigInt(Dbi_Pool *pool, DBI_CONFIG_OPTION opt, int newValue)
     NS_GNUC_NONNULL(1);
+
+NS_EXTERN void
+Dbi_ConfigTime(Dbi_Pool *pool, DBI_CONFIG_OPTION opt, Ns_Time *newValue, Ns_Time *oldValuePtr)
+    NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(4);
 
 /*
  * Functions for dealing with exceptions.

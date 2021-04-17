@@ -11,7 +11,7 @@
  *
  * The Original Code is AOLserver Code and related documentation
  * distributed by AOL.
- * 
+ *
  * The Initial Developer of the Original Code is America Online,
  * Inc. Portions created by AOL are Copyright (C) 1999 America Online,
  * Inc. All Rights Reserved.
@@ -83,8 +83,8 @@ static int RowCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *const o
                   int *foundRowPtr);
 
 static int Exec(InterpData *idataPtr, Tcl_Obj *poolObj, Ns_Time *timeoutPtr,
-                Tcl_Obj *queryObj, Tcl_Obj *valuesObj, int maxRows, int dml, 
-		int autoNull, Dbi_Handle **handlePtrPtr);
+                Tcl_Obj *queryObj, Tcl_Obj *valuesObj, int maxRows, int dml,
+                int autoNull, Dbi_Handle **handlePtrPtr);
 
 static Dbi_Pool *GetPool(InterpData *, Tcl_Obj *poolObj);
 static Dbi_Handle *GetHandle(InterpData *, Dbi_Pool *, Ns_Time *);
@@ -115,30 +115,30 @@ static Ns_ObjvTable levels[] = {
 };
 
 
-/*	
+/*
  * The following are the values that can be passed to the
  * dbi_rows '-quote' option.
  */
 
 static Ns_ObjvTable quotingTypeStrings[] = {
-    {"none", Dbi_QuoteNone}, 
-    {"html", Dbi_QuoteHTML}, 
-    {"js",   Dbi_QuoteJS}, 
+    {"none", Dbi_QuoteNone},
+    {"html", Dbi_QuoteHTML},
+    {"js",   Dbi_QuoteJS},
     {NULL, 0}
 };
 
-/*	
+/*
  * The following are the values that can be passed to the
  * dbi_rows '-result' option.
  */
 
 static Ns_ObjvTable resultFormatStrings[] = {
-    {"flatlist", Dbi_ResultFlatList}, 
-    {"sets",     Dbi_ResultSets}, 
-    {"dicts",    Dbi_ResultDicts}, 
-    {"avlists",  Dbi_ResultAvLists}, 
-    {"dict",     Dbi_ResultDict}, 
-    {"lists",    Dbi_ResultLists}, 
+    {"flatlist", Dbi_ResultFlatList},
+    {"sets",     Dbi_ResultSets},
+    {"dicts",    Dbi_ResultDicts},
+    {"avlists",  Dbi_ResultAvLists},
+    {"dict",     Dbi_ResultDict},
+    {"lists",    Dbi_ResultLists},
     {NULL, 0}
 };
 
@@ -277,7 +277,7 @@ GetPool(InterpData *idataPtr, Tcl_Obj *poolObj)
     Dbi_Pool          *pool;
 
     if (poolObj != NULL) {
-	static const char *poolType = "dbi:pool";
+        static const char *poolType = "dbi:pool";
 
         if (Ns_TclGetOpaqueFromObj(poolObj, poolType, (void **) &pool)
                 != TCL_OK) {
@@ -286,8 +286,8 @@ GetPool(InterpData *idataPtr, Tcl_Obj *poolObj)
                 Ns_TclSetOpaqueObj(poolObj, poolType, pool);
             } else {
                 Tcl_SetObjResult(interp,
-				 Tcl_NewStringObj("invalid db name or db not available to virtual server",
-						  -1));
+                                 Tcl_NewStringObj("invalid db name or db not available to virtual server",
+                                                  -1));
             }
         }
     } else if (idataPtr->depth != -1
@@ -297,7 +297,7 @@ GetPool(InterpData *idataPtr, Tcl_Obj *poolObj)
         pool = Dbi_DefaultPool(idataPtr->server);
         if (pool == NULL) {
             Tcl_SetObjResult(interp,
-			     Tcl_NewStringObj("no db specified and no default configured", -1));
+                             Tcl_NewStringObj("no db specified and no default configured", -1));
         }
     }
 
@@ -433,8 +433,8 @@ ArrayExists(Tcl_Interp *interp, Tcl_Obj *arrayNameObj) {
     int arrayExists = 0;
 
     if (arrayObj == NULL) {
-	arrayObj  = Tcl_NewStringObj("array", 5);
-	existsObj = Tcl_NewStringObj("exists", 6);
+        arrayObj  = Tcl_NewStringObj("array", 5);
+        existsObj = Tcl_NewStringObj("exists", 6);
     }
     objv[0] = arrayObj;
     objv[1] = existsObj;
@@ -444,7 +444,7 @@ ArrayExists(Tcl_Interp *interp, Tcl_Obj *arrayNameObj) {
     Tcl_IncrRefCount(oldResultObj);
 
     if (Tcl_EvalObjv(interp, 3, objv, 0) == TCL_OK) {
-	Tcl_GetIntFromObj(interp, Tcl_GetObjResult(interp), &arrayExists);
+        Tcl_GetIntFromObj(interp, Tcl_GetObjResult(interp), &arrayExists);
     }
 
     Tcl_SetObjResult(interp, oldResultObj);
@@ -473,8 +473,8 @@ ArrayExists(Tcl_Interp *interp, Tcl_Obj *arrayNameObj) {
 
 int
 Dbi_TclBindVariables(Tcl_Interp *interp, Dbi_Handle *handle,
-                     Dbi_Value *dbValues, Tcl_Obj *tclValues, 
-		     int autoNull)
+                     Dbi_Value *dbValues, Tcl_Obj *tclValues,
+                     int autoNull)
 {
     Ns_Set         *set;
     Tcl_Obj        *valueObj, *dictObj = NULL;
@@ -492,55 +492,55 @@ Dbi_TclBindVariables(Tcl_Interp *interp, Dbi_Handle *handle,
     name = NULL;
 
     if (tclValues != NULL) {
-	int valuesLength = 0;
+        int valuesLength = 0;
 
-	/*
-	 * If the provided value for bind has a valuesLength of 1, then it
-	 * is assumed that it is either a ns_set or the name of an
-	 * array.
-	 */
+        /*
+         * If the provided value for bind has a valuesLength of 1, then it
+         * is assumed that it is either a ns_set or the name of an
+         * array.
+         */
 
-	Tcl_ListObjLength(interp, tclValues, &valuesLength);
+        Tcl_ListObjLength(interp, tclValues, &valuesLength);
 
-	if (valuesLength == 1) {
-	    name = Tcl_GetString(tclValues);
+        if (valuesLength == 1) {
+            name = Tcl_GetString(tclValues);
 
-	    if ((name[0] == 'd' || name[0] == 't')
-		&& name[1] != '\0'
-		&& isdigit(UCHAR(name[1]))
-		&& Ns_TclGetSet2(interp, name, &set) != TCL_OK
-		) {
-		return TCL_ERROR;
-	    }
+            if ((name[0] == 'd' || name[0] == 't')
+                && name[1] != '\0'
+                && isdigit(UCHAR(name[1]))
+                && Ns_TclGetSet2(interp, name, &set) != TCL_OK
+                ) {
+                return TCL_ERROR;
+            }
 
-	    /*
-	     * If set == NULL then it must be an array or an error.
-	     */
-	    
-	    if (set == NULL && !ArrayExists(interp, tclValues)) {
-		Ns_TclPrintfResult(interp, "dbi: array \"%s\" with bind values does not exist", 
-				   name);
-		return TCL_ERROR;
-	    }
+            /*
+             * If set == NULL then it must be an array or an error.
+             */
 
-	} else {
-	    /*
-	     * It must be a dict (or a list convertible to a dict);
-	     * therefore, it has to have an even length.
-	     */
-	    if ((valuesLength % 2) != 0) {
-		Ns_TclPrintfResult(interp, "dbi: \"%s\" is not a valid dict with bind variables", 
-				   Tcl_GetString(tclValues));
-		return TCL_ERROR;
-	    }
+            if (set == NULL && !ArrayExists(interp, tclValues)) {
+                Ns_TclPrintfResult(interp, "dbi: array \"%s\" with bind values does not exist",
+                                   name);
+                return TCL_ERROR;
+            }
 
-	    dictObj = tclValues;
-	}
-    } 
+        } else {
+            /*
+             * It must be a dict (or a list convertible to a dict);
+             * therefore, it has to have an even length.
+             */
+            if ((valuesLength % 2) != 0) {
+                Ns_TclPrintfResult(interp, "dbi: \"%s\" is not a valid dict with bind variables",
+                                   Tcl_GetString(tclValues));
+                return TCL_ERROR;
+            }
+
+            dictObj = tclValues;
+        }
+    }
 
     for (i = 0; i < numVars; i++) {
-	int         binary = 0;
-	const char *data;
+        int         binary = 0;
+        const char *data;
 
         if (Dbi_VariableName(handle, i, &key) != NS_OK) {
             Dbi_TclErrorResult(interp, handle);
@@ -551,34 +551,34 @@ Dbi_TclBindVariables(Tcl_Interp *interp, Dbi_Handle *handle,
 
         if (set != NULL) {
             if ((data = Ns_SetGet(set, key)) != NULL) {
-	        length = (int)strlen(data);
+                length = (int)strlen(data);
             }
 
         } else {
-	    /*
-	     * Set the valueObj either from the dict or from local variables
-	     */
-	    if (dictObj != NULL) {
-		Tcl_Obj *keyObj = Tcl_NewStringObj(key, -1);
-	    
-		if (Tcl_DictObjGet(interp, dictObj, keyObj, &valueObj) != TCL_OK) {
-		    Tcl_DecrRefCount(keyObj);
-		    return TCL_ERROR;
-		}
-		Tcl_DecrRefCount(keyObj);
-		
-	    } else {
-		/*	
-		 * NB: handle both array and variable lookup here.
-		 */
+            /*
+             * Set the valueObj either from the dict or from local variables
+             */
+            if (dictObj != NULL) {
+                Tcl_Obj *keyObj = Tcl_NewStringObj(key, -1);
 
-		valueObj = Tcl_GetVar2Ex(interp, 
-					 name ? name : key, 
-					 name ? key : NULL, 
-					 0 /*TCL_LEAVE_ERR_MSG*/);
-	    }
+                if (Tcl_DictObjGet(interp, dictObj, keyObj, &valueObj) != TCL_OK) {
+                    Tcl_DecrRefCount(keyObj);
+                    return TCL_ERROR;
+                }
+                Tcl_DecrRefCount(keyObj);
 
-	    if (valueObj != NULL) {
+            } else {
+                /*
+                 * NB: handle both array and variable lookup here.
+                 */
+
+                valueObj = Tcl_GetVar2Ex(interp,
+                                         name ? name : key,
+                                         name ? key : NULL,
+                                         0 /*TCL_LEAVE_ERR_MSG*/);
+            }
+
+            if (valueObj != NULL) {
                 if (valueObj->typePtr == bytearrayTypePtr) {
                     data = (char *) Tcl_GetByteArrayFromObj(valueObj, &length);
                     binary = 1;
@@ -588,26 +588,26 @@ Dbi_TclBindVariables(Tcl_Interp *interp, Dbi_Handle *handle,
             }
         }
         if (data == NULL) {
-	    length = 0;
-	    
-	    if (!autoNull) {
-		const char *source;
+            length = 0;
 
-		if (set != NULL) {
-		    source = "in ns set";
-		} else if (dictObj != NULL) {
-		    source = "in dict";
-		} else if (name != NULL) {
-		    source = "in array";
-		} else {
-		    source = "as local variable";
-		}
-		Ns_TclPrintfResult(interp, "dbi: bind variable \"%s\" not found %s", 
-				   key, source);
-		return TCL_ERROR;
-	    }
-	}
-	
+            if (!autoNull) {
+                const char *source;
+
+                if (set != NULL) {
+                    source = "in ns set";
+                } else if (dictObj != NULL) {
+                    source = "in dict";
+                } else if (name != NULL) {
+                    source = "in array";
+                } else {
+                    source = "as local variable";
+                }
+                Ns_TclPrintfResult(interp, "dbi: bind variable \"%s\" not found %s",
+                                   key, source);
+                return TCL_ERROR;
+            }
+        }
+
         dbValues[i].data = length ? data : NULL; /* Coerce the empty string to null. */
         dbValues[i].length = (size_t)length;
         dbValues[i].binary = binary;
@@ -694,16 +694,16 @@ RowsObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[])
     }
 
     if (templateObj == NULL && quote != Dbi_QuoteNone) {
-	Tcl_SetObjResult(interp,
-			 Tcl_NewStringObj("dbi: '-quote' is only allowed when template is given", -1));
-	return TCL_ERROR;
+        Tcl_SetObjResult(interp,
+                         Tcl_NewStringObj("dbi: '-quote' is only allowed when template is given", -1));
+        return TCL_ERROR;
     }
 
     if (templateObj != NULL && resultFormat != Dbi_ResultFlatList) {
-	Tcl_SetObjResult(interp,
-			 Tcl_NewStringObj("dbi: '-result' option is only allowed when no template is given",
-					  -1));
-	return TCL_ERROR;
+        Tcl_SetObjResult(interp,
+                         Tcl_NewStringObj("dbi: '-result' option is only allowed when no template is given",
+                                          -1));
+        return TCL_ERROR;
     }
 
     /*
@@ -722,153 +722,153 @@ RowsObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[])
         status = DbiTclSubstTemplate(interp, handle,
                                      templateObj, defaultObj, adp, quote);
     } else {
-	long rowNum = 0;
-	const char   *colName;
-	unsigned int  colIdx, numCols;
+        long rowNum = 0;
+        const char   *colName;
+        unsigned int  colIdx, numCols;
 
         numCols = Dbi_NumColumns(handle);
 
-	/*	
-	 * Report the column names of the result set, or compute the
-	 * nameObjs if needed later,
-	 */
-	
-	if (colsNameObj != NULL 
-	    || (resultFormat != Dbi_ResultFlatList && resultFormat != Dbi_ResultLists )) {
-	    int nrElements;
+        /*
+         * Report the column names of the result set, or compute the
+         * nameObjs if needed later,
+         */
+
+        if (colsNameObj != NULL
+            || (resultFormat != Dbi_ResultFlatList && resultFormat != Dbi_ResultLists )) {
+            int nrElements;
 
 
-	    colListObj = Tcl_NewListObj((int)numCols, NULL);
+            colListObj = Tcl_NewListObj((int)numCols, NULL);
 
-	    for (colIdx = 0; colIdx < numCols; colIdx++) {
+            for (colIdx = 0; colIdx < numCols; colIdx++) {
 
-		if (Dbi_ColumnName(handle, colIdx, &colName) != NS_OK) {
-		    Dbi_TclErrorResult(interp, handle);
-		    goto error;
-		}
-		valueObj = Tcl_NewStringObj(colName, -1);
-		if (Tcl_ListObjAppendElement(interp, colListObj, valueObj) != TCL_OK) {
-		    Tcl_DecrRefCount(valueObj);
-		    goto error;
-		}
+                if (Dbi_ColumnName(handle, colIdx, &colName) != NS_OK) {
+                    Dbi_TclErrorResult(interp, handle);
+                    goto error;
+                }
+                valueObj = Tcl_NewStringObj(colName, -1);
+                if (Tcl_ListObjAppendElement(interp, colListObj, valueObj) != TCL_OK) {
+                    Tcl_DecrRefCount(valueObj);
+                    goto error;
+                }
 
-	    }
+            }
 
-	    if (colsNameObj != NULL) {
-		if (Tcl_ObjSetVar2(interp, colsNameObj, NULL,
-				   colListObj, TCL_LEAVE_ERR_MSG) == NULL) {
-		    goto error;
-		}
-	    }
+            if (colsNameObj != NULL) {
+                if (Tcl_ObjSetVar2(interp, colsNameObj, NULL,
+                                   colListObj, TCL_LEAVE_ERR_MSG) == NULL) {
+                    goto error;
+                }
+            }
 
-	    if ((Tcl_ListObjGetElements(interp, colListObj, &nrElements, &colV) != TCL_OK)) {
-		goto error;
-	    }
+            if ((Tcl_ListObjGetElements(interp, colListObj, &nrElements, &colV) != TCL_OK)) {
+                goto error;
+            }
         }
 
-	status = TCL_OK;
+        status = TCL_OK;
 
-	if (resultFormat == Dbi_ResultAvLists) {
-	    templateV = ns_calloc(numCols * 2, sizeof(Tcl_Obj*));
-	    for (colIdx = 0; colIdx < numCols; colIdx++) {
-		templateV[colIdx * 2] = colV[colIdx];
-	    }
-	} else if (resultFormat == Dbi_ResultDict) {
-	    Tcl_SetObjResult(interp, Tcl_NewDictObj());
-	}
-	resObj = Tcl_GetObjResult(interp);
+        if (resultFormat == Dbi_ResultAvLists) {
+            templateV = ns_calloc(numCols * 2, sizeof(Tcl_Obj*));
+            for (colIdx = 0; colIdx < numCols; colIdx++) {
+                templateV[colIdx * 2] = colV[colIdx];
+            }
+        } else if (resultFormat == Dbi_ResultDict) {
+            Tcl_SetObjResult(interp, Tcl_NewDictObj());
+        }
+        resObj = Tcl_GetObjResult(interp);
 
         while ((status = NextRow(interp, handle, &end)) == TCL_OK && !end) {
-	    Ns_Set *set = NULL;
+            Ns_Set *set = NULL;
 
-	    /*
-	     * Begin of row
-	     */
+            /*
+             * Begin of row
+             */
 
-	    switch (resultFormat) {
-	    case Dbi_ResultFlatList: 
-	    case Dbi_ResultAvLists: 
-		break;
-	    case Dbi_ResultLists:
-	        rowObj = Tcl_NewListObj((int)numCols, NULL); 
-		break;
-	    case Dbi_ResultDict: 
-	    case Dbi_ResultDicts: 
-		rowObj = Tcl_NewDictObj(); 
-		break;
-	    case Dbi_ResultSets:  
-		set = Ns_SetCreate("r"); 
-		break;
-	    }
+            switch (resultFormat) {
+            case Dbi_ResultFlatList:
+            case Dbi_ResultAvLists:
+                break;
+            case Dbi_ResultLists:
+                rowObj = Tcl_NewListObj((int)numCols, NULL);
+                break;
+            case Dbi_ResultDict:
+            case Dbi_ResultDicts:
+                rowObj = Tcl_NewDictObj();
+                break;
+            case Dbi_ResultSets:
+                set = Ns_SetCreate("r");
+                break;
+            }
 
-	    /*
-	     * Columns 
-	     */
+            /*
+             * Columns
+             */
             for (colIdx = 0; colIdx < numCols; colIdx++) {
                 if (ColumnValue(interp, handle, colIdx, &valueObj) != TCL_OK) {
                     goto error;
                 }
 
-		if (resultFormat == Dbi_ResultFlatList) {
-		    if (Tcl_ListObjAppendElement(interp, resObj, valueObj) != TCL_OK) {
-			Tcl_DecrRefCount(valueObj);
-			goto error;
-		    }
-		} else if (resultFormat == Dbi_ResultLists) {
-		    if (Tcl_ListObjAppendElement(interp, rowObj, valueObj) != TCL_OK) {
-			Tcl_DecrRefCount(valueObj);
-			goto error;
-		    }
-		} else {
-		    assert(colV[colIdx] != NULL);
+                if (resultFormat == Dbi_ResultFlatList) {
+                    if (Tcl_ListObjAppendElement(interp, resObj, valueObj) != TCL_OK) {
+                        Tcl_DecrRefCount(valueObj);
+                        goto error;
+                    }
+                } else if (resultFormat == Dbi_ResultLists) {
+                    if (Tcl_ListObjAppendElement(interp, rowObj, valueObj) != TCL_OK) {
+                        Tcl_DecrRefCount(valueObj);
+                        goto error;
+                    }
+                } else {
+                    assert(colV[colIdx] != NULL);
 
-		    if (resultFormat == Dbi_ResultAvLists) {
+                    if (resultFormat == Dbi_ResultAvLists) {
 
-			templateV[colIdx*2 + 1] = valueObj;
-			
-		    } else if (resultFormat == Dbi_ResultDicts || resultFormat == Dbi_ResultDict) {
-			
-			if (Tcl_DictObjPut(interp, rowObj, colV[colIdx], valueObj) != TCL_OK) {
-			    Tcl_DecrRefCount(valueObj);
-			    goto error;
-			}
-		    } else if (resultFormat == Dbi_ResultSets) {
-			Ns_SetPutSz(set, Tcl_GetString(colV[colIdx]), Tcl_GetString(valueObj), -1);
-		    }
-		}
-	    }
+                        templateV[colIdx*2 + 1] = valueObj;
 
-	    /*
-	     * End of row
-	     */
+                    } else if (resultFormat == Dbi_ResultDicts || resultFormat == Dbi_ResultDict) {
 
-	    switch (resultFormat) {
-	    case Dbi_ResultFlatList: break;
-	    case Dbi_ResultSets: Ns_TclEnterSet(interp, set, 0); break;
-	    case Dbi_ResultDict:
-		{
-		    Tcl_Obj *idxObj = Tcl_NewLongObj(++rowNum);
-		    if (Tcl_DictObjPut(interp, resObj, idxObj, rowObj) != TCL_OK) {
-			Tcl_DecrRefCount(idxObj);
-			goto error;
-		    }
-		}
-		break;
-	    case Dbi_ResultAvLists: 
-	        rowObj = Tcl_NewListObj((int)numCols * 2, templateV); 
-		if (Tcl_ListObjAppendElement(interp, resObj, rowObj) != TCL_OK) {
-		    Tcl_DecrRefCount(rowObj);
-		    goto error;
-		}
-		break;
-	    case Dbi_ResultLists: 
-	    case Dbi_ResultDicts: 
-		if (Tcl_ListObjAppendElement(interp, resObj, rowObj) != TCL_OK) {
-		    Tcl_DecrRefCount(rowObj);
-		    goto error;
-		}
-		break;
-	    }
+                        if (Tcl_DictObjPut(interp, rowObj, colV[colIdx], valueObj) != TCL_OK) {
+                            Tcl_DecrRefCount(valueObj);
+                            goto error;
+                        }
+                    } else if (resultFormat == Dbi_ResultSets) {
+                        Ns_SetPutSz(set, Tcl_GetString(colV[colIdx]), Tcl_GetString(valueObj), -1);
+                    }
+                }
+            }
+
+            /*
+             * End of row
+             */
+
+            switch (resultFormat) {
+            case Dbi_ResultFlatList: break;
+            case Dbi_ResultSets: Ns_TclEnterSet(interp, set, 0); break;
+            case Dbi_ResultDict:
+                {
+                    Tcl_Obj *idxObj = Tcl_NewLongObj(++rowNum);
+                    if (Tcl_DictObjPut(interp, resObj, idxObj, rowObj) != TCL_OK) {
+                        Tcl_DecrRefCount(idxObj);
+                        goto error;
+                    }
+                }
+                break;
+            case Dbi_ResultAvLists:
+                rowObj = Tcl_NewListObj((int)numCols * 2, templateV);
+                if (Tcl_ListObjAppendElement(interp, resObj, rowObj) != TCL_OK) {
+                    Tcl_DecrRefCount(rowObj);
+                    goto error;
+                }
+                break;
+            case Dbi_ResultLists:
+            case Dbi_ResultDicts:
+                if (Tcl_ListObjAppendElement(interp, resObj, rowObj) != TCL_OK) {
+                    Tcl_DecrRefCount(rowObj);
+                    goto error;
+                }
+                break;
+            }
 
         }
     }
@@ -876,22 +876,22 @@ RowsObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[])
 
  done:
     PutHandle(idataPtr, handle);
-    
+
     if (colListObj != NULL && colsNameObj == NULL) {
-	/*
-	 * We have the object just for the names in the result
-	 */
-	Tcl_DecrRefCount(colListObj);
+        /*
+         * We have the object just for the names in the result
+         */
+        Tcl_DecrRefCount(colListObj);
     }
     if (templateV != NULL) {
-	ns_free(templateV);
+        ns_free(templateV);
     }
 
     return status;
 
  error:
     if (rowObj != NULL) {
-	Tcl_DecrRefCount(rowObj);
+        Tcl_DecrRefCount(rowObj);
     }
 
     status = TCL_ERROR;
@@ -937,15 +937,15 @@ ConvertObjCmd(ClientData UNUSED(clientData), Tcl_Interp *interp, int objc, Tcl_O
     }
 
     if ((Tcl_ListObjGetElements(interp, colsObj, &nrColumns, &colV) != TCL_OK)) {
-	return TCL_ERROR;
+        return TCL_ERROR;
     }
     if ((Tcl_ListObjGetElements(interp, listObj, &nrElements, &elemV) != TCL_OK)) {
-	return TCL_ERROR;
+        return TCL_ERROR;
     }
     if (nrColumns == 0 || nrColumns > nrElements || nrElements % nrColumns != 0) {
-	Tcl_SetObjResult(interp,
-			 Tcl_NewStringObj("dbi: number of elements in the list must be a multiple of the columns", -1));
-	return TCL_ERROR;
+        Tcl_SetObjResult(interp,
+                         Tcl_NewStringObj("dbi: number of elements in the list must be a multiple of the columns", -1));
+        return TCL_ERROR;
     }
 
     resObj = Tcl_GetObjResult(interp);
@@ -953,96 +953,96 @@ ConvertObjCmd(ClientData UNUSED(clientData), Tcl_Interp *interp, int objc, Tcl_O
 
     if (resultFormat == Dbi_ResultAvLists) {
         templateV = ns_calloc((size_t)(nrColumns * 2), sizeof(Tcl_Obj*));
-	for (colNum = 0; colNum < nrColumns; colNum++) {
-	    templateV[colNum * 2] = colV[colNum];
-	}
+        for (colNum = 0; colNum < nrColumns; colNum++) {
+            templateV[colNum * 2] = colV[colNum];
+        }
     }
 
     for (rowNum = 0; rowNum * nrColumns < nrElements; rowNum ++) {
-	Ns_Set *set = NULL;
+        Ns_Set *set = NULL;
 
-	switch (resultFormat) {
+        switch (resultFormat) {
 
-	case Dbi_ResultDicts:
-	    {
-		Tcl_Obj *dictObj = Tcl_NewDictObj(); 
+        case Dbi_ResultDicts:
+            {
+                Tcl_Obj *dictObj = Tcl_NewDictObj();
 
-		for (colNum = 0; colNum < nrColumns; colNum++) {
-		    if (Tcl_DictObjPut(interp, dictObj, 
-				       colV[colNum], 
-				       elemV[rowNum * nrColumns + colNum]) != TCL_OK) {
-			Tcl_DecrRefCount(dictObj);
-			goto error;
-		    }
-		}
-		if (Tcl_ListObjAppendElement(interp, resObj, dictObj) != TCL_OK) {
-		    Tcl_DecrRefCount(dictObj);
-		    goto error;
-		}
-	    }
-	    break;
+                for (colNum = 0; colNum < nrColumns; colNum++) {
+                    if (Tcl_DictObjPut(interp, dictObj,
+                                       colV[colNum],
+                                       elemV[rowNum * nrColumns + colNum]) != TCL_OK) {
+                        Tcl_DecrRefCount(dictObj);
+                        goto error;
+                    }
+                }
+                if (Tcl_ListObjAppendElement(interp, resObj, dictObj) != TCL_OK) {
+                    Tcl_DecrRefCount(dictObj);
+                    goto error;
+                }
+            }
+            break;
 
-	case Dbi_ResultAvLists:
-	    {
-		Tcl_Obj *rowObj;
+        case Dbi_ResultAvLists:
+            {
+                Tcl_Obj *rowObj;
 
-		for (colNum = 0; colNum < nrColumns; colNum++) {
-		    templateV[colNum*2 + 1] = elemV[rowNum * nrColumns + colNum];
-		}
-		rowObj = Tcl_NewListObj(nrColumns * 2, templateV); 
-		if (Tcl_ListObjAppendElement(interp, resObj, rowObj) != TCL_OK) {
-		    Tcl_DecrRefCount(rowObj);
-		    goto error;
-		}
-	    }
-	    break;
+                for (colNum = 0; colNum < nrColumns; colNum++) {
+                    templateV[colNum*2 + 1] = elemV[rowNum * nrColumns + colNum];
+                }
+                rowObj = Tcl_NewListObj(nrColumns * 2, templateV);
+                if (Tcl_ListObjAppendElement(interp, resObj, rowObj) != TCL_OK) {
+                    Tcl_DecrRefCount(rowObj);
+                    goto error;
+                }
+            }
+            break;
 
-	case Dbi_ResultDict: 
-	    {   Tcl_Obj* idxObj = Tcl_NewLongObj(rowNum), *rowObj;
+        case Dbi_ResultDict:
+            {   Tcl_Obj* idxObj = Tcl_NewLongObj(rowNum), *rowObj;
 
-		rowObj = Tcl_NewDictObj(); 
-		for (colNum = 0; colNum < nrColumns; colNum++) {
-		    if (Tcl_DictObjPut(interp, rowObj, 
-				       colV[colNum], 
-				       elemV[rowNum * nrColumns + colNum]) != TCL_OK) {
-			Tcl_DecrRefCount(rowObj);
-			goto error;
-		    }
-		}
-		if (Tcl_DictObjPut(interp, resObj, idxObj, rowObj) != TCL_OK) {
-		    Tcl_DecrRefCount(idxObj);
-		    Tcl_DecrRefCount(rowObj);
-		}
+                rowObj = Tcl_NewDictObj();
+                for (colNum = 0; colNum < nrColumns; colNum++) {
+                    if (Tcl_DictObjPut(interp, rowObj,
+                                       colV[colNum],
+                                       elemV[rowNum * nrColumns + colNum]) != TCL_OK) {
+                        Tcl_DecrRefCount(rowObj);
+                        goto error;
+                    }
+                }
+                if (Tcl_DictObjPut(interp, resObj, idxObj, rowObj) != TCL_OK) {
+                    Tcl_DecrRefCount(idxObj);
+                    Tcl_DecrRefCount(rowObj);
+                }
 
-		break;
-	    }
+                break;
+            }
 
-	case Dbi_ResultLists:
-	    {
-		Tcl_Obj *rowsObj = Tcl_NewListObj(nrColumns, &elemV[rowNum * nrColumns]); 
-		if (Tcl_ListObjAppendElement(interp, resObj, rowsObj) != TCL_OK) {
-		    Tcl_DecrRefCount(rowsObj);
-		    goto error;
-		}
-	    }
-	    break;
+        case Dbi_ResultLists:
+            {
+                Tcl_Obj *rowsObj = Tcl_NewListObj(nrColumns, &elemV[rowNum * nrColumns]);
+                if (Tcl_ListObjAppendElement(interp, resObj, rowsObj) != TCL_OK) {
+                    Tcl_DecrRefCount(rowsObj);
+                    goto error;
+                }
+            }
+            break;
 
-	case Dbi_ResultSets: 
-	    {
-		int length, *lengthPtr = &length;
-		set = Ns_SetCreate("r"); 
-		for (colNum = 0; colNum < nrColumns; colNum++) {
-		    Ns_SetPutSz(set, 
-				Tcl_GetString(colV[colNum]), 
-				Tcl_GetStringFromObj(elemV[rowNum * nrColumns + colNum], lengthPtr), 
-				length);
-		}
-		Ns_TclEnterSet(interp, set, 0);
-	    }
-	    break;
+        case Dbi_ResultSets:
+            {
+                int length, *lengthPtr = &length;
+                set = Ns_SetCreate("r");
+                for (colNum = 0; colNum < nrColumns; colNum++) {
+                    Ns_SetPutSz(set,
+                                Tcl_GetString(colV[colNum]),
+                                Tcl_GetStringFromObj(elemV[rowNum * nrColumns + colNum], lengthPtr),
+                                length);
+                }
+                Ns_TclEnterSet(interp, set, 0);
+            }
+            break;
 
-	case Dbi_ResultFlatList: break;
-	}
+        case Dbi_ResultFlatList: break;
+        }
 
     }
 
@@ -1051,7 +1051,7 @@ ConvertObjCmd(ClientData UNUSED(clientData), Tcl_Interp *interp, int objc, Tcl_O
 
  done:
     if (templateV != NULL) {
-	ns_free(templateV);
+        ns_free(templateV);
     }
     return status;
 
@@ -1111,7 +1111,7 @@ ForeachObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[
     /*
      * Get a handle, prepare, bind, and run the query.
      */
-    
+
     if (Exec(idataPtr, poolObj, timeoutPtr, queryObj, valuesObj, maxRows, 0, autoNull,
              &handle) != TCL_OK) {
         return TCL_ERROR;
@@ -1122,33 +1122,33 @@ ForeachObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[
 
     while ((status = NextRow(interp, handle, &end)) == TCL_OK && !end) {
 
-	for (colIdx = 0; colIdx < numCols; colIdx++) {
-	    if (ColumnValue(interp, handle, colIdx, &valueObj) != TCL_OK) {
-		goto error;
-	    }
+        for (colIdx = 0; colIdx < numCols; colIdx++) {
+            if (ColumnValue(interp, handle, colIdx, &valueObj) != TCL_OK) {
+                goto error;
+            }
 
-	    if (Dbi_ColumnName(handle, colIdx, &colName) != NS_OK) {
-		Dbi_TclErrorResult(interp, handle);
-		Tcl_DecrRefCount(valueObj);
-		goto error;
-	    }
+            if (Dbi_ColumnName(handle, colIdx, &colName) != NS_OK) {
+                Dbi_TclErrorResult(interp, handle);
+                Tcl_DecrRefCount(valueObj);
+                goto error;
+            }
 
-	    Tcl_SetVar2Ex(interp, colName, NULL, valueObj, 0);
-	}
+            Tcl_SetVar2Ex(interp, colName, NULL, valueObj, 0);
+        }
 
-	status = Tcl_EvalObjEx(interp, bodyObj, 0);
+        status = Tcl_EvalObjEx(interp, bodyObj, 0);
 
-	if (status != TCL_OK) {
-	    if (status == TCL_BREAK) {
-		status = TCL_OK;
-	    } else if (status == TCL_CONTINUE) {
-		continue;
-	    } else {
-		break;
-	    }
-	}
+        if (status != TCL_OK) {
+            if (status == TCL_BREAK) {
+                status = TCL_OK;
+            } else if (status == TCL_CONTINUE) {
+                continue;
+            } else {
+                break;
+            }
+        }
     }
-    
+
  done:
     PutHandle(idataPtr, handle);
 
@@ -1218,7 +1218,7 @@ DmlObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[])
      */
 
     if (handle->numRowsHint != DBI_NUM_ROWS_UNKNOWN) {
-	Tcl_SetObjResult(interp, Tcl_NewLongObj(handle->numRowsHint));
+        Tcl_SetObjResult(interp, Tcl_NewLongObj(handle->numRowsHint));
     }
 
     PutHandle(idataPtr, handle);
@@ -1439,7 +1439,7 @@ EvalObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[])
      */
 
     if (isolation != -1
-	&& Dbi_Begin(handle, (Dbi_Isolation)isolation) != NS_OK) {
+        && Dbi_Begin(handle, (Dbi_Isolation)isolation) != NS_OK) {
         Dbi_TclErrorResult(interp, handle);
         goto done;
     }
@@ -1495,11 +1495,14 @@ EvalObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[])
 static int
 CtlObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[])
 {
-    InterpData *idataPtr = arg;
-    const char *server = idataPtr->server;
-    Dbi_Pool   *pool;
-    Ns_DString  ds;
-    int         cmd, oldValue, newValue;
+    InterpData  *idataPtr = arg;
+    const char  *server = idataPtr->server;
+    Dbi_Pool    *pool;
+    Ns_DString   ds;
+    int          cmd, newIntValue, result = TCL_OK;
+    Tcl_Obj      *resultObj;
+    Ns_Time      newTimeValue = {0, 0}, oldTimeValue, *newTimeValuePtr = NULL;
+    static const Ns_ObjvTimeRange posTimeRange0 = {{0, 0}, {LONG_MAX, 0}};
 
     static const char *cmds[] = {
         "bounce", "database", "dblist", "default", "driver",
@@ -1536,7 +1539,7 @@ CtlObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[])
     case CDefaultCmd:
         pool = Dbi_DefaultPool(server);
         if (pool != NULL) {
-	    Tcl_SetObjResult(interp, Tcl_NewStringObj(Dbi_PoolName(pool), -1));
+            Tcl_SetObjResult(interp, Tcl_NewStringObj(Dbi_PoolName(pool), -1));
         }
         if (objc == 3) {
 
@@ -1582,43 +1585,69 @@ CtlObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[])
      */
 
     if (objc == 4) {
-        if (Tcl_GetIntFromObj(interp, objv[3], &newValue) != TCL_OK) {
-            return TCL_ERROR;
-        }
+      switch (cmd) {
+      case CMaxHandlesCmd:
+      case CMaxRowsCmd:
+      case CMaxQueriesCmd:
+          if (Tcl_GetIntFromObj(interp, objv[3], &newIntValue) != TCL_OK) {
+              return TCL_ERROR;
+          }
+          break;
+
+      case CMaxIdleCmd:
+      case CMaxOpenCmd:
+      case CTimeoutCmd:
+          if (Ns_GetTimeFromString(interp, Tcl_GetString(objv[3]), &newTimeValue) != TCL_OK) {
+              return TCL_ERROR;
+          }
+          if (Ns_CheckTimeRange(interp, Tcl_GetString(objv[3]), &posTimeRange0, &newTimeValue) != TCL_OK) {
+              return TCL_ERROR;
+          }
+          newTimeValuePtr = &newTimeValue;
+          break;
+      }
     } else {
-        newValue = -1;
+        newIntValue = -1;
+        newTimeValuePtr = NULL;
     }
 
     switch (cmd) {
     case CMaxHandlesCmd:
-        oldValue = Dbi_Config(pool, DBI_CONFIG_MAXHANDLES, newValue);
+        resultObj = Tcl_NewIntObj(Dbi_ConfigInt(pool, DBI_CONFIG_MAXHANDLES, newIntValue));
         break;
 
     case CMaxRowsCmd:
-        oldValue = Dbi_Config(pool, DBI_CONFIG_MAXROWS, newValue);
-        break;
-
-    case CMaxIdleCmd:
-        oldValue = Dbi_Config(pool, DBI_CONFIG_MAXIDLE, newValue);
-        break;
-
-    case CMaxOpenCmd:
-        oldValue = Dbi_Config(pool, DBI_CONFIG_MAXOPEN, newValue);
+        resultObj = Tcl_NewIntObj(Dbi_ConfigInt(pool, DBI_CONFIG_MAXROWS, newIntValue));
         break;
 
     case CMaxQueriesCmd:
-        oldValue = Dbi_Config(pool, DBI_CONFIG_MAXQUERIES, newValue);
+        resultObj = Tcl_NewIntObj(Dbi_ConfigInt(pool, DBI_CONFIG_MAXQUERIES, newIntValue));
+        break;
+
+
+    case CMaxIdleCmd:
+        Dbi_ConfigTime(pool, DBI_CONFIG_MAXIDLE, newTimeValuePtr, &oldTimeValue);
+        resultObj = Ns_TclNewTimeObj(&oldTimeValue);
+        break;
+
+    case CMaxOpenCmd:
+        Dbi_ConfigTime(pool, DBI_CONFIG_MAXOPEN, newTimeValuePtr, &oldTimeValue);
+        resultObj = Ns_TclNewTimeObj(&oldTimeValue);
         break;
 
     case CTimeoutCmd:
-        oldValue = Dbi_Config(pool, DBI_CONFIG_TIMEOUT, newValue);
+        Dbi_ConfigTime(pool, DBI_CONFIG_TIMEOUT, newTimeValuePtr, &oldTimeValue);
+        resultObj = Ns_TclNewTimeObj(&oldTimeValue);
         break;
-    default:
-	oldValue = -1;
-    }
-    Tcl_SetIntObj(Tcl_GetObjResult(interp), oldValue);
 
-    return TCL_OK;
+    default:
+        resultObj = Tcl_NewStringObj("INVALID CMD", -1);
+        result = TCL_ERROR;
+        break;
+    }
+    Tcl_SetObjResult(interp, resultObj);
+
+    return result;
 }
 
 
@@ -1642,7 +1671,7 @@ CtlObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[])
 
 static int
 Exec(InterpData *idataPtr, Tcl_Obj *poolObj, Ns_Time *timeoutPtr,
-     Tcl_Obj *queryObj, Tcl_Obj *valuesObj, int maxRows, int dml, 
+     Tcl_Obj *queryObj, Tcl_Obj *valuesObj, int maxRows, int dml,
      int autoNull, Dbi_Handle **handlePtrPtr)
 {
     Tcl_Interp       *interp = idataPtr->interp;
@@ -1782,3 +1811,12 @@ ColumnValue(Tcl_Interp *interp, Dbi_Handle *handle, unsigned int index,
 
     return TCL_OK;
 }
+
+/*
+ * Local Variables:
+ * mode: c
+ * c-basic-offset: 4
+ * fill-column: 72
+ * indent-tabs-mode: nil
+ * End:
+ */

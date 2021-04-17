@@ -379,7 +379,7 @@ default if you routinely run into this limit. [emph -1] means no limit.
 [opt_def "maxidle [arg db] [opt [arg maxidle]]"]
 This is the number of seconds that an open handle will linger
 unused, after which it is automatically closed (handles are checked every
-[emph checkinterval] seconds). The default is
+[emph checkinterval] time units). The default is
 0, which means handles are never closed due to idleness.
 
 [opt_def "maxopen [arg db] [opt [arg maxopen]]"]
@@ -537,36 +537,39 @@ driver [term nsdbipg]. Drivers can be loaded more than once to create
 multiple pools of database handles, each with it's own configuration options.
 
 [example_begin]
-[cmd ns_section] "ns/modules"
-[cmd ns_param]   [arg global1]       [arg nsdbipg.so]
-[cmd ns_param]   [arg global2]       [arg nsdbipg.so]
-...
+[cmd ns_section] "ns/modules" {
+  [cmd ns_param]   [arg global1]       [arg nsdbipg.so]
+  [cmd ns_param]   [arg global2]       [arg nsdbipg.so]
+  ...
+}
+   
+[cmd ns_section] "ns/server/server1/modules" {
+  [cmd ns_param]   [arg db3]           [arg nsdbipg.so]
+  [cmd ns_param]   [arg db4]           [arg nsdbipg.so]
+  ...
+}
+  
+[cmd ns_section] "ns/server/server1/module/[arg db4]" {
+   
+  # The following parameters can be changed at runtime using [cmd dbi_ctl]
+  # and are explained above.
+   
+  [cmd ns_param]   [arg default]       true
+  [cmd ns_param]   [arg maxhandles]    0
+  [cmd ns_param]   [arg timeout]       10s
+  [cmd ns_param]   [arg maxidle]       0s
+  [cmd ns_param]   [arg maxopen]       0s
+  [cmd ns_param]   [arg maxqueries]    0
+  [cmd ns_param]   [arg maxrows]       1000
  
-[cmd ns_section] "ns/server/server1/modules"
-[cmd ns_param]   [arg db3]           [arg nsdbipg.so]
-[cmd ns_param]   [arg db4]           [arg nsdbipg.so]
-...
+  # The following parameters are configured at server-startup.
  
-[cmd ns_section] "ns/server/server1/module/[arg db4]"
- 
-# The following parameters can be changed at runtime using [cmd dbi_ctl]
-# and are explained above.
- 
-[cmd ns_param]   [arg default]       true
-[cmd ns_param]   [arg maxhandles]    0
-[cmd ns_param]   [arg timeout]       10
-[cmd ns_param]   [arg maxidle]       0
-[cmd ns_param]   [arg maxopen]       0
-[cmd ns_param]   [arg maxqueries]    0
-[cmd ns_param]   [arg maxrows]       1000
- 
-# The following parameters are configured at server-startup.
- 
-[cmd ns_param]   [arg user]          dbusername
-[cmd ns_param]   [arg password]      dbpassword
-[cmd ns_param]   [arg database]      dbname
-[cmd ns_param]   [arg cachesize]     [lb]expr 1024*1024[rb]
-[cmd ns_param]   [arg checkinterval] 600
+  [cmd ns_param]   [arg user]          dbusername
+  [cmd ns_param]   [arg password]      dbpassword
+  [cmd ns_param]   [arg database]      dbname
+  [cmd ns_param]   [arg cachesize]     1MB
+  [cmd ns_param]   [arg checkinterval] 5m
+}
 [example_end]
 
 Standard configuration options which are available with every driver:
