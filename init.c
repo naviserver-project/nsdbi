@@ -413,7 +413,7 @@ Dbi_RegisterDriver(const char *server, const char *module,
     Ns_CondInit(&poolPtr->cond);
 
     poolPtr->module     = ns_strdup(module);
-    poolPtr->cachesize  = (size_t)Ns_ConfigMemUnitRange(path, "cachesize", 1024*1024, 0, INT_MAX);
+    poolPtr->cachesize  = (size_t)Ns_ConfigMemUnitRange(path, "cachesize", "1MB", 1024*1024, 0, INT_MAX);
     poolPtr->maxhandles = Ns_ConfigIntRange(path, "maxhandles", 0,          0, INT_MAX);
     poolPtr->maxRows    = Ns_ConfigIntRange(path, "maxrows",    1000,    1000, INT_MAX);
     poolPtr->maxqueries = Ns_ConfigIntRange(path, "maxqueries", 0,          0, INT_MAX);
