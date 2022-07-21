@@ -833,7 +833,10 @@ RowsObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[])
                             goto error;
                         }
                     } else if (resultFormat == Dbi_ResultSets) {
-                        Ns_SetPutSz(set, Tcl_GetString(colV[colIdx]), Tcl_GetString(valueObj), -1);
+                        int coldIdxLength, valueLength;
+                        const char *coldIdxString = Tcl_GetStringFromObj(colV[colIdx], &coldIdxLength);
+                        const char *valueString = Tcl_GetStringFromObj(valueObj, &valueLength);
+                        Ns_SetPutSz(set, coldIdxString, coldIdxLength, valueString, valueLength);
                     }
                 }
             }
@@ -1029,13 +1032,15 @@ ConvertObjCmd(ClientData UNUSED(clientData), Tcl_Interp *interp, int objc, Tcl_O
 
         case Dbi_ResultSets:
             {
-                int length, *lengthPtr = &length;
                 set = Ns_SetCreate("r");
                 for (colNum = 0; colNum < nrColumns; colNum++) {
+                    int        valueLength, attrLength;
+                    const char *attrString = Tcl_GetStringFromObj(elemV[colNum], &attrLength);
+                    const char *valueString = Tcl_GetStringFromObj(elemV[rowNum * nrColumns + colNum],
+                                                                   &valueLength);
                     Ns_SetPutSz(set,
-                                Tcl_GetString(colV[colNum]),
-                                Tcl_GetStringFromObj(elemV[rowNum * nrColumns + colNum], lengthPtr),
-                                length);
+                                attrString, attrLength,
+                                valueString, valueLength);
                 }
                 Ns_TclEnterSet(interp, set, 0);
             }
