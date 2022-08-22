@@ -197,7 +197,7 @@ DbiTclSubstTemplate(Tcl_Interp *interp, Dbi_Handle *handle,
     int           *varColMap, end, len;
     int            stream = 0, colIdx;
     size_t         maxBuffer = 0u;
-    unsigned int   tokIdx, varIdx, numCols, numRows;
+    unsigned int   tokIdx, varIdx, numRows;
 
     /*
      * Convert the template into a stream of text + variable tokens.
@@ -230,7 +230,6 @@ DbiTclSubstTemplate(Tcl_Interp *interp, Dbi_Handle *handle,
      * variables to the final result.
      */
 
-    numCols = Dbi_NumColumns(handle);
     numRows = 0;
 
     while (NextRow(interp, handle, &end) == TCL_OK
