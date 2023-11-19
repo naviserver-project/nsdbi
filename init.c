@@ -478,6 +478,9 @@ Dbi_RegisterDriver(const char *server, const char *module,
         for (i = 0; i < Ns_SetSize(set); i++) {
             const char *serverString = Ns_SetKey(set, i);
 
+            /*
+             * Here, a class Ns_IsValidServer(serverString) would be nice.
+             */
             if (Ns_TclRegisterTrace(serverString, DbiInitInterp, serverString,
                                     NS_TCL_TRACE_CREATE) != NS_OK) {
                 Ns_Log(Error, "dbi: error registering tcl commands for server '%s'",

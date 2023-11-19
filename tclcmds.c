@@ -166,15 +166,6 @@ DbiInitInterp(Tcl_Interp *interp, const void *UNUSED(arg))
     int          i;
     static int   once = 0;
 
-    if (!once) {
-        once = 1;
-
-        bytearrayTypePtr = Tcl_GetObjType("bytearray");
-        if (bytearrayTypePtr == NULL) {
-            Tcl_Panic("dbi: \"bytearray\" type not defined");
-        }
-    }
-
     static struct {
         const char     *name;
         Tcl_ObjCmdProc *proc;
@@ -188,6 +179,16 @@ DbiInitInterp(Tcl_Interp *interp, const void *UNUSED(arg))
         {"dbi_ctl",         CtlObjCmd},
         {"dbi_convert",     ConvertObjCmd}
     };
+
+    if (!once) {
+        once = 1;
+
+        bytearrayTypePtr = Tcl_GetObjType("bytearray");
+        if (bytearrayTypePtr == NULL) {
+            Tcl_Panic("dbi: \"bytearray\" type not defined");
+        }
+    }
+
 
     idataPtr = GetInterpData(interp);
 
@@ -481,7 +482,7 @@ Dbi_TclBindVariables(Tcl_Interp *interp, Dbi_Handle *handle,
     const char     *key;
     char           *name;
     unsigned int    numVars, i;
-    int             length = 0;
+    TCL_SIZE_T      length = 0;
 
     numVars = Dbi_NumVariables(handle);
     if (numVars == 0) {
@@ -492,7 +493,7 @@ Dbi_TclBindVariables(Tcl_Interp *interp, Dbi_Handle *handle,
     name = NULL;
 
     if (tclValues != NULL) {
-        int valuesLength = 0;
+        TCL_SIZE_T valuesLength = 0;
 
         /*
          * If the provided value for bind has a valuesLength of 1, then it
@@ -735,7 +736,7 @@ RowsObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[])
 
         if (colsNameObj != NULL
             || (resultFormat != Dbi_ResultFlatList && resultFormat != Dbi_ResultLists )) {
-            int nrElements;
+            TCL_SIZE_T nrElements;
 
 
             colListObj = Tcl_NewListObj((int)numCols, NULL);
@@ -833,7 +834,7 @@ RowsObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[])
                             goto error;
                         }
                     } else if (resultFormat == Dbi_ResultSets) {
-                        int coldIdxLength, valueLength;
+                        TCL_SIZE_T coldIdxLength, valueLength;
                         const char *coldIdxString = Tcl_GetStringFromObj(colV[colIdx], &coldIdxLength);
                         const char *valueString = Tcl_GetStringFromObj(valueObj, &valueLength);
                         Ns_SetPutSz(set, coldIdxString, coldIdxLength, valueString, valueLength);
@@ -920,7 +921,7 @@ RowsObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[])
 static int
 ConvertObjCmd(ClientData UNUSED(clientData), Tcl_Interp *interp, int objc, Tcl_Obj *const objv[])
 {
-    int              nrColumns, nrElements;
+    TCL_SIZE_T       nrColumns, nrElements;
     Tcl_Obj         *resObj, *colsObj, *listObj, **colV, **elemV, **templateV = NULL;
     int              colNum, status, rowNum;
     Dbi_resultFormat resultFormat = Dbi_ResultLists;
@@ -1034,7 +1035,7 @@ ConvertObjCmd(ClientData UNUSED(clientData), Tcl_Interp *interp, int objc, Tcl_O
             {
                 set = Ns_SetCreate("r");
                 for (colNum = 0; colNum < nrColumns; colNum++) {
-                    int        valueLength, attrLength;
+                    TCL_SIZE_T  valueLength, attrLength;
                     const char *attrString = Tcl_GetStringFromObj(elemV[colNum], &attrLength);
                     const char *valueString = Tcl_GetStringFromObj(elemV[rowNum * nrColumns + colNum],
                                                                    &valueLength);
@@ -1685,7 +1686,7 @@ Exec(InterpData *idataPtr, Tcl_Obj *poolObj, Ns_Time *timeoutPtr,
     Dbi_Value         dbValues[DBI_MAX_BIND];
     unsigned int      numCols;
     char             *query;
-    int               qlength;
+    TCL_SIZE_T        qlength;
 
     /*
      * Grab a free handle, possibly from the interp cache.
