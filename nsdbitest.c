@@ -395,13 +395,11 @@ PrepareClose(Dbi_Handle *handle, Dbi_Statement *stmt)
 {
 #ifndef NDEBUG
     Connection *conn = handle->driverData;
-#else
-    (void)handle;
 #endif
+    assert(handle);
+    assert(stmt);
 
-    assert(handle != NULL);
-    assert(stmt != NULL);
-    assert(conn != NULL);
+    assert(conn);
     assert(STREQ(conn->configData, "driver config data"));
 
     assert((stmt->nqueries == 0 && !stmt->driverData)
@@ -434,8 +432,7 @@ Exec(Dbi_Handle *handle, Dbi_Statement *stmt,
     Connection *conn = handle->driverData;
     size_t      i;
 
-    assert(stmt != NULL);
-    (void)stmt;
+    assert(stmt);
 
     assert(numValues <= DBI_MAX_BIND);
     assert(numValues == 0 || (numValues > 0 && values != NULL));
@@ -471,7 +468,7 @@ Exec(Dbi_Handle *handle, Dbi_Statement *stmt,
             if (values[i].binary) {
                 Ns_DStringPrintf(&conn->ds, " %" PRIdz, values[i].length);
             } else {
-                Tcl_DStringAppendElement(&conn->ds, values[i].length > 0 ? values[i].data : "");
+	        Tcl_DStringAppendElement(&conn->ds, values[i].length > 0 ? values[i].data : "");
             }
         }
         if (conn->rest) {
@@ -490,14 +487,14 @@ Exec(Dbi_Handle *handle, Dbi_Statement *stmt,
          */
 
         for (i = 0; i < numValues; i++) {
-            size_t j;
+	    size_t j;
 
             if (!values[i].binary) {
-                Ns_Fatal("BINARY: values[%d].binary not 1", (int)i);
+	        Ns_Fatal("BINARY: values[%d].binary not 1", (int)i);
             }
             for (j = 0; j < values[i].length; j++) {
                 if (values[i].data[j] != '\0') {
-                    Ns_Fatal("BINARY: values[%d].data[%d] not '\\0'", (int)i, (int)j);
+		    Ns_Fatal("BINARY: values[%d].data[%d] not '\\0'", (int)i, (int)j);
                 }
             }
         }
@@ -565,10 +562,10 @@ NextRow(Dbi_Handle *handle, Dbi_Statement *stmt, int *endPtr)
 {
     Connection *conn = handle->driverData;
 
-    (void)stmt;
-    assert(stmt != NULL);
-    assert(endPtr != NULL);
-    assert(conn != NULL);
+    assert(stmt);
+    assert(endPtr);
+
+    assert(conn);
     assert(STREQ(conn->configData, "driver config data"));
     assert(conn->connected == NS_TRUE);
 
@@ -622,7 +619,6 @@ ColumnLength(Dbi_Handle *handle, Dbi_Statement *stmt, unsigned int index,
 {
     Connection *conn = handle->driverData;
 
-    (void)stmt;
     assert(stmt != NULL);
     assert(lengthPtr != NULL);
     assert(binaryPtr != NULL);
@@ -637,8 +633,8 @@ ColumnLength(Dbi_Handle *handle, Dbi_Statement *stmt, unsigned int index,
     assert(index < conn->numCols);
 
     if (handle->rowIdx == 0
-        && index == 0
-        && conn->rest) {
+	&& index == 0
+	&& conn->rest) {
 
         *lengthPtr = (size_t)Ns_DStringLength(&conn->ds);
         *binaryPtr = 0;
@@ -687,10 +683,10 @@ ColumnValue(Dbi_Handle *handle, Dbi_Statement *stmt, unsigned int index,
     Connection        *conn = handle->driverData;
     static const char  binaryValue[8];
 
-    (void)stmt;
-    assert(stmt != NULL);
-    assert(value != NULL);
-    assert(conn != NULL);
+    assert(stmt);
+    assert(value);
+
+    assert(conn);
     assert(STREQ(conn->configData, "driver config data"));
     assert(conn->connected == NS_TRUE);
 
@@ -753,10 +749,10 @@ ColumnName(Dbi_Handle *handle, Dbi_Statement *stmt,
 {
     Connection *conn = handle->driverData;
 
-    (void)stmt;
-    assert(stmt != NULL);
-    assert(columnPtr != NULL);
-    assert(conn != NULL);
+    assert(stmt);
+    assert(columnPtr);
+
+    assert(conn);
     assert(STREQ(conn->configData, "driver config data"));
     assert(conn->connected == NS_TRUE);
     /* assert(Ns_DStringLength(&conn->ds) > 0); */
@@ -814,10 +810,11 @@ Flush(Dbi_Handle *handle, Dbi_Statement *stmt)
 {
     Connection *conn = handle->driverData;
 
-    (void)stmt;
-    assert(stmt != NULL);
-    assert(conn != NULL);
+    assert(stmt);
+
+    assert(conn);
     assert(STREQ(conn->configData, "driver config data"));
+
 
     Ns_DStringSetLength(&conn->ds, 0);
     conn->exec = 0;

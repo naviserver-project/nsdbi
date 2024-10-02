@@ -72,12 +72,15 @@ static Tcl_FreeInternalRepProc FreeTemplateObj;
  * Static variables defined in this file.
  */
 
-static Tcl_ObjType templateType = {
+static CONST86 Tcl_ObjType templateType = {
     "dbi:template",
     FreeTemplateObj,
     (Tcl_DupInternalRepProc *) NULL,
     (Tcl_UpdateStringProc *) NULL,
     Ns_TclSetFromAnyError
+#ifdef TCL_OBJTYPE_V0
+   ,TCL_OBJTYPE_V0
+#endif
 };
 
 /*
@@ -194,8 +197,7 @@ DbiTclSubstTemplate(Tcl_Interp *interp, Dbi_Handle *handle,
     Tcl_Obj       *resObj;
     Ns_DString    *dsPtr;
     const char    *parity;
-    int           *varColMap, end;
-    TCL_SIZE_T     len;
+    int           *varColMap, end, len;
     int            stream = 0, colIdx;
     size_t         maxBuffer = 0u;
     unsigned int   tokIdx, varIdx, numRows;
@@ -318,7 +320,7 @@ DbiTclSubstTemplate(Tcl_Interp *interp, Dbi_Handle *handle,
     if (numRows == 0) {
         if (defaultObj != NULL) {
             if (adp) {
-                char *def = Tcl_GetStringFromObj(defaultObj, &len);
+		char *def = Tcl_GetStringFromObj(defaultObj, &len);
 
                 if (Ns_AdpAppend(interp, def, len) != TCL_OK) {
                     return TCL_ERROR;
@@ -357,10 +359,9 @@ static int
 AppendValue(Tcl_Interp *interp, Dbi_Handle *handle, unsigned int index,
             Tcl_Obj *resObj, Ns_DString *dsPtr, Dbi_quotingLevel quote)
 {
-    size_t     valueLength;
-    int        binary;
-    TCL_SIZE_T resultLength;
-    char      *bytes;
+    size_t  valueLength;
+    int     resultLength, binary;
+    char   *bytes;
 
     if (Dbi_ColumnLength(handle, index, &valueLength, &binary) != NS_OK) {
         Dbi_TclErrorResult(interp, handle);
@@ -437,9 +438,9 @@ static int
 AppendTokenVariable(Tcl_Interp *interp, Tcl_Token *tokenPtr,
                     Tcl_Obj *resObj, Ns_DString *dsPtr, Dbi_quotingLevel quote)
 {
-    Tcl_Obj   *objPtr;
-    char      *name, *value, save;
-    TCL_SIZE_T size;
+    Tcl_Obj *objPtr;
+    char    *name, *value, save;
+    int      size;
 
     /* NB: Skip past leading '$' */
     name = (char *) tokenPtr->start + 1;
@@ -535,8 +536,7 @@ GetTemplateFromObj(Tcl_Interp *interp, Dbi_Handle *handle, Tcl_Obj *templateObj,
     Tcl_Parse  *parsePtr;
     Tcl_Token  *tokenPtr;
     char       *string, *p;
-    int         varIdx, numVarTokens;
-    TCL_SIZE_T  length;
+    int         length, varIdx, numVarTokens;
 
     /*
      * Check for cached representation.

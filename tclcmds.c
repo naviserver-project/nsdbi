@@ -66,7 +66,7 @@ typedef struct InterpData {
  * Static functions defined in this file
  */
 
-static Tcl_ObjCmdProc
+static TCL_OBJCMDPROC_T
     RowsObjCmd,
     DmlObjCmd,
     ZeroOrOneRowObjCmd,
@@ -79,7 +79,7 @@ static Tcl_ObjCmdProc
 static InterpData *GetInterpData(Tcl_Interp *interp);
 static Tcl_InterpDeleteProc FreeInterpData;
 
-static int RowCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[],
+static int RowCmd(ClientData arg, Tcl_Interp *interp, TCL_SIZE_T objc, Tcl_Obj *const objv[],
                   int *foundRowPtr);
 
 static int Exec(InterpData *idataPtr, Tcl_Obj *poolObj, Ns_Time *timeoutPtr,
@@ -163,12 +163,28 @@ int
 DbiInitInterp(Tcl_Interp *interp, const void *UNUSED(arg))
 {
     InterpData  *idataPtr;
-    int          i;
+    TCL_SIZE_T          i;
     static int   once = 0;
+
+    if (!once) {
+        once = 1;
+
+        bytearrayTypePtr = Tcl_GetObjType("bytearray");
+
+        if (bytearrayTypePtr == NULL) {
+            Tcl_Obj *newByteObj = Tcl_NewByteArrayObj(NULL, 0);
+
+            bytearrayTypePtr = newByteObj->typePtr;
+        }
+
+        if (bytearrayTypePtr == NULL) {
+            Tcl_Panic("dbi: \"bytearray\" type not defined");
+        }
+    }
 
     static struct {
         const char     *name;
-        Tcl_ObjCmdProc *proc;
+        TCL_OBJCMDPROC_T *proc;
     } cmds[] = {
         {"dbi_rows",        RowsObjCmd},
         {"dbi_0or1row",     ZeroOrOneRowObjCmd},
@@ -180,20 +196,10 @@ DbiInitInterp(Tcl_Interp *interp, const void *UNUSED(arg))
         {"dbi_convert",     ConvertObjCmd}
     };
 
-    if (!once) {
-        once = 1;
-
-        bytearrayTypePtr = Tcl_GetObjType("bytearray");
-        if (bytearrayTypePtr == NULL) {
-            Tcl_Panic("dbi: \"bytearray\" type not defined");
-        }
-    }
-
-
     idataPtr = GetInterpData(interp);
 
     for (i = 0; i < (int)(sizeof(cmds) / sizeof(cmds[0])); i++) {
-        Tcl_CreateObjCommand(interp, cmds[i].name, cmds[i].proc, idataPtr, NULL);
+        TCL_CREATEOBJCOMMAND(interp, cmds[i].name, cmds[i].proc, idataPtr, NULL);
     }
 
     return TCL_OK;
@@ -335,7 +341,7 @@ GetHandle(InterpData *idataPtr, Dbi_Pool *pool, Ns_Time *timeoutPtr)
     Tcl_Interp *interp = idataPtr->interp;
     Dbi_Handle *handle;
     Ns_Time     time;
-    int         i;
+    TCL_SIZE_T         i;
 
     /*
      * First check the handle cache for a handle from the right pool.
@@ -399,7 +405,7 @@ Dbi_TclPutHandle(Tcl_Interp *interp, Dbi_Handle *handle)
 static void
 PutHandle(InterpData *idataPtr, Dbi_Handle *handle)
 {
-    int i;
+    TCL_SIZE_T i;
 
     for (i = idataPtr->depth; i > -1; i--) {
         if (idataPtr->handles[i] == handle) {
@@ -552,7 +558,7 @@ Dbi_TclBindVariables(Tcl_Interp *interp, Dbi_Handle *handle,
 
         if (set != NULL) {
             if ((data = Ns_SetGet(set, key)) != NULL) {
-                length = (int)strlen(data);
+                length = (TCL_SIZE_T)strlen(data);
             }
 
         } else {
@@ -659,7 +665,7 @@ Dbi_TclErrorResult(Tcl_Interp *interp, Dbi_Handle *handle)
  */
 
 static int
-RowsObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[])
+RowsObjCmd(ClientData arg, Tcl_Interp *interp, TCL_SIZE_T objc, Tcl_Obj *const objv[])
 {
     InterpData   *idataPtr = arg;
     Dbi_Handle   *handle;
@@ -919,7 +925,7 @@ RowsObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[])
  */
 
 static int
-ConvertObjCmd(ClientData UNUSED(clientData), Tcl_Interp *interp, int objc, Tcl_Obj *const objv[])
+ConvertObjCmd(ClientData UNUSED(clientData), Tcl_Interp *interp, TCL_SIZE_T objc, Tcl_Obj *const objv[])
 {
     TCL_SIZE_T       nrColumns, nrElements;
     Tcl_Obj         *resObj, *colsObj, *listObj, **colV, **elemV, **templateV = NULL;
@@ -1085,7 +1091,7 @@ ConvertObjCmd(ClientData UNUSED(clientData), Tcl_Interp *interp, int objc, Tcl_O
  *----------------------------------------------------------------------
  */
 static int
-ForeachObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[])
+ForeachObjCmd(ClientData arg, Tcl_Interp *interp, TCL_SIZE_T objc, Tcl_Obj *const objv[])
 {
     InterpData   *idataPtr = arg;
     Dbi_Handle   *handle;
@@ -1185,7 +1191,7 @@ ForeachObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[
  */
 
 static int
-DmlObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[])
+DmlObjCmd(ClientData arg, Tcl_Interp *interp, TCL_SIZE_T objc, Tcl_Obj *const objv[])
 {
     InterpData   *idataPtr = arg;
     Dbi_Handle   *handle;
@@ -1250,7 +1256,7 @@ DmlObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[])
  */
 
 static int
-ZeroOrOneRowObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[])
+ZeroOrOneRowObjCmd(ClientData arg, Tcl_Interp *interp, TCL_SIZE_T objc, Tcl_Obj *const objv[])
 {
     int foundRow;
 
@@ -1263,7 +1269,7 @@ ZeroOrOneRowObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *const 
 }
 
 static int
-OneRowObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[])
+OneRowObjCmd(ClientData arg, Tcl_Interp *interp, TCL_SIZE_T objc, Tcl_Obj *const objv[])
 {
     int foundRow;
 
@@ -1278,7 +1284,7 @@ OneRowObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[]
 }
 
 static int
-RowCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[],
+RowCmd(ClientData arg, Tcl_Interp *interp, TCL_SIZE_T objc, Tcl_Obj *const objv[],
        int *foundRowPtr)
 {
     InterpData   *idataPtr = arg;
@@ -1400,7 +1406,7 @@ RowCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[],
  */
 
 static int
-EvalObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[])
+EvalObjCmd(ClientData arg, Tcl_Interp *interp, TCL_SIZE_T objc, Tcl_Obj *const objv[])
 {
     InterpData      *idataPtr = arg;
     Dbi_Pool        *pool;
@@ -1499,7 +1505,7 @@ EvalObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[])
  */
 
 static int
-CtlObjCmd(ClientData arg, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[])
+CtlObjCmd(ClientData arg, Tcl_Interp *interp, TCL_SIZE_T objc, Tcl_Obj *const objv[])
 {
     InterpData  *idataPtr = arg;
     const char  *server = idataPtr->server;
