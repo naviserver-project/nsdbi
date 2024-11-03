@@ -44,7 +44,7 @@ test dbi-stress-1 {stability...} -constraints stress -body {
                 }
             }
 
-            ns_log notice thread finnished
+            ns_log notice thread finished
         }]
 
     }

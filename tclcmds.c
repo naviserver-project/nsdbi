@@ -257,7 +257,7 @@ FreeInterpData(ClientData arg, Tcl_Interp *UNUSED(interp))
  *        1) Return the pool of the current handle from dbi_eval
  *        2) Use the server default pool. If this fails, return NULL
  *
- *      Otheriwse:
+ *      Otherwise:
  *        3) Look up the pool using the given pool name. If no such
  *           pool, return NULL.
  *
@@ -1560,7 +1560,7 @@ CtlObjCmd(ClientData arg, Tcl_Interp *interp, TCL_SIZE_T objc, Tcl_Obj *const ob
     }
 
     /*
-     * All other commands require a db to opperate on.
+     * All other commands require a db to operate on.
      */
 
     if (objc != 3 && objc != 4) {

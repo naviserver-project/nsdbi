@@ -37,7 +37,7 @@
 
    The goal is to abstract pool names from Tcl code.  Pool names can change --
    they should be in a config file.  e.g. a site grows large and partitions
-   user data into two databases: user names a-m -> pool1, user names n-z pool2
+   user data into two databases: usernames a-m -> pool1, usernames n-z pool2
    etc.
 
    Like ns_limits.
@@ -80,7 +80,7 @@
 
 ** Predefined schema queries for drivers. i.e. you want to know which tables
    are defined, or how many columns a table has.  Drivers supply a string of
-   SQL which returns the correct answer. Can overide in config file for weird
+   SQL which returns the correct answer. Can override in config file for weird
    db setups.
 
      foreach table [dbi_tables pool1] {

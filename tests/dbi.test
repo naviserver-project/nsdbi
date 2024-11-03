@@ -358,7 +358,7 @@ test template-9 {tcl variable} -body {
     unset -nocomplain foo
 } -result {0.0 bar 0.1}
 
-test template-10 {missing tcl variable} -body {
+test template-10 {missing Tcl variable} -body {
     dbi_rows {ROWS 2 1} {$0 $missing $1}
 } -returnCodes error -result {can't read "missing": no such column or variable}
 
@@ -439,7 +439,7 @@ test adp-template-5 {append to adp} -body {
     unset -nocomplain x
 } -result {-'<','\'' '0.0' '0.1' '<','\'' '1.0' '1.1' -}
 
-test pool-global {query from non-default global pool} -body {
+test pool-global {query from nondefault global pool} -body {
     dbi_rows -db global1 {ROWS 1 1 v}
 } -result v
 

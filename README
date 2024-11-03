@@ -4,7 +4,10 @@ supports loadable database drivers. Use this in conjunction with the
 nsdbipg (postgres), nsdbimy (mysql) or nsdbilite (sqlite) modules
 to access your database.
 
+Compatibility: The module compiles with Tcl 8.5, 8.6 and 9.0.
 You will require a recent version of NaviServer (>= 2008-05-12).
+
+Build:
 
 
     $ make NAVISERVER=/usr/local/ns

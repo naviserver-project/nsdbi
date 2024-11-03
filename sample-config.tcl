@@ -28,7 +28,7 @@ ns_param   db4            nsdbipg.so
 
 
 #
-# Example configuration for db4, other dbs will be simillar.
+# Example configuration for db4, other dbs will be similar.
 #
 ns_section "ns/server/server1/module/db4"
 ns_param   default        true ;# This is the default pool for server1.
@@ -36,7 +36,7 @@ ns_param   maxhandles     0    ;# Max open handles to db (0 = per-thread).
 ns_param   timeout        10   ;# Seconds to wait if handle unavailable.
 ns_param   maxrows        1000 ;# Default max rows a query may return.
 ns_param   maxidle        0    ;# Handle closed after maxidle seconds if unused.
-ns_param   maxopen        0    ;# Handle closed after maxopen seconds, regardles of use.
+ns_param   maxopen        0    ;# Handle closed after maxopen seconds, regardless of use.
 ns_param   maxqueries     0    ;# Handle closed after maxqueries sql queries.
 ns_param   checkinterval  600  ;# Check for stale handles every 10 minutes.
 #

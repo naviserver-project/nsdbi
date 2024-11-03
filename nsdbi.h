@@ -136,7 +136,7 @@ Dbi_LibInit(void);
 NS_EXTERN Ns_TclTraceProc DbiInitInterp;
 
 /*
- * Functions for accquiring handles from pools.
+ * Functions for acquiring handles from pools.
  */
 
 NS_EXTERN Dbi_Pool *

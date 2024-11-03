@@ -63,7 +63,7 @@ ns_section "ns/server/server1/module/db1"
 ns_param   default         true
 ns_param   maxhandles      5
 ns_param   maxidle         20          ;# Handle closed after maxidle seconds if unused.
-ns_param   maxopen         40          ;# Handle closed after maxopen seconds, regardles of use.
+ns_param   maxopen         40          ;# Handle closed after maxopen seconds, regardless of use.
 ns_param   maxqueries      10000000       ;# Handle closed after maxqueries sql queries.
 ns_param   checkinterval   30          ;# Check for stale handles every 15 seconds.
 
