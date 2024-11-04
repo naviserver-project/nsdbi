@@ -163,8 +163,21 @@ int
 DbiInitInterp(Tcl_Interp *interp, const void *UNUSED(arg))
 {
     InterpData  *idataPtr;
-    TCL_SIZE_T          i;
-    static int   once = 0;
+    TCL_SIZE_T   i;
+    static struct {
+        const char     *name;
+        TCL_OBJCMDPROC_T *proc;
+    } cmds[] = {
+        {"dbi_rows",        RowsObjCmd},
+        {"dbi_0or1row",     ZeroOrOneRowObjCmd},
+        {"dbi_1row",        OneRowObjCmd},
+        {"dbi_dml",         DmlObjCmd},
+        {"dbi_eval",        EvalObjCmd},
+        /*{"dbi_foreach",     ForeachObjCmd},*/
+        {"dbi_ctl",         CtlObjCmd},
+        {"dbi_convert",     ConvertObjCmd}
+    };
+    static int once = 0;
 
     if (!once) {
         once = 1;
@@ -182,19 +195,6 @@ DbiInitInterp(Tcl_Interp *interp, const void *UNUSED(arg))
         }
     }
 
-    static struct {
-        const char     *name;
-        TCL_OBJCMDPROC_T *proc;
-    } cmds[] = {
-        {"dbi_rows",        RowsObjCmd},
-        {"dbi_0or1row",     ZeroOrOneRowObjCmd},
-        {"dbi_1row",        OneRowObjCmd},
-        {"dbi_dml",         DmlObjCmd},
-        {"dbi_eval",        EvalObjCmd},
-        /*{"dbi_foreach",     ForeachObjCmd},*/
-        {"dbi_ctl",         CtlObjCmd},
-        {"dbi_convert",     ConvertObjCmd}
-    };
 
     idataPtr = GetInterpData(interp);
 

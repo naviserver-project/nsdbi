@@ -129,8 +129,8 @@ QuoteJS(Ns_DString *dsPtr, char *string)
         case '\'':
             Ns_DStringAppend(dsPtr, "\\'");
             break;
-	    
-	default:
+
+        default:
             Ns_DStringNAppend(dsPtr, string, 1);
             break;
         }
@@ -156,14 +156,14 @@ QuoteJS(Ns_DString *dsPtr, char *string)
  *----------------------------------------------------------------------
  */
 static void
-Quote(Ns_DString *dsPtr, char *value, Dbi_quotingLevel quote) 
+Quote(Ns_DString *dsPtr, char *value, Dbi_quotingLevel quote)
 {
     if (likely(quote == Dbi_QuoteHTML)) {
-	Ns_QuoteHtml(dsPtr, value);
+        Ns_QuoteHtml(dsPtr, value);
     } else if (quote == Dbi_QuoteJS) {
-	QuoteJS(dsPtr, value);
+        QuoteJS(dsPtr, value);
     } else {
-	Ns_DStringNAppend(dsPtr, value, -1);
+        Ns_DStringNAppend(dsPtr, value, -1);
     }
 }
 
@@ -197,10 +197,12 @@ DbiTclSubstTemplate(Tcl_Interp *interp, Dbi_Handle *handle,
     Tcl_Obj       *resObj;
     Ns_DString    *dsPtr;
     const char    *parity;
-    int           *varColMap, end, len;
+    int           *varColMap, end;
+    TCL_SIZE_T     len, tokIdx, varIdx;
     int            stream = 0, colIdx;
     size_t         maxBuffer = 0u;
-    unsigned int   tokIdx, varIdx, numRows;
+    unsigned int   numRows;
+
 
     /*
      * Convert the template into a stream of text + variable tokens.
@@ -241,8 +243,8 @@ DbiTclSubstTemplate(Tcl_Interp *interp, Dbi_Handle *handle,
         numRows++;
 
         for (tokIdx = 0, varIdx = 0;
-             tokIdx < (unsigned int)parsePtr->numTokens;
-             tokIdx += (unsigned int)(tokenPtr->numComponents + 1)) {
+             tokIdx < parsePtr->numTokens;
+             tokIdx += (tokenPtr->numComponents + 1)) {
 
             tokenPtr = &parsePtr->tokenPtr[tokIdx];
 
@@ -289,7 +291,7 @@ DbiTclSubstTemplate(Tcl_Interp *interp, Dbi_Handle *handle,
                     break;
 
                 default:
-		    if (AppendValue(interp, handle, (unsigned int)colIdx, resObj, dsPtr, quote)
+                    if (AppendValue(interp, handle, (unsigned int)colIdx, resObj, dsPtr, quote)
                             != TCL_OK) {
                         return TCL_ERROR;
                     }
@@ -310,8 +312,8 @@ DbiTclSubstTemplate(Tcl_Interp *interp, Dbi_Handle *handle,
          */
 
         if (dsPtr != NULL
-	    && (stream != 0 || (Ns_DStringLength(dsPtr) > (int)maxBuffer))
-	    && Ns_AdpFlush(interp, 1) != TCL_OK) {
+            && (stream != 0 || (Ns_DStringLength(dsPtr) > (int)maxBuffer))
+            && Ns_AdpFlush(interp, 1) != TCL_OK) {
             return TCL_ERROR;
         }
 
@@ -320,7 +322,7 @@ DbiTclSubstTemplate(Tcl_Interp *interp, Dbi_Handle *handle,
     if (numRows == 0) {
         if (defaultObj != NULL) {
             if (adp) {
-		char *def = Tcl_GetStringFromObj(defaultObj, &len);
+                char *def = Tcl_GetStringFromObj(defaultObj, &len);
 
                 if (Ns_AdpAppend(interp, def, len) != TCL_OK) {
                     return TCL_ERROR;
@@ -329,7 +331,7 @@ DbiTclSubstTemplate(Tcl_Interp *interp, Dbi_Handle *handle,
                 Tcl_SetObjResult(interp, defaultObj);
             }
         } else {
- 	    Tcl_SetObjResult(interp, Tcl_NewStringObj("query was not a statement returning rows", -1));
+            Tcl_SetObjResult(interp, Tcl_NewStringObj("query was not a statement returning rows", -1));
             return TCL_ERROR;
         }
     }
@@ -359,9 +361,10 @@ static int
 AppendValue(Tcl_Interp *interp, Dbi_Handle *handle, unsigned int index,
             Tcl_Obj *resObj, Ns_DString *dsPtr, Dbi_quotingLevel quote)
 {
-    size_t  valueLength;
-    int     resultLength, binary;
-    char   *bytes;
+    int         binary;
+    size_t      valueLength;
+    TCL_SIZE_T  resultLength;
+    char       *bytes;
 
     if (Dbi_ColumnLength(handle, index, &valueLength, &binary) != NS_OK) {
         Dbi_TclErrorResult(interp, handle);
@@ -389,28 +392,28 @@ AppendValue(Tcl_Interp *interp, Dbi_Handle *handle, unsigned int index,
 
 
     if (quote != Dbi_QuoteNone) {
-	Tcl_DString ds, *dsPtr2 = &ds;
-	int         quotedLength;
-	
-	Tcl_DStringInit(dsPtr2);
-	Quote(dsPtr2, bytes, quote);
-	quotedLength = Tcl_DStringLength(dsPtr2);
+        Tcl_DString ds, *dsPtr2 = &ds;
+        TCL_SIZE_T  quotedLength;
 
-	/*
-	 * If nothing has to be quoted, the sizes are identical, no
-	 * need to copy result from quoteing
-	 */
-	
-	if (quotedLength != (int)valueLength) {
-	    if (dsPtr) {
-	        Ns_DStringSetLength(dsPtr, (resultLength + quotedLength));
-		memcpy(dsPtr->string + resultLength, dsPtr2->string, quotedLength);
-	    } else {
-	        Tcl_SetObjLength(resObj, (resultLength + quotedLength));
-		memcpy(resObj->bytes + resultLength, dsPtr2->string, quotedLength);
-	    }
-	}
-	Tcl_DStringFree(dsPtr2);
+        Tcl_DStringInit(dsPtr2);
+        Quote(dsPtr2, bytes, quote);
+        quotedLength = Tcl_DStringLength(dsPtr2);
+
+        /*
+         * If nothing has to be quoted, the sizes are identical, no
+         * need to copy result from quoteing
+         */
+
+        if (quotedLength != (int)valueLength) {
+            if (dsPtr) {
+                Ns_DStringSetLength(dsPtr, (resultLength + quotedLength));
+                memcpy(dsPtr->string + resultLength, dsPtr2->string, quotedLength);
+            } else {
+                Tcl_SetObjLength(resObj, (resultLength + quotedLength));
+                memcpy(resObj->bytes + resultLength, dsPtr2->string, quotedLength);
+            }
+        }
+        Tcl_DStringFree(dsPtr2);
     }
 
     return TCL_OK;
@@ -438,9 +441,9 @@ static int
 AppendTokenVariable(Tcl_Interp *interp, Tcl_Token *tokenPtr,
                     Tcl_Obj *resObj, Ns_DString *dsPtr, Dbi_quotingLevel quote)
 {
-    Tcl_Obj *objPtr;
-    char    *name, *value, save;
-    int      size;
+    Tcl_Obj   *objPtr;
+    char      *name, *value, save;
+    TCL_SIZE_T size;
 
     /* NB: Skip past leading '$' */
     name = (char *) tokenPtr->start + 1;
@@ -461,20 +464,20 @@ AppendTokenVariable(Tcl_Interp *interp, Tcl_Token *tokenPtr,
     value = Tcl_GetStringFromObj(objPtr, &size);
 
     if (dsPtr) {
-	Quote(dsPtr, value, quote);
+        Quote(dsPtr, value, quote);
     } else {
-	if (quote != Dbi_QuoteNone) {
-	    Tcl_DString ds1, *ds1Ptr = &ds1;
+        if (quote != Dbi_QuoteNone) {
+            Tcl_DString ds1, *ds1Ptr = &ds1;
 
-	    Tcl_DStringInit(ds1Ptr);
-	    Quote(ds1Ptr, value, quote);
-	    Tcl_AppendToObj(resObj, 
-			    Tcl_DStringValue(ds1Ptr), 
-			    Tcl_DStringLength(ds1Ptr));
-	    Tcl_DStringFree(ds1Ptr);
-	} else {
-	    Tcl_AppendObjToObj(resObj, objPtr);
-	}
+            Tcl_DStringInit(ds1Ptr);
+            Quote(ds1Ptr, value, quote);
+            Tcl_AppendToObj(resObj,
+                            Tcl_DStringValue(ds1Ptr),
+                            Tcl_DStringLength(ds1Ptr));
+            Tcl_DStringFree(ds1Ptr);
+        } else {
+            Tcl_AppendObjToObj(resObj, objPtr);
+        }
     }
 
     return TCL_OK;
@@ -536,7 +539,8 @@ GetTemplateFromObj(Tcl_Interp *interp, Dbi_Handle *handle, Tcl_Obj *templateObj,
     Tcl_Parse  *parsePtr;
     Tcl_Token  *tokenPtr;
     char       *string, *p;
-    int         length, varIdx, numVarTokens;
+    int         numVarTokens;
+    TCL_SIZE_T  length, varIdx;
 
     /*
      * Check for cached representation.
@@ -580,7 +584,7 @@ GetTemplateFromObj(Tcl_Interp *interp, Dbi_Handle *handle, Tcl_Obj *templateObj,
              */
 
             if (p != string) {
-	        NewTextToken(parsePtr, string, (int)(p-string));
+                NewTextToken(parsePtr, string, (int)(p-string));
                 string = p;
             }
 
@@ -672,8 +676,9 @@ MapVariablesToColumns(Dbi_Handle *handle, Template *templatePtr)
     int           *varColMap = templatePtr->varColMap;
     Tcl_Token     *tokenPtr;
     const char    *tokenString, *colName;
-    int            tokenSize, tokIdx, varIdx;
+    int            tokIdx, varIdx;
     size_t         i, colIdx, numCols;
+    TCL_SIZE_T     tokenSize;
 
     numCols = Dbi_NumColumns(handle);
 
@@ -694,10 +699,10 @@ MapVariablesToColumns(Dbi_Handle *handle, Template *templatePtr)
 
         for (colIdx = 0; colIdx < numCols; colIdx++) {
 
-	    Dbi_ColumnName(handle, (unsigned int)colIdx, &colName);
+            Dbi_ColumnName(handle, (unsigned int)colIdx, &colName);
 
             if (strncmp(colName, tokenString, (size_t)tokenSize) == 0) {
-	        varColMap[varIdx] = (int)colIdx;
+                varColMap[varIdx] = (int)colIdx;
                 break;
             }
         }
@@ -708,7 +713,7 @@ MapVariablesToColumns(Dbi_Handle *handle, Template *templatePtr)
 
         if (varColMap[varIdx] == VARTYPE_TCL) {
             for (i = 0; i < sizeof(specials) / sizeof(specials[0]); i++) {
-	        if (strncmp(specials[i].varName, tokenString, (size_t)tokenSize) == 0) {
+                if (strncmp(specials[i].varName, tokenString, (size_t)tokenSize) == 0) {
                     varColMap[varIdx] = specials[i].type;
                 }
             }
@@ -778,11 +783,11 @@ NewTextToken(Tcl_Parse *parsePtr, char *string, int length)
         /*
          * Expand the token array.
          */
-        int newCount = parsePtr->tokensAvailable * 2;
+        TCL_SIZE_T newCount = parsePtr->tokensAvailable * 2;
 
         tokenPtr = (Tcl_Token *) ckalloc((unsigned) ((size_t)newCount * sizeof(Tcl_Token)));
         memcpy((void *) tokenPtr, (void *) parsePtr->tokenPtr,
-	       ((size_t)parsePtr->tokensAvailable * sizeof(Tcl_Token)));
+               ((size_t)parsePtr->tokensAvailable * sizeof(Tcl_Token)));
         if (parsePtr->tokenPtr != parsePtr->staticTokens) {
             ckfree((char *) parsePtr->tokenPtr);
         }
@@ -824,3 +829,12 @@ NextRow(Tcl_Interp *interp, Dbi_Handle *handle, int *endPtr)
     }
     return TCL_OK;
 }
+
+/*
+ * Local Variables:
+ * mode: c
+ * c-basic-offset: 4
+ * fill-column: 72
+ * indent-tabs-mode: nil
+ * End:
+ */

@@ -168,7 +168,7 @@ Dbi_Reset(Dbi_Handle *)
  */
 
 NS_EXTERN int
-Dbi_Prepare(Dbi_Handle *handle, const char *sql, int length)
+Dbi_Prepare(Dbi_Handle *handle, const char *sql, TCL_SIZE_T length)
     NS_GNUC_NONNULL(1) NS_GNUC_NONNULL(2);
 
 NS_EXTERN unsigned int

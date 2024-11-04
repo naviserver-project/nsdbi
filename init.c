@@ -182,7 +182,7 @@ typedef struct Statement {
      */
 
     char             *sql;          /* Driver specific SQL: &driverSql */
-    int               length;       /* Length of SQL. */
+    TCL_SIZE_T        length;       /* Length of SQL. */
     unsigned int      id;           /* Unique (per handle) statement ID. */
     unsigned int      nqueries;     /* Total queries for this statement. */
     ClientData        driverData;   /* Statement context for driver. */
@@ -223,7 +223,7 @@ static int CloseIfStale(Handle *handlePtr, time_t now) NS_GNUC_NONNULL(1);
 static int Connect(Handle *) NS_GNUC_NONNULL(1);
 static int Connected(Handle *handlePtr) NS_GNUC_NONNULL(1);
 static void CheckPool(Pool *poolPtr, int stale) NS_GNUC_NONNULL(1);
-static Statement *ParseBindVars(Handle *handlePtr, const char *sql, int sqlLength);
+static Statement *ParseBindVars(Handle *handlePtr, const char *sql, TCL_SIZE_T sqlLength);
 static int DefineBindVar(Statement *stmtPtr, const char *name, Ns_DString *dsPtr);
 
 static Ns_Callback FreeStatement;
@@ -833,7 +833,7 @@ Dbi_PutHandle(Dbi_Handle *handle)
  */
 
 int
-Dbi_Prepare(Dbi_Handle *handle, const char *sql, int length)
+Dbi_Prepare(Dbi_Handle *handle, const char *sql, TCL_SIZE_T length)
 {
     Handle          *handlePtr = (Handle *) handle;
     const Pool      *poolPtr = handlePtr->poolPtr;
@@ -1672,7 +1672,7 @@ Dbi_SetException(Dbi_Handle *handle, const char *sqlstate, const char *fmt, ...)
     Handle      *handlePtr;
     Ns_DString  *ds;
     va_list      ap;
-    int          len;
+    TCL_SIZE_T   len;
 
     NS_NONNULL_ASSERT(handle != NULL);
     NS_NONNULL_ASSERT(sqlstate != NULL);
@@ -2280,12 +2280,13 @@ FreeStatement(void *arg)
  */
 
 static Statement *
-ParseBindVars(Handle *handlePtr, const char *sql, int sqlLength)
+ParseBindVars(Handle *handlePtr, const char *sql, TCL_SIZE_T sqlLength)
 {
     Statement  *stmtPtr = NULL;
     Ns_DString  ds, origDs;
     char        save, *currentSql, *p, *chunk, *bind;
-    int         len, isQuoted, status = NS_OK;
+    int         isQuoted, status = NS_OK;
+    TCL_SIZE_T  len;
 
 #define preveq(c) (p != currentSql && *(p-1) == (c))
 #define nexteq(c) (*(p+1) == (c))
