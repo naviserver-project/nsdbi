@@ -125,7 +125,7 @@ static const Dbi_DriverProc procs[] = {
  *----------------------------------------------------------------------
  */
 
-NS_EXPORT int
+NS_EXPORT Ns_ReturnCode
 Ns_ModuleInit(const char *server, const char *module)
 {
     const char *name       = "test";
