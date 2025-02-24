@@ -2374,7 +2374,7 @@ ParseBindVars(Handle *handlePtr, const char *sql, TCL_SIZE_T sqlLength)
  done:
     if (status == NS_OK) {
         stmtPtr->id = handlePtr->stmtid++;
-        strncpy(stmtPtr->driverSql, Ns_DStringValue(&ds), Ns_DStringLength(&ds));
+        strncpy(stmtPtr->driverSql, Ns_DStringValue(&ds), (size_t)Ns_DStringLength(&ds));
         stmtPtr->sql = stmtPtr->driverSql;
         stmtPtr->length = Ns_DStringLength(&ds);
     } else {

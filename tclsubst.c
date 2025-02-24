@@ -407,10 +407,10 @@ AppendValue(Tcl_Interp *interp, Dbi_Handle *handle, unsigned int index,
         if (quotedLength != (int)valueLength) {
             if (dsPtr) {
                 Ns_DStringSetLength(dsPtr, (resultLength + quotedLength));
-                memcpy(dsPtr->string + resultLength, dsPtr2->string, quotedLength);
+                memcpy(dsPtr->string + resultLength, dsPtr2->string, (size_t)quotedLength);
             } else {
                 Tcl_SetObjLength(resObj, (resultLength + quotedLength));
-                memcpy(resObj->bytes + resultLength, dsPtr2->string, quotedLength);
+                memcpy(resObj->bytes + resultLength, dsPtr2->string, (size_t)quotedLength);
             }
         }
         Tcl_DStringFree(dsPtr2);
@@ -676,9 +676,9 @@ MapVariablesToColumns(Dbi_Handle *handle, Template *templatePtr)
     int           *varColMap = templatePtr->varColMap;
     Tcl_Token     *tokenPtr;
     const char    *tokenString, *colName;
-    int            tokIdx, varIdx;
+    int            varIdx;
     size_t         i, colIdx, numCols;
-    TCL_SIZE_T     tokenSize;
+    TCL_SIZE_T     tokIdx, tokenSize;
 
     numCols = Dbi_NumColumns(handle);
 

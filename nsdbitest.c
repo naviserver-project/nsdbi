@@ -327,7 +327,7 @@ Prepare(Dbi_Handle *handle, Dbi_Statement *stmt,
      * used for testing bind variable syntax.
      */
 
-    n = sscanf(stmt->sql, "%64s %d %d %n",
+    n = sscanf(stmt->sql, "%64s %u %u %n",
                conn->cmd, &numCols, &numRows, &rest);
 
     if (n < 1 || (STREQ(conn->cmd, "DML") && conn->numCols > 0)) {
