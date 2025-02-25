@@ -212,7 +212,7 @@ Close(Dbi_Handle *handle)
     assert(STREQ(conn->configData, "driver config data"));
 
     assert(conn->connected == NS_TRUE);
-    assert(Ns_DStringLength(&conn->ds) == 0);
+    assert(conn->ds.length == 0);
     assert(conn->rest == NULL);
 
     assert(conn->cmd[0] == '\0');
