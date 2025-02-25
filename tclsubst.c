@@ -123,11 +123,11 @@ static struct {
 static void
 QuoteJS(Tcl_DString *dsPtr, char *string)
 {
-    Ns_DStringAppend(dsPtr, "'");
+    Tcl_DStringAppend(dsPtr, "'", 1);
     while (likely(*string != '\0')) {
         switch (*string) {
         case '\'':
-            Ns_DStringAppend(dsPtr, "\\'");
+            Tcl_DStringAppend(dsPtr, "\\'", 2);
             break;
 
         default:
@@ -136,7 +136,7 @@ QuoteJS(Tcl_DString *dsPtr, char *string)
         }
         ++string;
     }
-    Ns_DStringAppend(dsPtr, "'");
+    Tcl_DStringAppend(dsPtr, "'", 1);
 }
 
 
@@ -284,9 +284,9 @@ DbiTclSubstTemplate(Tcl_Interp *interp, Dbi_Handle *handle,
                 case VARTYPE_PARITY:
                     parity = handle->rowIdx % 2 == 0 ? "even" : "odd";
                     if (dsPtr != NULL) {
-                        Ns_DStringAppend(dsPtr, parity);
+                        Tcl_DStringAppend(dsPtr, parity, TCL_INDEX_NONE);
                     } else {
-                        Tcl_AppendToObj(resObj, parity, -1);
+                        Tcl_AppendToObj(resObj, parity, TCL_INDEX_NONE);
                     }
                     break;
 
@@ -472,8 +472,8 @@ AppendTokenVariable(Tcl_Interp *interp, Tcl_Token *tokenPtr,
             Tcl_DStringInit(ds1Ptr);
             Quote(ds1Ptr, value, quote);
             Tcl_AppendToObj(resObj,
-                            Tcl_DStringValue(ds1Ptr),
-                            Tcl_DStringLength(ds1Ptr));
+                            ds1Ptr->string,
+                            ds1Ptr->length);
             Tcl_DStringFree(ds1Ptr);
         } else {
             Tcl_AppendObjToObj(resObj, objPtr);
@@ -508,9 +508,9 @@ AppendInt(Tcl_Interp *UNUSED(interp), unsigned int rowint,
 
     snprintf(buf, sizeof(buf), "%u", rowint);
     if (dsPtr) {
-        Ns_DStringAppend(dsPtr, buf);
+        Tcl_DStringAppend(dsPtr, buf, TCL_INDEX_NONE);
     } else {
-        Tcl_AppendToObj(resObj, buf, -1);
+        Tcl_AppendToObj(resObj, buf, TCL_INDEX_NONE);
     }
 }
 

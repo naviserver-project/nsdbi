@@ -636,7 +636,7 @@ ColumnLength(Dbi_Handle *handle, Dbi_Statement *stmt, unsigned int index,
 	&& index == 0
 	&& conn->rest) {
 
-        *lengthPtr = (size_t)Ns_DStringLength(&conn->ds);
+        *lengthPtr = (size_t)conn->ds.length;
         *binaryPtr = 0;
 
     } else if (STREQ(conn->cmd, "BINARY")) {
@@ -648,7 +648,7 @@ ColumnLength(Dbi_Handle *handle, Dbi_Statement *stmt, unsigned int index,
         Tcl_DStringSetLength(&conn->ds, 0);
         Ns_DStringPrintf(&conn->ds, "%u.%u",
                          handle->rowIdx, index);
-        *lengthPtr = (size_t)Ns_DStringLength(&conn->ds);
+        *lengthPtr = (size_t)conn->ds.length;
         *binaryPtr = 0;
     }
 
@@ -704,8 +704,8 @@ ColumnValue(Dbi_Handle *handle, Dbi_Statement *stmt, unsigned int index,
     if (handle->rowIdx == 0 && index == 0
             && conn->rest) {
 
-        assert(length <= (size_t)Ns_DStringLength(&conn->ds));
-        memcpy(value, Ns_DStringValue(&conn->ds), length);
+        assert(length <= (size_t)conn->ds.length);
+        memcpy(value, conn->ds.string, length);
 
     } else if (STREQ(conn->cmd, "BINARY")) {
 
@@ -717,8 +717,8 @@ ColumnValue(Dbi_Handle *handle, Dbi_Statement *stmt, unsigned int index,
         Ns_DStringPrintf(&conn->ds, "%u.%u",
                          handle->rowIdx, index);
 
-        assert(length <= (size_t)Ns_DStringLength(&conn->ds));
-        memcpy(value, Ns_DStringValue(&conn->ds), length);
+        assert(length <= (size_t)conn->ds.length);
+        memcpy(value, conn->ds.string, length);
     }
 
     return NS_OK;
@@ -755,7 +755,7 @@ ColumnName(Dbi_Handle *handle, Dbi_Statement *stmt,
     assert(conn);
     assert(STREQ(conn->configData, "driver config data"));
     assert(conn->connected == NS_TRUE);
-    /* assert(Ns_DStringLength(&conn->ds) > 0); */
+    /* assert(conn->ds.length > 0); */
 
     sprintf(conn->columnBuf, "%u", index);
     *columnPtr = conn->columnBuf;
