@@ -1510,7 +1510,7 @@ CtlObjCmd(ClientData arg, Tcl_Interp *interp, TCL_SIZE_T objc, Tcl_Obj *const ob
     InterpData  *idataPtr = arg;
     const char  *server = idataPtr->server;
     Dbi_Pool    *pool;
-    Ns_DString   ds;
+    Tcl_DString  ds;
     int          cmd, newIntValue, result = TCL_OK;
     Tcl_Obj      *resultObj;
     Ns_Time      newTimeValue = {0, 0}, oldTimeValue, *newTimeValuePtr = NULL;
@@ -1541,7 +1541,7 @@ CtlObjCmd(ClientData arg, Tcl_Interp *interp, TCL_SIZE_T objc, Tcl_Obj *const ob
 
     switch (cmd) {
     case CDBListCmd:
-        Ns_DStringInit(&ds);
+        Tcl_DStringInit(&ds);
         if (Dbi_ListPools(&ds, server) != NS_OK) {
             return TCL_ERROR;
         }
@@ -1585,7 +1585,7 @@ CtlObjCmd(ClientData arg, Tcl_Interp *interp, TCL_SIZE_T objc, Tcl_Obj *const ob
         return TCL_OK;
 
     case CStatsCmd:
-        Ns_DStringInit(&ds);
+        Tcl_DStringInit(&ds);
         Dbi_Stats(&ds, pool);
         Tcl_DStringResult(interp, &ds);
         return TCL_OK;

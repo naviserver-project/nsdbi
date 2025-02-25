@@ -58,7 +58,7 @@ typedef struct Connection {
 
     char          cmd[64];        /* Buffer for test commands. */
     char          columnBuf[32];  /* Scratch buffer for column names. */
-    Ns_DString    ds;             /* Scratch buffer for first result value. */
+    Tcl_DString   ds;             /* Scratch buffer for first result value. */
     char         *rest;           /* The tail of the query. */
 
 } Connection;
@@ -169,7 +169,7 @@ Open(ClientData configData, Dbi_Handle *handle)
 
     if (handle->driverData == NULL) {
         conn = ns_calloc(1, sizeof(Connection));
-        Ns_DStringInit(&conn->ds);
+        Tcl_DStringInit(&conn->ds);
         conn->connected = NS_TRUE;
         conn->configData = configData;
 
@@ -220,7 +220,7 @@ Close(Dbi_Handle *handle)
     assert(conn->numCols == 0);
     assert(conn->numRows == 0);
 
-    Ns_DStringFree(&conn->ds);
+    Tcl_DStringFree(&conn->ds);
     ns_free(conn);
 }
 
@@ -269,7 +269,7 @@ Connected(Dbi_Handle *handle)
  */
 
 static void
-Bind(Ns_DString *ds, const char *name, int bindIdx)
+Bind(Tcl_DString *ds, const char *name, int bindIdx)
 {
     assert(ds);
     assert(name);
@@ -645,7 +645,7 @@ ColumnLength(Dbi_Handle *handle, Dbi_Statement *stmt, unsigned int index,
         *binaryPtr = 1;
 
     } else {
-        Ns_DStringSetLength(&conn->ds, 0);
+        Tcl_DStringSetLength(&conn->ds, 0);
         Ns_DStringPrintf(&conn->ds, "%u.%u",
                          handle->rowIdx, index);
         *lengthPtr = (size_t)Ns_DStringLength(&conn->ds);
@@ -713,7 +713,7 @@ ColumnValue(Dbi_Handle *handle, Dbi_Statement *stmt, unsigned int index,
         memcpy(value, binaryValue, length);
 
     } else {
-        Ns_DStringSetLength(&conn->ds, 0);
+        Tcl_DStringSetLength(&conn->ds, 0);
         Ns_DStringPrintf(&conn->ds, "%u.%u",
                          handle->rowIdx, index);
 
@@ -816,7 +816,7 @@ Flush(Dbi_Handle *handle, Dbi_Statement *stmt)
     assert(STREQ(conn->configData, "driver config data"));
 
 
-    Ns_DStringSetLength(&conn->ds, 0);
+    Tcl_DStringSetLength(&conn->ds, 0);
     conn->exec = 0;
     conn->numCols = conn->numRows = 0;
     conn->exec = conn->nextrow = 0;

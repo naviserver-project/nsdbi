@@ -55,11 +55,11 @@ int DbiTclSubstTemplate(Tcl_Interp *, Dbi_Handle *,
 static int GetTemplateFromObj(Tcl_Interp *interp, Dbi_Handle *,
                               Tcl_Obj *templateObj, Template **templatePtrPtr);
 static int AppendValue(Tcl_Interp *interp, Dbi_Handle *handle, unsigned int index,
-                       Tcl_Obj *resObj, Ns_DString *dsPtr, Dbi_quotingLevel quote);
+                       Tcl_Obj *resObj, Tcl_DString *dsPtr, Dbi_quotingLevel quote);
 static int AppendTokenVariable(Tcl_Interp *interp, Tcl_Token *tokenPtr,
-                               Tcl_Obj *resObj, Ns_DString *dsPtr, Dbi_quotingLevel quote);
+                               Tcl_Obj *resObj, Tcl_DString *dsPtr, Dbi_quotingLevel quote);
 static void AppendInt(Tcl_Interp *, unsigned int rowint,
-                      Tcl_Obj *resObj, Ns_DString *dsPtr);
+                      Tcl_Obj *resObj, Tcl_DString *dsPtr);
 static void MapVariablesToColumns(Dbi_Handle *handle, Template *templatePtr);
 static void NewTextToken(Tcl_Parse *parsePtr, char *string, int length);
 static int NextRow(Tcl_Interp *interp, Dbi_Handle *handle, int *endPtr);
@@ -121,7 +121,7 @@ static struct {
  *----------------------------------------------------------------------
  */
 static void
-QuoteJS(Ns_DString *dsPtr, char *string)
+QuoteJS(Tcl_DString *dsPtr, char *string)
 {
     Ns_DStringAppend(dsPtr, "'");
     while (likely(*string != '\0')) {
@@ -131,7 +131,7 @@ QuoteJS(Ns_DString *dsPtr, char *string)
             break;
 
         default:
-            Ns_DStringNAppend(dsPtr, string, 1);
+            Tcl_DStringAppend(dsPtr, string, 1);
             break;
         }
         ++string;
@@ -156,14 +156,14 @@ QuoteJS(Ns_DString *dsPtr, char *string)
  *----------------------------------------------------------------------
  */
 static void
-Quote(Ns_DString *dsPtr, char *value, Dbi_quotingLevel quote)
+Quote(Tcl_DString *dsPtr, char *value, Dbi_quotingLevel quote)
 {
     if (likely(quote == Dbi_QuoteHTML)) {
         Ns_QuoteHtml(dsPtr, value);
     } else if (quote == Dbi_QuoteJS) {
         QuoteJS(dsPtr, value);
     } else {
-        Ns_DStringNAppend(dsPtr, value, -1);
+        Tcl_DStringAppend(dsPtr, value, -1);
     }
 }
 
@@ -195,7 +195,7 @@ DbiTclSubstTemplate(Tcl_Interp *interp, Dbi_Handle *handle,
     Tcl_Parse     *parsePtr;
     Tcl_Token     *tokenPtr;
     Tcl_Obj       *resObj;
-    Ns_DString    *dsPtr;
+    Tcl_DString   *dsPtr;
     const char    *parity;
     int           *varColMap, end;
     TCL_SIZE_T     len, tokIdx, varIdx;
@@ -312,7 +312,7 @@ DbiTclSubstTemplate(Tcl_Interp *interp, Dbi_Handle *handle,
          */
 
         if (dsPtr != NULL
-            && (stream != 0 || (Ns_DStringLength(dsPtr) > (int)maxBuffer))
+            && (stream != 0 || (dsPtr->length > (int)maxBuffer))
             && Ns_AdpFlush(interp, 1) != TCL_OK) {
             return TCL_ERROR;
         }
@@ -359,7 +359,7 @@ DbiTclSubstTemplate(Tcl_Interp *interp, Dbi_Handle *handle,
 
 static int
 AppendValue(Tcl_Interp *interp, Dbi_Handle *handle, unsigned int index,
-            Tcl_Obj *resObj, Ns_DString *dsPtr, Dbi_quotingLevel quote)
+            Tcl_Obj *resObj, Tcl_DString *dsPtr, Dbi_quotingLevel quote)
 {
     int         binary;
     size_t      valueLength;
@@ -376,8 +376,8 @@ AppendValue(Tcl_Interp *interp, Dbi_Handle *handle, unsigned int index,
     }
 
     if (dsPtr) {
-        resultLength = Ns_DStringLength(dsPtr);
-        Ns_DStringSetLength(dsPtr, (resultLength + (int)valueLength));
+        resultLength = dsPtr->length;
+        Tcl_DStringSetLength(dsPtr, (resultLength + (int)valueLength));
         bytes = dsPtr->string + resultLength;
     } else {
         (void) Tcl_GetStringFromObj(resObj, &resultLength);
@@ -406,7 +406,7 @@ AppendValue(Tcl_Interp *interp, Dbi_Handle *handle, unsigned int index,
 
         if (quotedLength != (int)valueLength) {
             if (dsPtr) {
-                Ns_DStringSetLength(dsPtr, (resultLength + quotedLength));
+                Tcl_DStringSetLength(dsPtr, (resultLength + quotedLength));
                 memcpy(dsPtr->string + resultLength, dsPtr2->string, (size_t)quotedLength);
             } else {
                 Tcl_SetObjLength(resObj, (resultLength + quotedLength));
@@ -439,7 +439,7 @@ AppendValue(Tcl_Interp *interp, Dbi_Handle *handle, unsigned int index,
 
 static int
 AppendTokenVariable(Tcl_Interp *interp, Tcl_Token *tokenPtr,
-                    Tcl_Obj *resObj, Ns_DString *dsPtr, Dbi_quotingLevel quote)
+                    Tcl_Obj *resObj, Tcl_DString *dsPtr, Dbi_quotingLevel quote)
 {
     Tcl_Obj   *objPtr;
     char      *name, *value, save;
@@ -502,7 +502,7 @@ AppendTokenVariable(Tcl_Interp *interp, Tcl_Token *tokenPtr,
 
 static void
 AppendInt(Tcl_Interp *UNUSED(interp), unsigned int rowint,
-          Tcl_Obj *resObj, Ns_DString *dsPtr)
+          Tcl_Obj *resObj, Tcl_DString *dsPtr)
 {
     char buf[TCL_INTEGER_SPACE];
 

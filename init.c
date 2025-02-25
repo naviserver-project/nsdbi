@@ -145,7 +145,7 @@ typedef struct Handle {
     int                transDepth;   /* Nesting depth of transactions.*/
 
     char               cExceptionCode[6];
-    Ns_DString         dsExceptionMsg;
+    Tcl_DString        dsExceptionMsg;
 
     time_t             otime;        /* Time when handle was connected to db. */
     time_t             atime;        /* Time when handle was last used. */
@@ -224,7 +224,7 @@ static int Connect(Handle *) NS_GNUC_NONNULL(1);
 static int Connected(Handle *handlePtr) NS_GNUC_NONNULL(1);
 static void CheckPool(Pool *poolPtr, int stale) NS_GNUC_NONNULL(1);
 static Statement *ParseBindVars(Handle *handlePtr, const char *sql, TCL_SIZE_T sqlLength);
-static int DefineBindVar(Statement *stmtPtr, const char *name, Ns_DString *dsPtr);
+static int DefineBindVar(Statement *stmtPtr, const char *name, Tcl_DString *dsPtr);
 
 static Ns_Callback FreeStatement;
 static Ns_Callback FreeThreadHandles;
@@ -598,7 +598,7 @@ Dbi_DefaultPool(const char *server)
  */
 
 int
-Dbi_ListPools(Ns_DString *ds, const char *server)
+Dbi_ListPools(Tcl_DString *ds, const char *server)
 {
     ServerData          *sdataPtr;
     const Tcl_HashEntry *hPtr;
@@ -611,7 +611,7 @@ Dbi_ListPools(Ns_DString *ds, const char *server)
     while (hPtr != NULL) {
         const Pool *poolPtr = Tcl_GetHashValue(hPtr);
 
-        Ns_DStringAppendElement(ds, poolPtr->module);
+        Tcl_DStringAppendElement(ds, poolPtr->module);
         hPtr = Tcl_NextHashEntry(&search);
     }
 
@@ -698,7 +698,7 @@ Dbi_GetHandle(Dbi_Pool *pool, Ns_Time *timeoutPtr, Dbi_Handle **handlePtrPtr)
 
                 handlePtr = ns_calloc(1, sizeof *handlePtr);
                 handlePtr->poolPtr = poolPtr;
-                Ns_DStringInit(&handlePtr->dsExceptionMsg);
+                Tcl_DStringInit(&handlePtr->dsExceptionMsg);
                 handlePtr->cache = Ns_CacheCreateSz(buf, TCL_STRING_KEYS,
                                                     poolPtr->cachesize, FreeStatement);
                 handlePtr->transDepth = -1;
@@ -1497,7 +1497,7 @@ Dbi_BouncePool(Dbi_Pool *pool)
  */
 
 char *
-Dbi_Stats(Ns_DString *ds, Dbi_Pool *poolPtr)
+Dbi_Stats(Tcl_DString *ds, Dbi_Pool *poolPtr)
 {
     Pool *pPtr = (Pool *) poolPtr;
 
@@ -1513,7 +1513,7 @@ Dbi_Stats(Ns_DString *ds, Dbi_Pool *poolPtr)
                      pPtr->stats.querycloses, pPtr->epoch);
     Ns_MutexUnlock(&pPtr->lock);
 
-    return Ns_DStringValue(ds);
+    return ds->string;
 }
 
 
@@ -1670,7 +1670,7 @@ void
 Dbi_SetException(Dbi_Handle *handle, const char *sqlstate, const char *fmt, ...)
 {
     Handle      *handlePtr;
-    Ns_DString  *ds;
+    Tcl_DString *ds;
     va_list      ap;
     TCL_SIZE_T   len;
 
@@ -1684,13 +1684,13 @@ Dbi_SetException(Dbi_Handle *handle, const char *sqlstate, const char *fmt, ...)
     strncpy(handlePtr->cExceptionCode, sqlstate, 6);
     handlePtr->cExceptionCode[5] = '\0';
 
-    Ns_DStringSetLength(ds, 0);
+    Tcl_DStringSetLength(ds, 0);
     va_start(ap, fmt);
     Ns_DStringVPrintf(ds, (char *) fmt, ap);
     va_end(ap);
-    len = Ns_DStringLength(ds);
+    len = ds->length;
     while (ds->string[len - 1] == '\n') {
-        Ns_DStringSetLength(ds, len - 1);
+        Tcl_DStringSetLength(ds, len - 1);
     }
 }
 
@@ -1718,7 +1718,7 @@ Dbi_ResetException(Dbi_Handle *handle)
     Handle *handlePtr = (Handle *) handle;
 
     handlePtr->cExceptionCode[0] = '\0';
-    Ns_DStringSetLength(&handlePtr->dsExceptionMsg, 0);
+    Tcl_DStringSetLength(&handlePtr->dsExceptionMsg, 0);
 }
 
 
@@ -1768,8 +1768,8 @@ Dbi_ExceptionMsg(Dbi_Handle *handle)
 {
     Handle *handlePtr = (Handle *) handle;
 
-    if (Ns_DStringLength(&handlePtr->dsExceptionMsg)) {
-        return Ns_DStringValue(&handlePtr->dsExceptionMsg);
+    if (handlePtr->dsExceptionMsg.length > 0) {
+        return handlePtr->dsExceptionMsg.string;
     }
     return NULL;
 }
@@ -1797,7 +1797,7 @@ Dbi_ExceptionPending(Dbi_Handle *handle)
     Handle *handlePtr = (Handle *) handle;
 
     if (handlePtr->cExceptionCode[0] != '\0'
-        || Ns_DStringLength(&handlePtr->dsExceptionMsg)) {
+        || handlePtr->dsExceptionMsg.length > 0) {
         return NS_TRUE;
     }
     return NS_FALSE;
@@ -1892,7 +1892,7 @@ ReturnHandle(Handle *handle)
         || poolPtr->nhandles > poolPtr->maxhandles) {
 
         Ns_CacheDestroy(handle->cache);
-        Ns_DStringFree(&handle->dsExceptionMsg);
+        Tcl_DStringFree(&handle->dsExceptionMsg);
         ns_free(handle);
         poolPtr->nhandles--;
 
@@ -2080,7 +2080,7 @@ static void
 AtShutdown(const Ns_Time *toPtr, void *arg)
 {
     Pool       *poolPtr = arg;
-    Ns_DString  ds;
+    Tcl_DString ds;
 
     if (toPtr == NULL) {
         Ns_MutexLock(&poolPtr->lock);
@@ -2090,10 +2090,10 @@ AtShutdown(const Ns_Time *toPtr, void *arg)
     } else {
         int status;
 
-        Ns_DStringInit(&ds);
+        Tcl_DStringInit(&ds);
         Ns_Log(Notice, "dbi[%s:%s]: %s", poolPtr->drivername, poolPtr->module,
                Dbi_Stats(&ds, (Dbi_Pool *) poolPtr));
-        Ns_DStringFree(&ds);
+        Tcl_DStringFree(&ds);
 
         Ns_MutexLock (&poolPtr->lock);
         do {
@@ -2283,7 +2283,7 @@ static Statement *
 ParseBindVars(Handle *handlePtr, const char *sql, TCL_SIZE_T sqlLength)
 {
     Statement  *stmtPtr = NULL;
-    Ns_DString  ds, origDs;
+    Tcl_DString ds, origDs;
     char        save, *currentSql, *p, *chunk, *bind;
     int         isQuoted, status = NS_OK;
     TCL_SIZE_T  len;
@@ -2308,12 +2308,12 @@ ParseBindVars(Handle *handlePtr, const char *sql, TCL_SIZE_T sqlLength)
      * Save a copy of the original sql to chop up.
      */
 
-    Ns_DStringInit(&ds);
-    Ns_DStringInit(&origDs);
-    Ns_DStringNAppend(&origDs, sql, sqlLength);
+    Tcl_DStringInit(&ds);
+    Tcl_DStringInit(&origDs);
+    Tcl_DStringAppend(&origDs, sql, sqlLength);
 
-    currentSql = Ns_DStringValue(&origDs);
-    len = Ns_DStringLength(&origDs);
+    currentSql = origDs.string;
+    len = origDs.length;
 
     p = currentSql;
     chunk = currentSql;
@@ -2333,7 +2333,7 @@ ParseBindVars(Handle *handlePtr, const char *sql, TCL_SIZE_T sqlLength)
             if (!(isalnum((int)*p) || *p == '_') && p > bind) {
                 /* End of bind var. Append the preceding chunk. */
                 *bind = '\0';
-                Ns_DStringNAppend(&ds, chunk, (int)(bind - chunk));
+                Tcl_DStringAppend(&ds, chunk, (int)(bind - chunk));
                 chunk = p;
                 /* Now substitute the bind var. */
                 ++bind;     /* beginning of bind var */
@@ -2351,7 +2351,7 @@ ParseBindVars(Handle *handlePtr, const char *sql, TCL_SIZE_T sqlLength)
         --len;
     }
     /* append remaining chunk */
-    Ns_DStringNAppend(&ds, chunk, (int)(bind ? bind - chunk : p - chunk));
+    Tcl_DStringAppend(&ds, chunk, (int)(bind ? bind - chunk : p - chunk));
     /* check for trailing bindvar */
     if (bind != NULL && p > bind) {
         if ((status = DefineBindVar(stmtPtr, ++bind, &ds))
@@ -2364,7 +2364,7 @@ ParseBindVars(Handle *handlePtr, const char *sql, TCL_SIZE_T sqlLength)
      * Check for overrun.
      */
 
-    if (Ns_DStringLength(&ds) > sqlLength + 32) {
+    if (ds.length > sqlLength + 32) {
         Dbi_SetException((Dbi_Handle *) handlePtr, "HY000",
                          "bug: not enough memory for bound sql");
         status = NS_ERROR;
@@ -2374,22 +2374,22 @@ ParseBindVars(Handle *handlePtr, const char *sql, TCL_SIZE_T sqlLength)
  done:
     if (status == NS_OK) {
         stmtPtr->id = handlePtr->stmtid++;
-        strncpy(stmtPtr->driverSql, Ns_DStringValue(&ds), (size_t)Ns_DStringLength(&ds));
+        strncpy(stmtPtr->driverSql, ds.string, (size_t)ds.length);
         stmtPtr->sql = stmtPtr->driverSql;
-        stmtPtr->length = Ns_DStringLength(&ds);
+        stmtPtr->length = ds.length;
     } else {
         Tcl_DeleteHashTable(&stmtPtr->bindTable);
         ns_free(stmtPtr);
         stmtPtr = NULL;
     }
-    Ns_DStringFree(&ds);
-    Ns_DStringFree(&origDs);
+    Tcl_DStringFree(&ds);
+    Tcl_DStringFree(&origDs);
 
     return stmtPtr;
 }
 
 static int
-DefineBindVar(Statement *stmtPtr, const char *name, Ns_DString *dsPtr)
+DefineBindVar(Statement *stmtPtr, const char *name, Tcl_DString *dsPtr)
 {
     const Pool    *poolPtr = stmtPtr->handlePtr->poolPtr;
     Tcl_HashEntry *hPtr;
