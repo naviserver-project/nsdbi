@@ -90,16 +90,6 @@ typedef enum {
 } Dbi_ProcId;
 
 /*
- * The following structure is used to register driver callbacks.
- */
-
-typedef struct Dbi_DriverProc {
-    Dbi_ProcId     id;
-    Ns_Callback   *proc;
-} Dbi_DriverProc;
-
-
-/*
  * The following typedefs prototype the callbacks which must be
  * implemented by a database driver.
  */
@@ -168,6 +158,35 @@ Dbi_FlushProc(Dbi_Handle *, Dbi_Statement *)
 typedef int
 Dbi_ResetProc(Dbi_Handle *)
     NS_GNUC_NONNULL(1);
+
+/*
+ * The following structure is used to register driver callbacks.
+ */
+
+typedef struct Dbi_DriverProc {
+    Dbi_ProcId     id;
+    union {
+        /* Back-compat: old code can still initialize `.proc = myfn` */
+        void (*proc)(void);
+
+        /* Strongly-typed options used by the registrar */
+        Dbi_OpenProc         *openProc;
+        Dbi_CloseProc        *closeProc;
+        Dbi_ConnectedProc    *connectedProc;
+        Dbi_BindVarProc      *bindVarProc;
+        Dbi_PrepareProc      *prepareProc;
+        Dbi_PrepareCloseProc *prepareCloseProc;
+        Dbi_ExecProc         *execProc;
+        Dbi_NextRowProc      *nextRowProc;
+        Dbi_ColumnLengthProc *columnLengthProc;
+        Dbi_ColumnValueProc  *columnValueProc;
+        Dbi_ColumnNameProc   *columnNameProc;
+        Dbi_TransactionProc  *transProc;
+        Dbi_FlushProc        *flushProc;
+        Dbi_ResetProc        *resetProc;
+    } u;
+} Dbi_DriverProc;
+
 
 
 /*

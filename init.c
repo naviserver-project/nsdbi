@@ -336,49 +336,49 @@ Dbi_RegisterDriver(const char *server, const char *module,
     poolPtr->database = database;
     poolPtr->configData = configData;
 
-    for (procPtr = procs, nprocs = 0; procPtr->proc != NULL; procPtr++) {
+    for (procPtr = procs, nprocs = 0; procPtr->u.proc != NULL; procPtr++) {
         switch (procPtr->id) {
         case Dbi_OpenProcId:
-            poolPtr->openProc = (Dbi_OpenProc *)procPtr->proc;
+            poolPtr->openProc = procPtr->u.openProc;
             break;
         case Dbi_CloseProcId:
-          poolPtr->closeProc = (Dbi_CloseProc *)procPtr->proc;
+            poolPtr->closeProc = procPtr->u.closeProc;
             break;
         case Dbi_ConnectedProcId:
-            poolPtr->connectedProc = (Dbi_ConnectedProc *)procPtr->proc;
+            poolPtr->connectedProc = procPtr->u.connectedProc;
             break;
         case Dbi_PrepareProcId:
-            poolPtr->prepareProc = (Dbi_PrepareProc *)procPtr->proc;
+            poolPtr->prepareProc = procPtr->u.prepareProc;
             break;
         case Dbi_PrepareCloseProcId:
-            poolPtr->prepareCloseProc = (Dbi_PrepareCloseProc *)procPtr->proc;
+            poolPtr->prepareCloseProc = procPtr->u.prepareCloseProc;
             break;
         case Dbi_BindVarProcId:
-            poolPtr->bindVarProc = (Dbi_BindVarProc *)procPtr->proc;
+            poolPtr->bindVarProc = procPtr->u.bindVarProc;
             break;
         case Dbi_ExecProcId:
-            poolPtr->execProc = (Dbi_ExecProc *)procPtr->proc;
+            poolPtr->execProc = procPtr->u.execProc;
             break;
         case Dbi_NextRowProcId:
-            poolPtr->nextRowProc = (Dbi_NextRowProc *)procPtr->proc;
+            poolPtr->nextRowProc = procPtr->u.nextRowProc;
             break;
         case Dbi_ColumnLengthProcId:
-            poolPtr->columnLengthProc = (Dbi_ColumnLengthProc *)procPtr->proc;
+            poolPtr->columnLengthProc = procPtr->u.columnLengthProc;
             break;
         case Dbi_ColumnValueProcId:
-            poolPtr->columnValueProc = (Dbi_ColumnValueProc *)procPtr->proc;
+            poolPtr->columnValueProc = procPtr->u.columnValueProc;
             break;
         case Dbi_ColumnNameProcId:
-            poolPtr->columnNameProc = (Dbi_ColumnNameProc *)procPtr->proc;
+            poolPtr->columnNameProc = procPtr->u.columnNameProc;
             break;
         case Dbi_TransactionProcId:
-            poolPtr->transProc = (Dbi_TransactionProc *)procPtr->proc;
+            poolPtr->transProc = procPtr->u.transProc;
             break;
         case Dbi_FlushProcId:
-            poolPtr->flushProc = (Dbi_FlushProc *)procPtr->proc;
+            poolPtr->flushProc = procPtr->u.flushProc;
             break;
         case Dbi_ResetProcId:
-            poolPtr->resetProc = (Dbi_ResetProc *)procPtr->proc;
+            poolPtr->resetProc = procPtr->u.resetProc;
             break;
             /*default:
             Ns_Log(Error, "dbi: Dbi_RegisterDriver: invalid Dbi_ProcId: %d",
